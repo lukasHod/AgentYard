@@ -9,6 +9,8 @@ export interface Ship {
   workflowId: number | null
   state: string
   createdAt: number
+  /** Set by the read path — true if projectPath exists on disk right now. */
+  pathExists: boolean
 }
 
 interface ShipRow {
@@ -28,6 +30,7 @@ function rowToShip(row: ShipRow): Ship {
     workflowId: row.workflow_id,
     state: row.state,
     createdAt: row.created_at,
+    pathExists: existsSync(row.project_path),
   }
 }
 

@@ -70,10 +70,12 @@ async function cleanup() {
 
 // 2. Reset and create a ship.
 await fetch(`${BASE}/api/runs/reset`, { method: 'POST' }).catch(() => {})
+// Distinctive name with timestamp so leftover rows are obviously test artifacts.
+const shipName = `smoke-throwaway-${Date.now()}`
 const shipRes = await fetch(`${BASE}/api/ships`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ name: 'smoke-ship', projectPath: repoPath }),
+  body: JSON.stringify({ name: shipName, projectPath: repoPath }),
 })
 if (!shipRes.ok) {
   const j = await shipRes.json().catch(() => ({}))

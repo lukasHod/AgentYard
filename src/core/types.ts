@@ -81,6 +81,8 @@ export interface ShipSummary {
   workflowId: number | null
   state: string
   createdAt: number
+  /** True if projectPath exists on disk (computed server-side at read time). */
+  pathExists: boolean
 }
 
 export interface FeatureSummary {

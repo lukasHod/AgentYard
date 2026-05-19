@@ -2,7 +2,7 @@ import { Application, BlurFilter, Container, FederatedPointerEvent, Graphics, Ti
 import type { ShipSummary } from '../../core/types'
 import { drawShipSprite, drawStarfield, shipPositionFor } from './sprites'
 
-export type ShipMood = 'idle' | 'active' | 'attention'
+export type ShipMood = 'idle' | 'active' | 'attention' | 'broken'
 
 export interface GalaxyEvents {
   onShipClick?: (shipId: number) => void
@@ -175,8 +175,15 @@ export class GalaxyScene {
     entry.mood = mood
     // Recolor halo.
     entry.halo.clear()
-    const color = mood === 'attention' ? 0xfbbf24 /* amber-400 */ : 0x22d3ee /* cyan-400 */
+    const color =
+      mood === 'attention'
+        ? 0xfbbf24 /* amber-400 */
+        : mood === 'broken'
+          ? 0xfb7185 /* rose-400 */
+          : 0x22d3ee /* cyan-400 */
     entry.halo.circle(0, 0, 40).fill({ color, alpha: 1 })
+    // Fade the hull for broken ships so they read as offline at a glance.
+    entry.container.alpha = mood === 'broken' ? 0.35 : 1
   }
 
   private attachBackgroundInteractions() {
@@ -239,6 +246,10 @@ export class GalaxyScene {
       // Halo pulse: 0 alpha if idle; otherwise sinusoidal alpha + scale.
       if (entry.mood === 'idle') {
         entry.halo.alpha = 0
+      } else if (entry.mood === 'broken') {
+        // Steady, dim rose halo — clearly broken, not "demanding action".
+        entry.halo.alpha = 0.35
+        entry.halo.scale.set(0.9)
       } else {
         const period = entry.mood === 'attention' ? 0.6 : 1.8 // seconds
         const ph = (Math.sin((this.bobTime / period) * Math.PI * 2) + 1) / 2 // 0..1

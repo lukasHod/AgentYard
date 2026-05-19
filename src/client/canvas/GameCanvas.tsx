@@ -149,6 +149,11 @@ export function GameCanvas(props: Props) {
     const moods = new Map<number, ShipMood>()
     const anyPending = props.pendings.size > 0
     for (const ship of props.ships) {
+      // Broken ships take precedence — they can't run anything anyway.
+      if (!ship.pathExists) {
+        moods.set(ship.id, 'broken')
+        continue
+      }
       const fs = props.features.get(ship.id) ?? []
       const running = fs.some((f) => f.status === 'running')
       if (running && anyPending) moods.set(ship.id, 'attention')
@@ -365,22 +370,30 @@ export function GameCanvas(props: Props) {
       {/* Hover tooltip in galaxy view */}
       {tooltip && hoveredShip && (
         <div
-          className="absolute pointer-events-none bg-black/90 border border-cyan-500/50 text-xs px-3 py-2 z-10"
+          className={`absolute pointer-events-none bg-black/90 border text-xs px-3 py-2 z-10 ${
+            hoveredShip.pathExists ? 'border-cyan-500/50' : 'border-rose-500/60'
+          }`}
           style={{
             left: Math.min(tooltip.x + 16, window.innerWidth - 240),
             top: Math.min(tooltip.y + 16, window.innerHeight - 100),
           }}
         >
-          <div className="text-cyan-300 tracking-widest">{hoveredShip.name.toUpperCase()}</div>
+          <div className={hoveredShip.pathExists ? 'text-cyan-300 tracking-widest' : 'text-rose-300 tracking-widest'}>
+            {hoveredShip.name.toUpperCase()}
+          </div>
           <div className="text-zinc-400 font-mono text-[10px] mt-0.5 max-w-[220px] truncate">
             {hoveredShip.projectPath}
           </div>
-          <div className="mt-2 text-zinc-300 text-[11px]">
-            features: {hoveredShipFeatures.length}
-            {hoveredShipFeatures.find((f) => f.status === 'running') && (
-              <span className="text-cyan-300 ml-2">● active</span>
-            )}
-          </div>
+          {!hoveredShip.pathExists ? (
+            <div className="mt-2 text-rose-300 text-[11px] tracking-wide">⚠ path missing</div>
+          ) : (
+            <div className="mt-2 text-zinc-300 text-[11px]">
+              features: {hoveredShipFeatures.length}
+              {hoveredShipFeatures.find((f) => f.status === 'running') && (
+                <span className="text-cyan-300 ml-2">● active</span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
