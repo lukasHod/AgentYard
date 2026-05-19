@@ -22,6 +22,7 @@ interface Props {
   skills: Array<{ name: string; description: string; path: string }>
   connected: boolean
   onCreateShip: (name: string, projectPath: string) => Promise<void> | void
+  onDeleteShip: (shipId: number) => Promise<void> | void
   onCreateFeature: (shipId: number, name: string, task: string) => Promise<FeatureSummary | null>
   onSend: (agentRunId: string, content: string) => void
   onClarificationReply: (agentRunId: string, toolUseId: string, answer: string) => void
@@ -53,6 +54,13 @@ export function GameCanvas(props: Props) {
   const [shipPath, setShipPath] = useState('')
   const [featureName, setFeatureName] = useState('')
   const [featureTask, setFeatureTask] = useState('')
+
+  // Bounce back to galaxy if the selected ship was removed.
+  useEffect(() => {
+    if (selectedShipId !== null && !props.ships.find((s) => s.id === selectedShipId)) {
+      setSelectedShipId(null)
+    }
+  }, [props.ships, selectedShipId])
 
   // Play chime whenever pendings count increases.
   const prevPendingCountRef = useRef(props.pendings.size)
@@ -342,6 +350,14 @@ export function GameCanvas(props: Props) {
             onClarificationReply={props.onClarificationReply}
             onNewFeature={() => setNewFeatureOpen(true)}
             onOpenWorkflow={() => props.onOpenWorkflow?.()}
+            onDeleteShip={() => {
+              if (selectedShipId !== null) {
+                void props.onDeleteShip(selectedShipId)
+                // Optimistically pop back to galaxy; the ship:deleted event
+                // will also do it below, this is just a faster UI response.
+                setSelectedShipId(null)
+              }
+            }}
           />
         </aside>
       )}

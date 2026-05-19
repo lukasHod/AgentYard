@@ -19,6 +19,7 @@ interface ShipDescriptionData {
   readmePath: string | null
   git: { branch?: string; head?: { sha: string; subject: string } }
   projectPath: string
+  pathExists: boolean
 }
 
 interface MCPServer {
@@ -49,6 +50,7 @@ interface Props {
   onClarificationReply: (agentRunId: string, toolUseId: string, answer: string) => void
   onNewFeature: () => void
   onOpenWorkflow: () => void
+  onDeleteShip: () => void
 }
 
 const TABS: Array<{ id: ShipPanelTab; label: string }> = [
@@ -74,6 +76,7 @@ export function ShipDetailsPanel(props: Props) {
     onClarificationReply,
     onNewFeature,
     onOpenWorkflow,
+    onDeleteShip,
   } = props
 
   const [internalTab, setInternalTab] = useState<ShipPanelTab>('features')
@@ -98,7 +101,13 @@ export function ShipDetailsPanel(props: Props) {
         .then((r) => r.json())
         .then(setDescription)
         .catch(() =>
-          setDescription({ readme: null, readmePath: null, git: {}, projectPath: ship.projectPath }),
+          setDescription({
+            readme: null,
+            readmePath: null,
+            git: {},
+            projectPath: ship.projectPath,
+            pathExists: false,
+          }),
         )
     }
     if (tab === 'tools') {
@@ -122,11 +131,28 @@ export function ShipDetailsPanel(props: Props) {
   return (
     <div className="flex flex-col h-full text-xs">
       <header className="border-b border-cyan-500/40 px-3 py-2">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-cyan-300 tracking-widest">SHIP / {ship.name.toUpperCase()}</h2>
-          {runningFeature && (
-            <span className="text-cyan-300 text-[10px] animate-pulse">● {runningFeature.name}</span>
-          )}
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-cyan-300 tracking-widest truncate">SHIP / {ship.name.toUpperCase()}</h2>
+          <div className="flex items-center gap-2 shrink-0">
+            {runningFeature && (
+              <span className="text-cyan-300 text-[10px] animate-pulse">● {runningFeature.name}</span>
+            )}
+            <button
+              onClick={() => {
+                if (
+                  confirm(
+                    `Delete ship "${ship.name}"? This removes the ship + feature records from AgentYard. Worktrees on disk are left in place.`,
+                  )
+                ) {
+                  onDeleteShip()
+                }
+              }}
+              title="delete ship"
+              className="text-zinc-500 hover:text-rose-300 text-sm leading-none px-1"
+            >
+              ✕
+            </button>
+          </div>
         </div>
         <p className="text-[10px] text-zinc-500 font-mono mt-0.5 break-all">{ship.projectPath}</p>
       </header>
@@ -383,6 +409,15 @@ function DescriptionTab({ data }: { data: ShipDescriptionData | null }) {
   if (data === null) return <p className="text-zinc-600 italic">// loading...</p>
   return (
     <div className="space-y-3">
+      {!data.pathExists && (
+        <div className="border border-rose-400/60 bg-rose-500/10 rounded p-2 text-rose-200">
+          <div className="text-[10px] tracking-widest text-rose-300 mb-0.5">PATH MISSING</div>
+          <p>
+            The project path no longer exists on disk. Worktree creation and feature runs will fail
+            until the path is restored or the ship is deleted (use the ✕ in the header).
+          </p>
+        </div>
+      )}
       <section className="space-y-1">
         <h3 className="text-[10px] tracking-widest text-zinc-500">PROJECT PATH</h3>
         <p className="text-zinc-300 font-mono break-all">{data.projectPath}</p>

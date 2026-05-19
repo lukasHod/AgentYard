@@ -51,6 +51,14 @@ async function cleanup() {
   } catch {
     // ignore
   }
+  // Delete the ship row so the cockpit isn't littered with broken smoke ships.
+  if (ship?.id) {
+    try {
+      await fetch(`${BASE}/api/ships/${ship.id}`, { method: 'DELETE' })
+    } catch {
+      // ignore
+    }
+  }
   await new Promise((r) => setTimeout(r, 1500))
   try {
     rmSync(repoPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })

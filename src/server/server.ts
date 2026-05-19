@@ -336,23 +336,26 @@ export async function startServer(opts: ServerOptions) {
     const ship = getShip(Number(req.params.id))
     if (!ship) return reply.code(404).send({ error: 'ship not found' })
 
+    const pathExists = existsSync(ship.projectPath)
     let readme: string | null = null
     let readmePath: string | null = null
-    for (const candidate of ['README.md', 'README', 'README.txt', 'Readme.md']) {
-      const p = path.join(ship.projectPath, candidate)
-      if (existsSync(p)) {
-        try {
-          readme = readFileSync(p, 'utf8')
-          readmePath = candidate
-          break
-        } catch {
-          // ignore
+    if (pathExists) {
+      for (const candidate of ['README.md', 'README', 'README.txt', 'Readme.md']) {
+        const p = path.join(ship.projectPath, candidate)
+        if (existsSync(p)) {
+          try {
+            readme = readFileSync(p, 'utf8')
+            readmePath = candidate
+            break
+          } catch {
+            // ignore
+          }
         }
       }
     }
 
     let git: { branch?: string; head?: { sha: string; subject: string } } = {}
-    if (existsSync(ship.projectPath)) {
+    if (pathExists) {
       try {
         const g = simpleGit(ship.projectPath)
         if (await g.checkIsRepo()) {
@@ -368,7 +371,7 @@ export async function startServer(opts: ServerOptions) {
       }
     }
 
-    return { readme, readmePath, git, projectPath: ship.projectPath }
+    return { readme, readmePath, git, projectPath: ship.projectPath, pathExists }
   })
 
   app.get('/api/mcp/servers', async () => {

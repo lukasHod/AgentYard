@@ -281,7 +281,18 @@ export function App() {
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
-        alert(`Create feature failed: ${j.error ?? res.status}`)
+        const msg = typeof j.error === 'string' ? j.error : `HTTP ${res.status}`
+        if (msg.includes('Ship path does not exist') || msg.includes('not a git repository')) {
+          if (
+            confirm(
+              `Can't create a feature on this ship:\n\n${msg}\n\nThis usually means the project path has been moved or deleted on disk. Delete the ship from AgentYard now?`,
+            )
+          ) {
+            await fetch(`/api/ships/${shipId}`, { method: 'DELETE' }).catch(() => {})
+          }
+        } else {
+          alert(`Create feature failed: ${msg}`)
+        }
         return null
       }
       const body = await res.json()
@@ -371,6 +382,7 @@ export function App() {
           skills={skills}
           connected={connected}
           onCreateShip={createShip}
+          onDeleteShip={deleteShip}
           onCreateFeature={createFeature}
           onSend={sendMessage}
           onClarificationReply={replyClarification}
