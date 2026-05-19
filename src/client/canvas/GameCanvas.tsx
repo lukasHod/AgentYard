@@ -8,7 +8,10 @@ import type {
 import { GalaxyScene, type ShipMood } from './galaxyScene'
 import { DockScene, type DockDroneSpec } from './dockScene'
 import { AgentChat, type AgentChatMessage, type AgentChatPending } from '../components/AgentChat'
+import { ShipDetailsPanel, type ShipPanelTab } from '../components/ShipDetailsPanel'
 import { isAudioMuted, playClarificationChime, setAudioMuted } from './chime'
+
+const COCKPIT_PANEL_WIDTH = 480
 
 interface Props {
   ships: ShipSummary[]
@@ -43,7 +46,7 @@ export function GameCanvas(props: Props) {
   const [newShipOpen, setNewShipOpen] = useState(false)
   const [newFeatureOpen, setNewFeatureOpen] = useState(false)
   const [openedDroneId, setOpenedDroneId] = useState<string | null>(null)
-  const [shipModalOpen, setShipModalOpen] = useState(false)
+  const [panelTab, setPanelTab] = useState<ShipPanelTab>('features')
   const [inboxOpen, setInboxOpen] = useState(false)
   const [muted, setMuted] = useState<boolean>(isAudioMuted())
   const [shipName, setShipName] = useState('')
@@ -121,11 +124,14 @@ export function GameCanvas(props: Props) {
     } else {
       const dock = new DockScene(app, {
         onBack: () => setSelectedShipId(null),
-        onShipHullClick: () => setShipModalOpen(true),
+        onShipHullClick: () => setPanelTab('chat'),
         onDroneClick: (_role, agentRunId) => setOpenedDroneId(agentRunId),
       })
+      dock.setPanelWidth(COCKPIT_PANEL_WIDTH)
       app.stage.addChild(dock.root)
       dockRef.current = dock
+      // Default to "features" tab whenever we enter a ship.
+      setPanelTab('features')
     }
   }, [ready, selectedShipId])
 
@@ -242,22 +248,6 @@ export function GameCanvas(props: Props) {
               </button>
             </>
           )}
-          {selectedShipId !== null && selectedShip && (
-            <>
-              <button
-                onClick={() => setShipModalOpen(true)}
-                className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide bg-black/70"
-              >
-                ship details
-              </button>
-              <button
-                onClick={() => setNewFeatureOpen(true)}
-                className="px-3 py-1 border border-fuchsia-500 text-fuchsia-300 hover:bg-fuchsia-500 hover:text-black tracking-wide bg-black/70"
-              >
-                ▶ new feature
-              </button>
-            </>
-          )}
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2 text-xs">
@@ -332,43 +322,27 @@ export function GameCanvas(props: Props) {
         </div>
       )}
 
-      {/* Dock view side panel — feature list for selected ship */}
+      {/* Dock view: always-visible cockpit panel on the right */}
       {selectedShipId !== null && selectedShip && (
-        <aside className="absolute right-3 top-14 bottom-3 w-80 bg-black/80 border border-cyan-500/30 p-3 overflow-y-auto text-xs pointer-events-auto">
-          <h3 className="text-cyan-300 tracking-widest text-[10px] mb-2">FEATURES</h3>
-          <p className="text-[10px] text-zinc-500 font-mono mb-3 break-all">{selectedShip.projectPath}</p>
-          {selectedShipFeatures.length === 0 ? (
-            <p className="text-zinc-600 italic">
-              // no features yet. click <span className="text-fuchsia-300">new feature</span> above.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {selectedShipFeatures.map((f) => (
-                <li key={f.id} className="border border-cyan-500/20 rounded p-2 hover:bg-cyan-500/5">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-cyan-300 truncate">{f.name}</span>
-                    <span
-                      className={`text-[10px] tracking-widest ${
-                        f.status === 'running'
-                          ? 'text-cyan-300'
-                          : f.status === 'complete'
-                            ? 'text-emerald-300'
-                            : f.status === 'failed'
-                              ? 'text-rose-400'
-                              : 'text-zinc-500'
-                      }`}
-                    >
-                      {f.status}
-                    </span>
-                  </div>
-                  <p className="text-zinc-300 mt-1 text-[11px] whitespace-pre-wrap line-clamp-3">{f.task}</p>
-                  {f.branch && (
-                    <p className="text-[10px] text-zinc-500 mt-1 font-mono truncate">{f.branch}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+        <aside
+          className="absolute right-0 top-0 bottom-0 bg-black/85 border-l border-cyan-500/30 pointer-events-auto"
+          style={{ width: COCKPIT_PANEL_WIDTH }}
+        >
+          <ShipDetailsPanel
+            ship={selectedShip}
+            features={selectedShipFeatures}
+            sessions={props.sessions}
+            transcripts={props.transcripts}
+            pendings={props.pendings}
+            skills={props.skills}
+            connected={props.connected}
+            tab={panelTab}
+            onTabChange={setPanelTab}
+            onSend={props.onSend}
+            onClarificationReply={props.onClarificationReply}
+            onNewFeature={() => setNewFeatureOpen(true)}
+            onOpenWorkflow={() => props.onOpenWorkflow?.()}
+          />
         </aside>
       )}
 
@@ -426,30 +400,6 @@ export function GameCanvas(props: Props) {
           onSend={(content) => props.onSend(openedDroneId, content)}
           onReply={(toolUseId, answer) => props.onClarificationReply(openedDroneId, toolUseId, answer)}
           onClose={() => setOpenedDroneId(null)}
-        />
-      )}
-
-      {/* ShipModal — click ship hull → ship details + leader chat */}
-      {shipModalOpen && selectedShip && (
-        <ShipDetailsModal
-          ship={selectedShip}
-          features={selectedShipFeatures}
-          sessions={props.sessions}
-          transcripts={props.transcripts}
-          pendings={props.pendings}
-          skills={props.skills}
-          connected={props.connected}
-          onSend={props.onSend}
-          onReply={props.onClarificationReply}
-          onNewFeature={() => {
-            setShipModalOpen(false)
-            setNewFeatureOpen(true)
-          }}
-          onOpenWorkflow={() => {
-            setShipModalOpen(false)
-            props.onOpenWorkflow?.()
-          }}
-          onClose={() => setShipModalOpen(false)}
         />
       )}
 
@@ -582,372 +532,6 @@ function ChatModal({
           />
         </div>
       </div>
-    </div>
-  )
-}
-
-type ShipTab = 'features' | 'tools' | 'plans' | 'description'
-
-interface ShipDescriptionData {
-  readme: string | null
-  readmePath: string | null
-  git: { branch?: string; head?: { sha: string; subject: string } }
-  projectPath: string
-}
-
-interface MCPServer {
-  id: number
-  name: string
-  enabled: boolean
-  config: unknown
-}
-
-interface CLIInfo {
-  name: string
-  available: boolean
-  version: string | null
-}
-
-function ShipDetailsModal({
-  ship,
-  features,
-  sessions,
-  transcripts,
-  pendings,
-  skills,
-  connected,
-  onSend,
-  onReply,
-  onNewFeature,
-  onOpenWorkflow,
-  onClose,
-}: {
-  ship: ShipSummary
-  features: FeatureSummary[]
-  sessions: SessionDescriptor[]
-  transcripts: Map<string, AgentChatMessage[]>
-  pendings: Map<string, AgentChatPending>
-  skills: Array<{ name: string; description: string; path: string }>
-  connected: boolean
-  onSend: (agentRunId: string, content: string) => void
-  onReply: (agentRunId: string, toolUseId: string, answer: string) => void
-  onNewFeature: () => void
-  onOpenWorkflow: () => void
-  onClose: () => void
-}) {
-  const [tab, setTab] = useState<ShipTab>('features')
-  const [description, setDescription] = useState<ShipDescriptionData | null>(null)
-  const [mcps, setMcps] = useState<MCPServer[] | null>(null)
-  const [clis, setClis] = useState<CLIInfo[] | null>(null)
-
-  useEffect(() => {
-    if (tab === 'description' && description === null) {
-      fetch(`/api/ships/${ship.id}/description`)
-        .then((r) => r.json())
-        .then(setDescription)
-        .catch(() => setDescription({ readme: null, readmePath: null, git: {}, projectPath: ship.projectPath }))
-    }
-    if (tab === 'tools' && (mcps === null || clis === null)) {
-      Promise.all([
-        mcps === null ? fetch('/api/mcp/servers').then((r) => r.json()).catch(() => []) : Promise.resolve(mcps),
-        clis === null ? fetch('/api/clis').then((r) => r.json()).catch(() => []) : Promise.resolve(clis),
-      ]).then(([m, c]) => {
-        if (mcps === null) setMcps(m)
-        if (clis === null) setClis(c)
-      })
-    }
-  }, [tab, description, mcps, clis, ship.id, ship.projectPath])
-
-  const runningFeature = features.find((f) => f.status === 'running')
-  const leader = runningFeature ? sessions.find((s) => s.role === 'leader') : undefined
-
-  const tabs: Array<{ id: ShipTab; label: string }> = [
-    { id: 'features', label: 'features' },
-    { id: 'tools', label: 'tools' },
-    { id: 'plans', label: 'plans' },
-    { id: 'description', label: 'description' },
-  ]
-
-  return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-20">
-      <div className="bg-black border border-cyan-500/60 rounded w-full max-w-4xl h-[80vh] flex flex-col">
-        <div className="border-b border-cyan-500/40 px-4 py-2 flex items-center justify-between">
-          <div>
-            <h2 className="text-cyan-300 tracking-widest text-xs">SHIP / {ship.name.toUpperCase()}</h2>
-            <p className="text-[10px] text-zinc-500 font-mono mt-0.5">{ship.projectPath}</p>
-          </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-xs">
-            ×
-          </button>
-        </div>
-
-        <div className="flex-1 min-h-0 grid grid-cols-2 divide-x divide-cyan-500/20">
-          {/* Left: tabbed panel */}
-          <div className="flex flex-col min-h-0">
-            <nav className="flex items-center border-b border-cyan-500/20 px-2 text-[10px] tracking-widest">
-              {tabs.map((t) => {
-                const active = t.id === tab
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => setTab(t.id)}
-                    className={`px-3 py-2 border-b-2 ${
-                      active
-                        ? 'border-cyan-400 text-cyan-200'
-                        : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    {t.label.toUpperCase()}
-                  </button>
-                )
-              })}
-            </nav>
-
-            <div className="flex-1 overflow-y-auto p-3 text-xs">
-              {tab === 'features' && (
-                <FeaturesTab features={features} onNewFeature={onNewFeature} onOpenWorkflow={onOpenWorkflow} />
-              )}
-              {tab === 'tools' && <ToolsTab skills={skills} mcps={mcps} clis={clis} />}
-              {tab === 'plans' && <PlansTab features={features} />}
-              {tab === 'description' && <DescriptionTab data={description} />}
-            </div>
-          </div>
-
-          {/* Right: leader chat (if active) */}
-          <div className="flex flex-col">
-            {leader ? (
-              <AgentChat
-                agentRunId={leader.id}
-                label={leader.label ?? 'leader'}
-                role={leader.role}
-                state={leader.state}
-                transcript={transcripts.get(leader.id) ?? []}
-                pending={pendings.get(leader.id) ?? null}
-                connected={connected}
-                onSend={(c) => onSend(leader.id, c)}
-                onReply={(t, a) => onReply(leader.id, t, a)}
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-xs text-zinc-600 italic p-4 text-center">
-                // no active leader for this ship. start a new feature to bring one online.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function FeaturesTab({
-  features,
-  onNewFeature,
-  onOpenWorkflow,
-}: {
-  features: FeatureSummary[]
-  onNewFeature: () => void
-  onOpenWorkflow: () => void
-}) {
-  return (
-    <>
-      <div className="flex gap-2 mb-3">
-        <button
-          onClick={onNewFeature}
-          className="px-3 py-1 border border-fuchsia-500 text-fuchsia-300 hover:bg-fuchsia-500 hover:text-black tracking-wide"
-        >
-          ▶ new feature
-        </button>
-        <button
-          onClick={onOpenWorkflow}
-          className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide"
-        >
-          ⚙ workflow editor
-        </button>
-      </div>
-      {features.length === 0 ? (
-        <p className="text-zinc-600 italic">// no features yet</p>
-      ) : (
-        <ul className="space-y-2">
-          {features.map((f) => (
-            <li key={f.id} className="border border-cyan-500/20 rounded p-2">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-cyan-300 truncate">{f.name}</span>
-                <span
-                  className={`text-[10px] tracking-widest ${
-                    f.status === 'running'
-                      ? 'text-cyan-300'
-                      : f.status === 'complete'
-                        ? 'text-emerald-300'
-                        : f.status === 'failed'
-                          ? 'text-rose-400'
-                          : 'text-zinc-500'
-                  }`}
-                >
-                  {f.status}
-                </span>
-              </div>
-              <p className="text-zinc-300 mt-1 whitespace-pre-wrap line-clamp-2">{f.task}</p>
-              {f.branch && (
-                <p className="text-[10px] text-zinc-500 mt-1 font-mono truncate">{f.branch}</p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  )
-}
-
-function ToolsTab({
-  skills,
-  mcps,
-  clis,
-}: {
-  skills: Array<{ name: string; description: string; path: string }>
-  mcps: MCPServer[] | null
-  clis: CLIInfo[] | null
-}) {
-  return (
-    <div className="space-y-4">
-      <section>
-        <h3 className="text-[10px] tracking-widest text-zinc-500 mb-2">SKILLS ({skills.length})</h3>
-        {skills.length === 0 ? (
-          <p className="text-zinc-600 italic">// no skills loaded — drop folders in ~/.agentyard/skills/</p>
-        ) : (
-          <ul className="space-y-1">
-            {skills.map((s) => (
-              <li key={s.name} className="border border-cyan-500/15 rounded px-2 py-1">
-                <div className="text-cyan-300">{s.name}</div>
-                {s.description && <div className="text-zinc-400 text-[11px]">{s.description}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h3 className="text-[10px] tracking-widest text-zinc-500 mb-2">
-          MCP SERVERS ({mcps?.length ?? '…'})
-        </h3>
-        {mcps === null ? (
-          <p className="text-zinc-600 italic">// loading...</p>
-        ) : mcps.length === 0 ? (
-          <p className="text-zinc-600 italic">
-            // none configured yet. MCP attachment to nodes is planned for v2.
-          </p>
-        ) : (
-          <ul className="space-y-1">
-            {mcps.map((m) => (
-              <li key={m.id} className="border border-cyan-500/15 rounded px-2 py-1 flex items-center justify-between">
-                <span className="text-cyan-300">{m.name}</span>
-                <span className={m.enabled ? 'text-emerald-300 text-[10px]' : 'text-zinc-500 text-[10px]'}>
-                  {m.enabled ? 'enabled' : 'disabled'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h3 className="text-[10px] tracking-widest text-zinc-500 mb-2">DETECTED CLIs</h3>
-        {clis === null ? (
-          <p className="text-zinc-600 italic">// probing…</p>
-        ) : (
-          <ul className="space-y-1">
-            {clis.map((c) => (
-              <li
-                key={c.name}
-                className="border border-cyan-500/15 rounded px-2 py-1 flex items-center justify-between"
-              >
-                <span className={c.available ? 'text-cyan-300' : 'text-zinc-600'}>{c.name}</span>
-                <span className="text-[10px] text-zinc-500 font-mono truncate ml-2">
-                  {c.available ? c.version : 'not installed'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="text-[10px] text-zinc-600 mt-2 italic">
-          // drones with the Claude Code tool preset can call these via Bash.
-        </p>
-      </section>
-    </div>
-  )
-}
-
-function PlansTab({ features }: { features: FeatureSummary[] }) {
-  if (features.length === 0) {
-    return <p className="text-zinc-600 italic">// no plans recorded yet. each feature run records its task + summary here.</p>
-  }
-  return (
-    <ul className="space-y-3">
-      {features.map((f) => (
-        <li key={f.id} className="border border-cyan-500/15 rounded p-2">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-cyan-300">{f.name}</span>
-            <span className="text-[10px] text-zinc-500">
-              {new Date(f.createdAt).toLocaleDateString()}
-            </span>
-          </div>
-          <div className="mt-1 text-[10px] tracking-widest text-zinc-500">TASK</div>
-          <p className="text-zinc-200 whitespace-pre-wrap">{f.task}</p>
-          {f.finalSummary && (
-            <>
-              <div className="mt-2 text-[10px] tracking-widest text-emerald-300">OUTCOME</div>
-              <p className="text-zinc-200 whitespace-pre-wrap">{f.finalSummary}</p>
-            </>
-          )}
-          {f.error && (
-            <>
-              <div className="mt-2 text-[10px] tracking-widest text-rose-400">ERROR</div>
-              <p className="text-rose-300 whitespace-pre-wrap">{f.error}</p>
-            </>
-          )}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function DescriptionTab({ data }: { data: ShipDescriptionData | null }) {
-  if (data === null) return <p className="text-zinc-600 italic">// loading...</p>
-  return (
-    <div className="space-y-3">
-      <section className="space-y-1">
-        <h3 className="text-[10px] tracking-widest text-zinc-500">PROJECT PATH</h3>
-        <p className="text-zinc-300 font-mono break-all">{data.projectPath}</p>
-      </section>
-      <section className="space-y-1">
-        <h3 className="text-[10px] tracking-widest text-zinc-500">GIT</h3>
-        {data.git.branch ? (
-          <>
-            <p className="text-zinc-300">
-              branch: <span className="text-cyan-300 font-mono">{data.git.branch}</span>
-            </p>
-            {data.git.head && (
-              <p className="text-zinc-300">
-                head: <span className="text-cyan-300 font-mono">{data.git.head.sha}</span>{' '}
-                <span className="text-zinc-400">— {data.git.head.subject}</span>
-              </p>
-            )}
-          </>
-        ) : (
-          <p className="text-zinc-600 italic">// no git info</p>
-        )}
-      </section>
-      <section className="space-y-1">
-        <h3 className="text-[10px] tracking-widest text-zinc-500">
-          README {data.readmePath && <span className="text-zinc-400">({data.readmePath})</span>}
-        </h3>
-        {data.readme === null ? (
-          <p className="text-zinc-600 italic">// no README found at repo root</p>
-        ) : (
-          <pre className="text-zinc-200 whitespace-pre-wrap font-mono text-[11px] leading-relaxed bg-zinc-950 border border-cyan-500/15 rounded p-2 overflow-x-auto max-h-96 overflow-y-auto">
-            {data.readme}
-          </pre>
-        )}
-      </section>
     </div>
   )
 }

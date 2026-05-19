@@ -32,21 +32,23 @@ export class DockScene {
   private app: Application
   private events: DockEvents
   private centerLayer: Container
+  private starfield: Container
   private drones = new Map<string, DroneEntry>()
   private shipSprite: Container | null = null
   private tickerFn: (t: Ticker) => void
   private time = 0
+  /** Pixels reserved at the right edge for the always-visible cockpit panel. */
+  private panelWidth = 0
 
   constructor(app: Application, events: DockEvents = {}) {
     this.app = app
     this.events = events
     this.root = new Container()
-    const starfield = drawStarfield(this.app.screen.width * 2, this.app.screen.height * 2, 0.0004)
-    starfield.position.set(this.app.screen.width / 2, this.app.screen.height / 2)
-    this.root.addChild(starfield)
+    this.starfield = drawStarfield(this.app.screen.width * 2, this.app.screen.height * 2, 0.0004)
+    this.root.addChild(this.starfield)
     this.centerLayer = new Container()
-    this.centerLayer.position.set(this.app.screen.width / 2, this.app.screen.height / 2)
     this.root.addChild(this.centerLayer)
+    this.repositionCenter()
 
     // Scaffolding behind the ship.
     const scaffolding = drawScaffolding()
@@ -54,6 +56,19 @@ export class DockScene {
 
     this.tickerFn = (t: Ticker) => this.tick(t)
     this.app.ticker.add(this.tickerFn)
+  }
+
+  /** Tell the scene how many pixels the right-side panel occupies. */
+  setPanelWidth(px: number): void {
+    this.panelWidth = px
+    this.repositionCenter()
+  }
+
+  private repositionCenter(): void {
+    const cx = (this.app.screen.width - this.panelWidth) / 2
+    const cy = this.app.screen.height / 2
+    this.centerLayer.position.set(cx, cy)
+    this.starfield.position.set(cx, cy)
   }
 
   destroy() {
@@ -116,6 +131,8 @@ export class DockScene {
 
   private tick(t: Ticker) {
     this.time += t.deltaMS * 0.001
+    // Keep center responsive to window resize.
+    this.repositionCenter()
     for (const [, entry] of this.drones) {
       entry.angle += entry.speed * t.deltaMS * 0.0008
       const x = Math.cos(entry.angle) * entry.radius
