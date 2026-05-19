@@ -200,12 +200,21 @@ export function GameCanvas(props: Props) {
               )}
             </>
           ) : (
-            <button
-              onClick={() => setNewShipOpen(true)}
-              className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide bg-black/70"
-            >
-              + new ship
-            </button>
+            <>
+              <button
+                onClick={() => setNewShipOpen(true)}
+                className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide bg-black/70"
+              >
+                + new ship
+              </button>
+              <button
+                onClick={() => galaxyRef.current?.fitToShips()}
+                disabled={props.ships.length === 0}
+                className="px-3 py-1 border border-zinc-500 text-zinc-300 hover:bg-zinc-700 tracking-wide bg-black/70 disabled:opacity-30"
+              >
+                ⛶ fit
+              </button>
+            </>
           )}
           {selectedShipId !== null && selectedShip && (
             <button

@@ -31,6 +31,7 @@ export class GalaxyScene {
   private starfield: Container
   private bobTime = 0
   private tickerFn: (t: Ticker) => void
+  private hasInitialFit = false
 
   constructor(app: Application, events: GalaxyEvents = {}) {
     this.app = app
@@ -54,6 +55,38 @@ export class GalaxyScene {
 
   recenter() {
     this.world.position.set(this.app.screen.width / 2, this.app.screen.height / 2)
+  }
+
+  /**
+   * Pan + zoom so every ship is comfortably visible.
+   * - One ship → centered, scale ~1.2
+   * - Many ships → bounding box centered, scale chosen so all fit with padding
+   */
+  fitToShips(): void {
+    if (this.ships.size === 0) return
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const [, entry] of this.ships) {
+      // Use the deterministic seeded position (entry.container may be in
+      // mid-bob so we read the source-of-truth position instead).
+      const pos = entry.container.position
+      minX = Math.min(minX, pos.x)
+      maxX = Math.max(maxX, pos.x)
+      minY = Math.min(minY, pos.y)
+      maxY = Math.max(maxY, pos.y)
+    }
+    const padding = 220
+    const width = maxX - minX + 2 * padding
+    const height = maxY - minY + 2 * padding
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    const screenW = this.app.screen.width
+    const screenH = this.app.screen.height
+    const scaleX = screenW / Math.max(width, 1)
+    const scaleY = screenH / Math.max(height, 1)
+    let scale = Math.min(scaleX, scaleY, 1.5)
+    scale = Math.max(scale, MIN_ZOOM)
+    this.world.scale.set(scale)
+    this.world.position.set(screenW / 2 - cx * scale, screenH / 2 - cy * scale)
   }
 
   destroy() {
@@ -87,6 +120,12 @@ export class GalaxyScene {
       } else {
         this.spawnShip(ship, active)
       }
+    }
+
+    // First time we see any ship, frame them all on screen.
+    if (!this.hasInitialFit && this.ships.size > 0) {
+      this.fitToShips()
+      this.hasInitialFit = true
     }
   }
 
