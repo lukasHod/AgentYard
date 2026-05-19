@@ -1,23 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io, Socket } from 'socket.io-client'
 import type {
-  AgentState,
+  FeatureSummary,
   RunSnapshot,
   ServerEvents,
   SessionDescriptor,
+  ShipSummary,
 } from '../core/types'
 import type { Workflow } from '../core/schema'
 import { RunView, type ChatMessage, type PendingClarification } from './views/RunView'
 import { EditorView } from './views/EditorView'
 import { SkillsView, type SkillSummary } from './views/SkillsView'
+import { ShipsView } from './views/ShipsView'
 
 let messageIdCounter = 0
 const nextMessageId = () => `m${++messageIdCounter}`
 
-type ViewMode = 'run' | 'editor' | 'skills'
+type ViewMode = 'ships' | 'run' | 'editor' | 'skills'
 
 export function App() {
-  const [view, setView] = useState<ViewMode>('run')
+  const [view, setView] = useState<ViewMode>('ships')
   const [connected, setConnected] = useState(false)
   const [sessions, setSessions] = useState<Map<string, SessionDescriptor>>(new Map())
   const [transcripts, setTranscripts] = useState<Map<string, ChatMessage[]>>(new Map())
@@ -25,6 +27,8 @@ export function App() {
   const [activeRun, setActiveRun] = useState<RunSnapshot | null>(null)
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
   const [skills, setSkills] = useState<SkillSummary[]>([])
+  const [ships, setShips] = useState<ShipSummary[]>([])
+  const [features, setFeatures] = useState<Map<number, FeatureSummary[]>>(new Map())
   const socketRef = useRef<Socket | null>(null)
 
   const pushMessage = useCallback((agentRunId: string, m: Omit<ChatMessage, 'id'>) => {
@@ -142,6 +146,33 @@ export function App() {
       )
     })
 
+    socket.on('ship:created', (s: ServerEvents['ship:created']) => {
+      setShips((prev) => [s, ...prev])
+    })
+    socket.on('ship:deleted', (ev: ServerEvents['ship:deleted']) => {
+      setShips((prev) => prev.filter((s) => s.id !== ev.id))
+      setFeatures((prev) => {
+        const next = new Map(prev)
+        next.delete(ev.id)
+        return next
+      })
+    })
+    socket.on('feature:created', (f: ServerEvents['feature:created']) => {
+      setFeatures((prev) => {
+        const next = new Map(prev)
+        next.set(f.shipId, [f, ...(next.get(f.shipId) ?? [])])
+        return next
+      })
+    })
+    socket.on('feature:updated', (f: ServerEvents['feature:updated']) => {
+      setFeatures((prev) => {
+        const next = new Map(prev)
+        const list = (next.get(f.shipId) ?? []).map((x) => (x.id === f.id ? f : x))
+        next.set(f.shipId, list)
+        return next
+      })
+    })
+
     return () => {
       socket.close()
     }
@@ -158,6 +189,22 @@ export function App() {
     fetch('/api/skills')
       .then((r) => r.json())
       .then((list: SkillSummary[]) => setSkills(list))
+      .catch(() => {})
+    fetch('/api/ships')
+      .then((r) => r.json())
+      .then(async (list: ShipSummary[]) => {
+        setShips(list)
+        const featureMap = new Map<number, FeatureSummary[]>()
+        await Promise.all(
+          list.map(async (s) => {
+            const fs = await fetch(`/api/ships/${s.id}/features`)
+              .then((r) => r.json())
+              .catch(() => [])
+            featureMap.set(s.id, fs)
+          }),
+        )
+        setFeatures(featureMap)
+      })
       .catch(() => {})
   }, [])
 
@@ -209,6 +256,40 @@ export function App() {
     setActiveRun(null)
   }, [])
 
+  const createShip = useCallback(async (name: string, projectPath: string) => {
+    const res = await fetch('/api/ships', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, projectPath }),
+    })
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      alert(`Create ship failed: ${j.error ?? res.status}`)
+    }
+  }, [])
+
+  const deleteShip = useCallback(async (id: number) => {
+    await fetch(`/api/ships/${id}`, { method: 'DELETE' }).catch(() => {})
+  }, [])
+
+  const createFeature = useCallback(
+    async (shipId: number, name: string, task: string): Promise<FeatureSummary | null> => {
+      const res = await fetch(`/api/ships/${shipId}/features`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, task }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        alert(`Create feature failed: ${j.error ?? res.status}`)
+        return null
+      }
+      const body = await res.json()
+      return body.feature as FeatureSummary
+    },
+    [],
+  )
+
   const saveWorkflow = useCallback(async (updated: Workflow) => {
     const res = await fetch(`/api/workflows/${updated.id}`, {
       method: 'PUT',
@@ -233,6 +314,16 @@ export function App() {
           <span className="text-zinc-600 text-xs">phase 3 / workflow editor</span>
         </div>
         <div className="flex items-center gap-2 text-xs">
+          <button
+            onClick={() => setView('ships')}
+            className={`px-3 py-1 border tracking-wide ${
+              view === 'ships'
+                ? 'border-cyan-500 text-cyan-300 bg-cyan-500/10'
+                : 'border-zinc-600 text-zinc-400 hover:bg-zinc-800/50'
+            }`}
+          >
+            ships
+          </button>
           <button
             onClick={() => setView('run')}
             className={`px-3 py-1 border tracking-wide ${
@@ -270,6 +361,16 @@ export function App() {
         </div>
       </header>
 
+      {view === 'ships' && (
+        <ShipsView
+          ships={ships}
+          features={features}
+          onCreateShip={createShip}
+          onDeleteShip={deleteShip}
+          onCreateFeature={createFeature}
+          onJumpToRun={() => setView('run')}
+        />
+      )}
       {view === 'run' && (
         <RunView
           connected={connected}

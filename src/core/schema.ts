@@ -6,6 +6,8 @@ export const DroneSlotSchema = z.object({
   required: z.boolean().default(true),
 })
 
+export const ToolPresetSchema = z.enum(['none', 'claude_code'])
+
 export const WorkflowNodeSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(['analyze', 'develop', 'deploy', 'custom']),
@@ -21,6 +23,12 @@ export const WorkflowNodeSchema = z.object({
   skills: z.array(z.string()).default([]),
   /** Drone slots. The leader fills tasking; this is the workflow-defined roster. */
   drones: z.array(DroneSlotSchema).default([]),
+  /**
+   * Built-in tool preset for this node's drones. 'none' = just custom tools
+   * (request_clarification). 'claude_code' = full Read/Edit/Write/Glob/Grep/Bash —
+   * use for nodes that should actually modify files in the worktree.
+   */
+  toolPreset: ToolPresetSchema.default('none'),
   /** Canvas position for the React Flow editor. */
   position: z.object({ x: z.number(), y: z.number() }).default({ x: 0, y: 0 }),
 })
@@ -68,6 +76,7 @@ Your job: produce a concise plan describing what needs to be built and how. Dele
         { role: 'planner', requiredSkills: [], required: true },
         { role: 'reviewer', requiredSkills: [], required: true },
       ],
+      toolPreset: 'none',
       position: { x: 0, y: 0 },
     },
     {
@@ -82,12 +91,20 @@ The analyze phase produced this plan:
 
 {upstream_outputs}
 
-Your job: turn the plan into a concrete output. Delegate to the implementer drone to describe the implementation in ~5 lines, and to the tester drone to list 3 verification steps. Then call mark_node_complete with the combined result.`,
+Your job: get a working implementation into the repo. The implementer and tester drones have the full Claude Code toolset (Read, Edit, Write, Glob, Grep, Bash) rooted in a feature worktree.
+
+DELEGATION RULES — read carefully:
+1. When you call assign_task, the instruction MUST be an imperative that the drone executes by CALLING TOOLS, not by describing. Write instructions like:
+   "Use the Write tool to create FILE.ext at the repo root with this exact content: <content>. After writing, use Read to confirm the file exists."
+2. Do NOT delegate descriptive work like "describe how to..." or "explain the approach". Drones that describe instead of doing are a failure.
+3. After the implementer completes, delegate the tester to VERIFY by using Read/Bash to inspect what the implementer actually produced.
+4. Only after both drones have actually performed file work, call mark_node_complete with a 1–2 paragraph summary of WHAT WAS WRITTEN TO DISK (file paths + brief description).`,
       skills: [],
       drones: [
         { role: 'implementer', requiredSkills: [], required: true },
         { role: 'tester', requiredSkills: [], required: true },
       ],
+      toolPreset: 'claude_code',
       position: { x: 350, y: 0 },
     },
     {
@@ -102,9 +119,15 @@ The develop phase produced this output:
 
 {upstream_outputs}
 
-Your job: produce a one-paragraph "release note" summarizing what was built and how to verify it. Delegate to the deploy drone to draft the note. Then call mark_node_complete with the release note as the summary.`,
+Your job: commit the changes from the develop phase. The deploy drone has Bash tool access in the feature worktree.
+
+DELEGATION RULES:
+1. Send the deploy drone an imperative instruction that REQUIRES it to call Bash. For example:
+   "Run \`git status\` to confirm changes are present. If there are changes, run \`git add -A && git commit -m 'agentyard: <short summary>'\` to commit them. Then run \`git log -1 --format=%H\` to get the commit SHA and report it back."
+2. After the drone completes, call mark_node_complete with a 2–3 sentence release note that includes the commit SHA the drone reported. Do NOT push or open a PR (manual user step for now).`,
       skills: [],
       drones: [{ role: 'deployer', requiredSkills: [], required: true }],
+      toolPreset: 'claude_code',
       position: { x: 700, y: 0 },
     },
   ],

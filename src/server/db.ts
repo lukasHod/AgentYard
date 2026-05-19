@@ -52,9 +52,13 @@ CREATE TABLE IF NOT EXISTS features (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   ship_id       INTEGER NOT NULL,
   name          TEXT NOT NULL,
+  task          TEXT NOT NULL DEFAULT '',
   branch        TEXT,
   worktree_path TEXT,
   status        TEXT NOT NULL DEFAULT 'pending',
+  workflow_id   INTEGER NOT NULL DEFAULT 1,
+  final_summary TEXT,
+  error         TEXT,
   created_at    INTEGER NOT NULL
 );
 

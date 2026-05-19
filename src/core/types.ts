@@ -74,6 +74,29 @@ export interface RunSnapshot {
   error?: string
 }
 
+export interface ShipSummary {
+  id: number
+  name: string
+  projectPath: string
+  workflowId: number | null
+  state: string
+  createdAt: number
+}
+
+export interface FeatureSummary {
+  id: number
+  shipId: number
+  name: string
+  task: string
+  branch: string | null
+  worktreePath: string | null
+  status: 'pending' | 'running' | 'complete' | 'failed'
+  finalSummary: string | null
+  error: string | null
+  workflowId: number
+  createdAt: number
+}
+
 // Wire protocol — messages over Socket.IO.
 // Server → Client events
 export interface ServerEvents {
@@ -91,6 +114,10 @@ export interface ServerEvents {
   'node:complete':    { runId: string; nodeId: string; title: string; summary: string; outputs?: Record<string, string> }
   'run:complete':     { runId: string; finalSummary: string }
   'run:failed':       { runId: string; nodeId?: string; error: string }
+  'ship:created':     ShipSummary
+  'ship:deleted':     { id: number }
+  'feature:created':  FeatureSummary
+  'feature:updated':  FeatureSummary
 }
 
 // Client → Server events

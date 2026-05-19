@@ -21,6 +21,8 @@ export interface RunWorkflowOptions {
   task: string
   manager: SessionManager
   emit: (event: RunEvent) => void
+  /** Working directory for drone sessions (typically a feature worktree). */
+  cwd?: string
 }
 
 /** Spawn leader+drones for a node, run it, return the leader's result. */
@@ -29,13 +31,20 @@ async function runNodeOnSessions(
   input: NodeRunInput,
 ): Promise<NodeRunResult> {
   const skillContext = renderSkillContext(input.skills)
+  const toolPreset = input.node.toolPreset
   const droneByRole = new Map<string, Session>()
   for (const slot of input.drones) {
-    const basePrompt = `You are the ${slot.role.toUpperCase()} drone for the ${input.node.title} phase of an AgentYard workflow. When the leader delegates to you, perform your role in a concise way (3–6 lines unless asked for more). If the request is ambiguous, use the request_clarification tool. Do not call tools you do not have.`
+    const toolNote =
+      toolPreset === 'claude_code'
+        ? `\n\n## Workspace\nYou are running inside a git worktree at \`${input.cwd ?? 'the project root'}\`. You have the FULL Claude Code toolset: Read, Glob, Grep, Edit, Write, Bash, etc.\n\n## How to work\nWhen the leader gives you an instruction, you MUST execute it by calling tools. DO NOT describe what you would do — actually DO IT. Examples:\n- "Create file X with content Y" → call Write with the actual file path and content.\n- "Run git status" → call Bash with that command.\n- "Check if file Z exists" → call Read or Glob.\n\nIf you reply with only text (no tool calls) when the leader asks you to perform actions, you have failed your role. After completing the work, briefly describe what you actually did (in past tense, referencing the tools you used). Keep the post-work text to 3-5 lines.`
+        : ''
+    const basePrompt = `You are the ${slot.role.toUpperCase()} drone for the ${input.node.title} phase of an AgentYard workflow. When the leader delegates to you, perform your role. If the request is genuinely ambiguous (not just under-specified), use the request_clarification tool to ask one targeted question. Do not call tools you do not have.${toolNote}`
     const drone = manager.spawn({
       role: 'drone',
       label: `${input.node.id}/${slot.role}`,
       systemPrompt: skillContext ? `${skillContext}\n\n## Your role\n${basePrompt}` : basePrompt,
+      cwd: input.cwd,
+      toolPreset,
     })
     droneByRole.set(slot.role, drone)
   }
@@ -73,6 +82,7 @@ export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<s
   await coreRunWorkflow(opts.workflow, {
     runId,
     task: opts.task,
+    cwd: opts.cwd,
     emit: opts.emit,
     runNode: (input) => runNodeOnSessions(opts.manager, input),
   })

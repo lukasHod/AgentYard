@@ -30,6 +30,8 @@ export type SessionEvent =
   | { type: 'clarification:resolved'; agentRunId: string; id: string }
   | { type: 'closed'; agentRunId: string }
 
+export type ToolPreset = 'none' | 'claude_code'
+
 export interface SessionOptions {
   id: string
   role: AgentRole
@@ -43,6 +45,16 @@ export interface SessionOptions {
   model?: string
   /** Names of tools the agent is allowed to call (MCP qualified). */
   allowedToolNames?: string[]
+  /** Working directory for the agent. File tools resolve paths against this. */
+  cwd?: string
+  /**
+   * Built-in tool preset.
+   * - 'none' (default): only the SDK-MCP tools (request_clarification, etc.)
+   * - 'claude_code': the full Claude Code toolset (Read/Edit/Write/Glob/Grep/Bash/...)
+   *   Use this for drones that need to edit code inside a worktree. Permissions
+   *   are auto-bypassed; scope safety via `cwd`.
+   */
+  toolPreset?: ToolPreset
 }
 
 const MCP_NAMESPACE = 'agentyard'
@@ -99,21 +111,35 @@ export class Session extends EventEmitter implements ClarificationGateway {
     ]
     const allowedTools = this.opts.allowedToolNames ?? defaultAllowed
 
+    const useClaudeCode = this.opts.toolPreset === 'claude_code'
+    const tools = useClaudeCode
+      ? ({ type: 'preset', preset: 'claude_code' } as const)
+      : []
+    // For agents with the claude_code preset we also pre-approve every tool so
+    // file edits / Bash calls don't block on a permission prompt.
+    const permissionMode = useClaudeCode ? 'bypassPermissions' : 'default'
+    // Agent definition limits the agent to a focused tool set; when using the
+    // Claude Code preset we omit `tools` from the agent so it can use all of them.
+    const agentToolsForDef = useClaudeCode ? undefined : allowedTools
+
     this.q = query({
       prompt: this.inputQueue,
       options: {
         mcpServers: { [MCP_NAMESPACE]: mcp },
-        tools: [],
-        allowedTools,
+        tools,
+        ...(useClaudeCode
+          ? { permissionMode, allowDangerouslySkipPermissions: true }
+          : { allowedTools }),
         persistSession: false,
         settingSources: [],
+        ...(this.opts.cwd ? { cwd: this.opts.cwd } : {}),
         ...(this.opts.systemPrompt
           ? {
               agents: {
                 'agentyard-agent': {
                   description: 'AgentYard runtime agent',
                   prompt: this.opts.systemPrompt,
-                  tools: allowedTools,
+                  ...(agentToolsForDef ? { tools: agentToolsForDef } : {}),
                 },
               },
               agent: 'agentyard-agent',

@@ -13,6 +13,8 @@ export interface NodeRunInput {
   task: string
   /** Concatenated summaries of all upstream nodes (joined with blank lines). */
   upstreamOutputs: string
+  /** Working directory drones should operate in (e.g. a feature worktree). Optional. */
+  cwd?: string
 }
 
 export interface NodeRunResult {
@@ -32,6 +34,8 @@ export type RunEvent =
 export interface RunOptions {
   runId: string
   task: string
+  /** Working directory passed through to every node. Optional. */
+  cwd?: string
   runNode: NodeRunner
   emit: (event: RunEvent) => void
   signal?: AbortSignal
@@ -122,6 +126,7 @@ export async function runWorkflow(workflow: Workflow, opts: RunOptions): Promise
         skills: node.skills,
         task: opts.task,
         upstreamOutputs: upstreamText,
+        cwd: opts.cwd,
       })
       outputs.set(node.id, result.summary)
       opts.emit({

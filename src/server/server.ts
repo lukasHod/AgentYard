@@ -15,6 +15,9 @@ import {
   updateWorkflow,
 } from './workflows.js'
 import { getLoadedSkills, scanSkills } from './skills.js'
+import { createShip, deleteShip, getShip, listShips } from './ships.js'
+import { createFeature, getFeature, listFeatures, updateFeature, type Feature } from './features.js'
+import { createFeatureWorktree, removeFeatureWorktree } from './runtime/worktrees.js'
 import { WorkflowGraphSchema } from '../core/schema.js'
 import type { RunEvent } from '../core/executor.js'
 
@@ -283,6 +286,161 @@ export async function startServer(opts: ServerOptions) {
     pendingByAgent.clear()
     states.clear()
     activeRun = null
+    activeFeatureId = null
+    return { ok: true }
+  })
+
+  // -------------------------------------------------------------------
+  // Ships
+  // -------------------------------------------------------------------
+  app.get('/api/ships', async () => listShips())
+
+  app.get<{ Params: { id: string } }>('/api/ships/:id', async (req, reply) => {
+    const ship = getShip(Number(req.params.id))
+    if (!ship) return reply.code(404).send({ error: 'not found' })
+    return ship
+  })
+
+  app.post<{ Body: { name?: string; projectPath?: string; workflowId?: number } }>(
+    '/api/ships',
+    async (req, reply) => {
+      try {
+        const ship = await createShip({
+          name: req.body.name ?? '',
+          projectPath: req.body.projectPath ?? '',
+          workflowId: req.body.workflowId,
+        })
+        io.emit('ship:created', ship)
+        return ship
+      } catch (e) {
+        return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) })
+      }
+    },
+  )
+
+  app.delete<{ Params: { id: string } }>('/api/ships/:id', async (req) => {
+    deleteShip(Number(req.params.id))
+    io.emit('ship:deleted', { id: Number(req.params.id) })
+    return { ok: true }
+  })
+
+  // -------------------------------------------------------------------
+  // Features
+  // -------------------------------------------------------------------
+  let activeFeatureId: number | null = null
+
+  app.get<{ Params: { id: string } }>('/api/ships/:id/features', async (req, reply) => {
+    const ship = getShip(Number(req.params.id))
+    if (!ship) return reply.code(404).send({ error: 'ship not found' })
+    return listFeatures(ship.id)
+  })
+
+  app.get<{ Params: { id: string } }>('/api/features/:id', async (req, reply) => {
+    const feature = getFeature(Number(req.params.id))
+    if (!feature) return reply.code(404).send({ error: 'not found' })
+    return feature
+  })
+
+  app.post<{
+    Params: { id: string }
+    Body: { name?: string; task?: string; workflowId?: number }
+  }>('/api/ships/:id/features', async (req, reply) => {
+    const ship = getShip(Number(req.params.id))
+    if (!ship) return reply.code(404).send({ error: 'ship not found' })
+    const task = req.body.task?.trim()
+    if (!task) return reply.code(400).send({ error: 'task required' })
+
+    if (activeFeatureId !== null) {
+      const existing = getFeature(activeFeatureId)
+      if (existing && existing.status === 'running') {
+        return reply.code(409).send({ error: 'a feature is already running; reset first' })
+      }
+    }
+
+    const workflowId = req.body.workflowId ?? ship.workflowId ?? listWorkflows()[0]?.id
+    if (typeof workflowId !== 'number') {
+      return reply.code(400).send({ error: 'no workflow available' })
+    }
+    const wf = getWorkflow(workflowId)
+    if (!wf) return reply.code(404).send({ error: 'workflow not found' })
+
+    const name = req.body.name?.trim() || `feature-${Date.now()}`
+    let feature: Feature = createFeature({ shipId: ship.id, name, task, workflowId })
+    activeFeatureId = feature.id
+    io.emit('feature:created', feature)
+
+    // Create the worktree.
+    let cwd: string | undefined
+    try {
+      const wt = await createFeatureWorktree({
+        shipPath: ship.projectPath,
+        featureId: feature.id,
+        featureName: feature.name,
+      })
+      cwd = wt.path
+      feature = updateFeature(feature.id, {
+        branch: wt.branch,
+        worktreePath: wt.path,
+        status: 'running',
+      })!
+      io.emit('feature:updated', feature)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      feature = updateFeature(feature.id, { status: 'failed', error: msg })!
+      io.emit('feature:updated', feature)
+      return reply.code(500).send({ error: `worktree creation failed: ${msg}` })
+    }
+
+    activeRun = {
+      runId: '(pending)',
+      task,
+      nodeIds: [],
+      nodeStates: {},
+      nodeSummaries: {},
+    }
+
+    // Run asynchronously — return immediately.
+    runWorkflowOnSessions({
+      workflow: wf,
+      task,
+      manager,
+      cwd,
+      emit: (ev) => {
+        if (activeRun) activeRun.runId = ev.runId
+        emitRunEvent(ev)
+        if (ev.type === 'run:complete') {
+          const updated = updateFeature(feature.id, {
+            status: 'complete',
+            finalSummary: ev.finalSummary,
+          })
+          if (updated) io.emit('feature:updated', updated)
+        } else if (ev.type === 'run:failed') {
+          const updated = updateFeature(feature.id, {
+            status: 'failed',
+            error: ev.error,
+          })
+          if (updated) io.emit('feature:updated', updated)
+        }
+      },
+    }).catch((err) => {
+      app.log.error({ err }, 'feature run failed')
+      const updated = updateFeature(feature.id, {
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      })
+      if (updated) io.emit('feature:updated', updated)
+    })
+
+    return { ok: true, feature }
+  })
+
+  app.post<{ Params: { id: string } }>('/api/features/:id/teardown', async (req) => {
+    const feature = getFeature(Number(req.params.id))
+    if (!feature) return { ok: false }
+    if (feature.worktreePath) {
+      const ship = getShip(feature.shipId)
+      if (ship) await removeFeatureWorktree(ship.projectPath, feature.worktreePath)
+    }
     return { ok: true }
   })
 
