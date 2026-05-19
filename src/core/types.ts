@@ -55,19 +55,29 @@ export interface Ship {
   createdAt: number
 }
 
+export interface SessionDescriptor {
+  id: string
+  role: AgentRole
+  label?: string
+  state: AgentState
+}
+
 // Wire protocol — messages over Socket.IO.
 // Server → Client events
 export interface ServerEvents {
-  'agent:message': { agentRunId: number; role: 'assistant' | 'user' | 'system'; content: string; timestamp: number }
-  'agent:state':   { agentRunId: number; state: AgentState }
-  'ship:state':    { shipId: number; state: ShipState }
-  'clarification:requested': { agentRunId: number; toolUseId: string; question: string }
-  'clarification:resolved':  { agentRunId: number; toolUseId: string }
-  'ping': { count: number; at: number }
+  'session:list':     SessionDescriptor[]
+  'session:added':    SessionDescriptor
+  'session:removed':  { id: string }
+  'agent:message':    { agentRunId: string; role: 'assistant' | 'user' | 'system'; content: string; timestamp: number }
+  'agent:state':      { agentRunId: string; state: AgentState }
+  'ship:state':       { shipId: number; state: ShipState }
+  'clarification:requested': { agentRunId: string; toolUseId: string; question: string }
+  'clarification:resolved':  { agentRunId: string; toolUseId: string }
+  'node:complete':    { node: string; summary: string; outputs?: Record<string, string> }
 }
 
 // Client → Server events
 export interface ClientEvents {
-  'agent:send':    { agentRunId: number; content: string }
-  'clarification:reply': { agentRunId: number; toolUseId: string; answer: string }
+  'agent:send':          { agentRunId: string; content: string }
+  'clarification:reply': { agentRunId: string; toolUseId: string; answer: string }
 }

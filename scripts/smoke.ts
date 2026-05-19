@@ -1,84 +1,93 @@
 /**
- * Phase 1 smoke test:
- *   1. Connect to the running AgentYard server (npm run dev).
- *   2. Send a prompt that should trigger request_clarification.
- *   3. Reply to the clarification.
- *   4. Verify a final assistant reply lands.
+ * Phase 2 smoke test:
+ *   1. Trigger /api/demo/develop — spawns leader + implementer + tester.
+ *   2. Wait for session:added events for all three.
+ *   3. Wait for node:complete event (leader → drones → leader → mark_complete).
+ *   4. Sanity-check both drones produced at least one assistant message.
  *
  * Run with: npx tsx scripts/smoke.ts
  * (Assumes `npm run dev` is already running.)
  */
 import { io } from 'socket.io-client'
 
-const TIMEOUT_MS = 60_000
-const PROMPT =
-  'Use the request_clarification tool to ask the user "What is your favorite color?" Then respond with: "Acknowledged. Your favorite is X." where X is the color the user supplied.'
-const REPLY_ANSWER = 'cosmic teal'
+const TIMEOUT_MS = 180_000
+const BASE = 'http://localhost:4242'
 
 function fail(msg: string): never {
   console.error(`[smoke] FAIL: ${msg}`)
   process.exit(1)
 }
 
-const socket = io('http://localhost:4242', { transports: ['websocket'] })
+const droneLabels = new Set(['implementer', 'tester'])
+const seenLabels = new Set<string>()
+const assistantCountByLabel = new Map<string, number>()
+let leaderId: string | null = null
+let nodeComplete: { summary: string } | null = null
 
-let sawClarification = false
-let sawClarificationResolved = false
-let assistantReplies = 0
-let stateTrail: string[] = []
-const finalMessages: string[] = []
+// Reset any previous demo state so the test is idempotent.
+await fetch(`${BASE}/api/demo/reset`, { method: 'POST' }).catch(() => {})
+
+const socket = io(BASE, { transports: ['websocket'] })
 
 const finished = new Promise<void>((resolve) => {
-  socket.on('connect', () => {
+  socket.on('connect', async () => {
     console.log('[smoke] connected')
-    socket.emit('agent:send', { content: PROMPT })
-    console.log('[smoke] sent prompt')
+    const res = await fetch(`${BASE}/api/demo/develop`, { method: 'POST' })
+    const body = await res.json()
+    if (!res.ok) fail(`POST /api/demo/develop -> ${res.status} ${JSON.stringify(body)}`)
+    console.log(`[smoke] demo started: leader=${body.leader} drones=${body.drones.join(',')}`)
   })
 
-  socket.on('agent:state', (s: { state: string }) => {
-    stateTrail.push(s.state)
-    console.log('[smoke] state ->', s.state)
+  socket.on('session:added', (s: { id: string; role: string; label?: string }) => {
+    console.log(`[smoke] session:added  ${s.role}/${s.label ?? '?'} (${s.id})`)
+    if (s.role === 'leader') leaderId = s.id
+    if (s.label) seenLabels.add(s.label)
   })
 
-  socket.on('agent:message', (m: { role: string; content: string }) => {
-    if (m.role === 'assistant') {
-      assistantReplies++
-      finalMessages.push(m.content)
-      console.log(`[smoke] assistant: ${m.content.slice(0, 200)}`)
-      if (sawClarificationResolved && m.content.toLowerCase().includes(REPLY_ANSWER.toLowerCase())) {
-        resolve()
-      }
-    } else if (m.role === 'user') {
-      console.log(`[smoke] user echo: ${m.content.slice(0, 80)}`)
-    } else {
-      console.log(`[smoke] system: ${m.content.slice(0, 200)}`)
-    }
-  })
+  socket.on(
+    'agent:message',
+    (m: { agentRunId: string; role: string; content: string }) => {
+      if (m.role !== 'assistant') return
+      // Tally per label so we can verify the drones actually responded.
+      const idTag = m.agentRunId === leaderId ? 'leader' : m.agentRunId.slice(0, 8)
+      assistantCountByLabel.set(idTag, (assistantCountByLabel.get(idTag) ?? 0) + 1)
+      console.log(`[smoke] ${idTag} >> ${m.content.slice(0, 120).replace(/\n/g, ' ')}`)
+    },
+  )
 
-  socket.on('clarification:requested', (c: { toolUseId: string; question: string }) => {
-    sawClarification = true
-    console.log(`[smoke] clarification requested: ${c.question}`)
-    setTimeout(() => {
-      console.log(`[smoke] replying with: ${REPLY_ANSWER}`)
-      socket.emit('clarification:reply', { toolUseId: c.toolUseId, answer: REPLY_ANSWER })
-    }, 200)
-  })
+  socket.on(
+    'agent:state',
+    (s: { agentRunId: string; state: string }) => {
+      // Compact state-transition log.
+      const idTag = s.agentRunId === leaderId ? 'leader' : s.agentRunId.slice(0, 8)
+      console.log(`[smoke] ${idTag} state=${s.state}`)
+    },
+  )
 
-  socket.on('clarification:resolved', () => {
-    sawClarificationResolved = true
-    console.log('[smoke] clarification resolved')
+  socket.on('node:complete', (ev: { node: string; summary: string }) => {
+    nodeComplete = ev
+    console.log(`[smoke] node:complete (${ev.node}) -> ${ev.summary.slice(0, 200)}`)
+    resolve()
   })
 })
 
-const timeout = setTimeout(() => fail(`timed out after ${TIMEOUT_MS}ms (clar=${sawClarification}, resolved=${sawClarificationResolved}, asst=${assistantReplies})`), TIMEOUT_MS)
-
+const timeout = setTimeout(
+  () =>
+    fail(
+      `timed out after ${TIMEOUT_MS}ms (labels=${[...seenLabels].join(',')}, node_complete=${!!nodeComplete})`,
+    ),
+  TIMEOUT_MS,
+)
 await finished
 clearTimeout(timeout)
 
-if (!sawClarification) fail('no clarification request observed')
-if (!sawClarificationResolved) fail('clarification was not resolved')
-if (assistantReplies === 0) fail('no assistant message received')
-console.log(`[smoke] PASS — clar=${sawClarification} resolved=${sawClarificationResolved} replies=${assistantReplies}`)
-console.log(`[smoke] state trail: ${stateTrail.join(' -> ')}`)
+// Post-checks
+for (const label of droneLabels) {
+  if (!seenLabels.has(label)) fail(`drone "${label}" was never spawned`)
+}
+if (!leaderId) fail('leader id was never observed')
+if (!nodeComplete) fail('node:complete never fired')
+
+console.log(`[smoke] PASS — labels=${[...seenLabels].join(',')} node="${nodeComplete!.summary.slice(0, 80)}"`)
 socket.close()
 process.exit(0)

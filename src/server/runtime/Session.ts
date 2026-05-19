@@ -3,16 +3,19 @@ import {
   createSdkMcpServer,
   query,
   type Query,
+  type SdkMcpToolDefinition,
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentState } from '../../core/types.js'
+import type { AgentRole, AgentState } from '../../core/types.js'
 import { AsyncQueue } from './AsyncQueue.js'
 import {
   createClarificationTool,
   type ClarificationGateway,
   type ClarificationRequest,
 } from './tools/requestClarification.js'
+
+type AnyTool = SdkMcpToolDefinition<any>
 
 export interface SessionTextMessage {
   role: 'assistant' | 'user' | 'system'
@@ -21,26 +24,34 @@ export interface SessionTextMessage {
 }
 
 export type SessionEvent =
-  | { type: 'message'; message: SessionTextMessage }
-  | { type: 'state'; state: AgentState }
-  | { type: 'clarification:requested'; req: ClarificationRequest }
-  | { type: 'clarification:resolved'; id: string }
-  | { type: 'closed' }
+  | { type: 'message'; agentRunId: string; message: SessionTextMessage }
+  | { type: 'state'; agentRunId: string; state: AgentState }
+  | { type: 'clarification:requested'; agentRunId: string; req: ClarificationRequest }
+  | { type: 'clarification:resolved'; agentRunId: string; id: string }
+  | { type: 'closed'; agentRunId: string }
 
 export interface SessionOptions {
+  id: string
+  role: AgentRole
+  /** Display label for the agent (e.g. "implementer", "leader", "drone-1"). */
+  label?: string
+  /** Role-specific system prompt. Required for non-default sessions. */
   systemPrompt?: string
+  /** Additional MCP tools beyond request_clarification. */
+  extraTools?: AnyTool[]
+  /** Model override, otherwise SDK default. */
   model?: string
+  /** Names of tools the agent is allowed to call (MCP qualified). */
+  allowedToolNames?: string[]
 }
 
-const CLARIFICATION_TOOL = 'mcp__agentyard__request_clarification'
+const MCP_NAMESPACE = 'agentyard'
+const CLARIFICATION_TOOL_NAME = `mcp__${MCP_NAMESPACE}__request_clarification`
 
 /**
  * One Claude Agent SDK session. Wraps query() with a streamable input
  * channel, an event emitter for SDK output, and a clarification gateway
  * that lets the agent ask the user questions mid-turn.
- *
- * For Phase 1 only one Session exists at a time; multi-session orchestration
- * comes in Phase 2 via SessionManager.
  */
 export class Session extends EventEmitter implements ClarificationGateway {
   private inputQueue = new AsyncQueue<SDKUserMessage>()
@@ -49,8 +60,22 @@ export class Session extends EventEmitter implements ClarificationGateway {
   private _state: AgentState = 'idle'
   private consumePromise?: Promise<void>
 
-  constructor(public readonly opts: SessionOptions = {}) {
+  // Bookkeeping for ask() — waits for the next 'result' boundary.
+  private askInflight = false
+  private askText = ''
+  private askResolver: ((text: string) => void) | null = null
+  private askRejecter: ((err: Error) => void) | null = null
+
+  constructor(public readonly opts: SessionOptions) {
     super()
+  }
+
+  get id(): string {
+    return this.opts.id
+  }
+
+  get role(): AgentRole {
+    return this.opts.role
   }
 
   get state(): AgentState {
@@ -60,31 +85,38 @@ export class Session extends EventEmitter implements ClarificationGateway {
   start(): void {
     if (this.q) throw new Error('Session already started')
 
-    const clarificationTool = createClarificationTool(this)
+    const clarificationTool = createClarificationTool(this) as AnyTool
+    const allTools: AnyTool[] = [clarificationTool, ...(this.opts.extraTools ?? [])]
     const mcp = createSdkMcpServer({
-      name: 'agentyard',
-      tools: [clarificationTool],
+      name: MCP_NAMESPACE,
+      tools: allTools,
       alwaysLoad: true,
     })
+
+    const defaultAllowed = [
+      CLARIFICATION_TOOL_NAME,
+      ...(this.opts.extraTools ?? []).map((t) => `mcp__${MCP_NAMESPACE}__${t.name}`),
+    ]
+    const allowedTools = this.opts.allowedToolNames ?? defaultAllowed
 
     this.q = query({
       prompt: this.inputQueue,
       options: {
-        mcpServers: { agentyard: mcp },
-        tools: [], // no built-in Claude Code tools in Phase 1
-        allowedTools: [CLARIFICATION_TOOL],
+        mcpServers: { [MCP_NAMESPACE]: mcp },
+        tools: [],
+        allowedTools,
         persistSession: false,
-        settingSources: [], // ignore user/project settings; we want a clean session
+        settingSources: [],
         ...(this.opts.systemPrompt
           ? {
               agents: {
-                'agentyard-leader': {
-                  description: 'AgentYard chat session',
+                'agentyard-agent': {
+                  description: 'AgentYard runtime agent',
                   prompt: this.opts.systemPrompt,
-                  tools: [CLARIFICATION_TOOL],
+                  tools: allowedTools,
                 },
               },
-              agent: 'agentyard-leader',
+              agent: 'agentyard-agent',
             }
           : {}),
         ...(this.opts.model ? { model: this.opts.model } : {}),
@@ -104,11 +136,13 @@ export class Session extends EventEmitter implements ClarificationGateway {
       const text = err instanceof Error ? err.message : String(err)
       this.emitEvent({
         type: 'message',
+        agentRunId: this.id,
         message: { role: 'system', text: `[error] ${text}`, timestamp: Date.now() },
       })
       this.setState('failed')
+      this.rejectAsk(new Error(text))
     } finally {
-      this.emitEvent({ type: 'closed' })
+      this.emitEvent({ type: 'closed', agentRunId: this.id })
     }
   }
 
@@ -127,8 +161,10 @@ export class Session extends EventEmitter implements ClarificationGateway {
       if (text.trim().length > 0) {
         this.emitEvent({
           type: 'message',
+          agentRunId: this.id,
           message: { role: 'assistant', text, timestamp: Date.now() },
         })
+        if (this.askInflight) this.askText += (this.askText ? '\n' : '') + text
       }
       if (toolUseCount > 0) {
         this.setState('tool_running')
@@ -136,13 +172,11 @@ export class Session extends EventEmitter implements ClarificationGateway {
         this.setState('thinking')
       }
     } else if (msg.type === 'result') {
-      // 'result' is fired at the end of an agentic turn — back to idle.
       this.setState('idle')
-    } else if (msg.type === 'system') {
-      // System init / config — ignore for chat display.
+      this.resolveAsk()
     }
-    // Other message types (user echo, tool_result, etc.) are not surfaced
-    // in the chat UI for Phase 1.
+    // Other message types (system, user echo, tool_result, partial) are
+    // ignored for the chat surface in Phase 2.
   }
 
   /** Push a user message into the agent's input stream. */
@@ -150,6 +184,7 @@ export class Session extends EventEmitter implements ClarificationGateway {
     if (!this.q) throw new Error('Session not started')
     this.emitEvent({
       type: 'message',
+      agentRunId: this.id,
       message: { role: 'user', text, timestamp: Date.now() },
     })
     this.inputQueue.push({
@@ -160,6 +195,46 @@ export class Session extends EventEmitter implements ClarificationGateway {
     this.setState('thinking')
   }
 
+  /**
+   * Send a user message and resolve when the agent finishes its turn
+   * (`result` boundary). Returns the assistant text accumulated during
+   * that turn. Used by inter-agent delegation tools (assign_task).
+   */
+  ask(text: string): Promise<string> {
+    if (this.askInflight) {
+      return Promise.reject(new Error(`Session ${this.id} already has an in-flight ask()`))
+    }
+    this.askInflight = true
+    this.askText = ''
+    const p = new Promise<string>((resolve, reject) => {
+      this.askResolver = resolve
+      this.askRejecter = reject
+    })
+    this.sendUserMessage(text)
+    return p
+  }
+
+  private resolveAsk(): void {
+    if (!this.askInflight) return
+    const r = this.askResolver
+    const text = this.askText
+    this.askInflight = false
+    this.askResolver = null
+    this.askRejecter = null
+    this.askText = ''
+    r?.(text)
+  }
+
+  private rejectAsk(err: Error): void {
+    if (!this.askInflight) return
+    const r = this.askRejecter
+    this.askInflight = false
+    this.askResolver = null
+    this.askRejecter = null
+    this.askText = ''
+    r?.(err)
+  }
+
   /** Resolve a pending request_clarification call with the user's answer. */
   resolveClarification(id: string, answer: string): boolean {
     const resolver = this.pendingClarifications.get(id)
@@ -168,32 +243,34 @@ export class Session extends EventEmitter implements ClarificationGateway {
     resolver(answer)
     this.emitEvent({
       type: 'message',
+      agentRunId: this.id,
       message: { role: 'user', text: answer, timestamp: Date.now() },
     })
-    this.emitEvent({ type: 'clarification:resolved', id })
+    this.emitEvent({ type: 'clarification:resolved', agentRunId: this.id, id })
     this.setState('thinking')
     return true
   }
 
-  /** ClarificationGateway implementation — called by the request_clarification tool. */
+  /** ClarificationGateway — called by request_clarification tool. */
   request(req: ClarificationRequest): Promise<string> {
     return new Promise<string>((resolve) => {
       this.pendingClarifications.set(req.id, resolve)
       this.setState('awaiting_clarification')
-      this.emitEvent({ type: 'clarification:requested', req })
+      this.emitEvent({ type: 'clarification:requested', agentRunId: this.id, req })
     })
   }
 
   async close(): Promise<void> {
     this.q?.close()
     this.inputQueue.close()
+    this.rejectAsk(new Error('Session closed'))
     await this.consumePromise?.catch(() => {})
   }
 
   private setState(state: AgentState): void {
     if (this._state === state) return
     this._state = state
-    this.emitEvent({ type: 'state', state })
+    this.emitEvent({ type: 'state', agentRunId: this.id, state })
   }
 
   private emitEvent(ev: SessionEvent): void {
