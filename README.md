@@ -2,17 +2,18 @@
 
 A gamified agent orchestrator. Each project is a "ship" docked in a 2D sci-fi shipyard; agents are "drones" that build features under a "leader" agent; notifications feel like incoming transmissions. Built on the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk).
 
-> **Status:** Phase 1 — single-agent loop wired up (Claude Agent SDK, `request_clarification` tool, barge-in chat). Smoke test passes structurally; verify end-to-end Claude responses by refreshing your auth first.
+> **Status:** Phase 1 — single-agent loop verified end-to-end (Claude Agent SDK, `request_clarification` tool, barge-in chat). `scripts/smoke.ts` passes.
 
 ## Auth
 
-AgentYard inherits Claude credentials from the environment it runs in. The Claude Agent SDK supports either:
+AgentYard inherits Claude credentials from the parent process. The Claude Agent SDK supports any one of:
 
-- **Anthropic API key** — `ANTHROPIC_API_KEY` env var
-- **AWS Bedrock** — `CLAUDE_CODE_USE_BEDROCK=1` plus valid AWS credentials (and `AWS_REGION`)
-- **Google Vertex** — `CLAUDE_CODE_USE_VERTEX=1` plus valid GCP credentials
+- **Default Claude Code OAuth** (recommended) — credentials cached at `~/.claude/.credentials.json` after running `claude login`. No env vars needed.
+- **Anthropic API key** — set `ANTHROPIC_API_KEY`.
+- **AWS Bedrock** — set `CLAUDE_CODE_USE_BEDROCK=1` + valid AWS credentials + `AWS_REGION`.
+- **Google Vertex** — set `CLAUDE_CODE_USE_VERTEX=1` + valid GCP credentials.
 
-If you're on Bedrock and see `authentication_failed` 403s in the server log, your AWS token has likely expired — refresh via your usual flow (`aws sso login`, MFA refresh, etc.) and restart the dev server.
+If a 403 `authentication_failed` retry loop appears in the server log, one of the above is needed (or the active one is expired).
 
 ## Quick start
 
