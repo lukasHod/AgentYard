@@ -11,7 +11,7 @@ import type { Workflow } from '../core/schema'
 import { RunView, type ChatMessage, type PendingClarification } from './views/RunView'
 import { EditorView } from './views/EditorView'
 import { SkillsView, type SkillSummary } from './views/SkillsView'
-import { ShipsView } from './views/ShipsView'
+import { GameCanvas } from './canvas/GameCanvas'
 
 let messageIdCounter = 0
 const nextMessageId = () => `m${++messageIdCounter}`
@@ -362,11 +362,12 @@ export function App() {
       </header>
 
       {view === 'ships' && (
-        <ShipsView
+        <GameCanvas
           ships={ships}
           features={features}
+          sessions={sessionList}
+          pendings={pendings}
           onCreateShip={createShip}
-          onDeleteShip={deleteShip}
           onCreateFeature={createFeature}
           onJumpToRun={() => setView('run')}
         />

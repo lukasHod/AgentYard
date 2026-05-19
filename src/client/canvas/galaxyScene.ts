@@ -1,0 +1,181 @@
+import { Application, Container, FederatedPointerEvent, Ticker } from 'pixi.js'
+import type { ShipSummary } from '../../core/types'
+import { drawShipSprite, drawStarfield, shipPositionFor } from './sprites'
+
+export interface GalaxyEvents {
+  onShipClick?: (shipId: number) => void
+  onShipHover?: (shipId: number, screenX: number, screenY: number) => void
+  onShipHoverEnd?: () => void
+  onBackgroundClick?: () => void
+}
+
+interface ShipEntry {
+  container: Container
+  ship: ShipSummary
+}
+
+const MIN_ZOOM = 0.4
+const MAX_ZOOM = 2.5
+const ZOOM_SPEED = 0.0015
+
+/** Galaxy scene — the top-level map of all ships. */
+export class GalaxyScene {
+  readonly root: Container
+  private world: Container
+  private ships = new Map<number, ShipEntry>()
+  private dragging = false
+  private dragStart = { x: 0, y: 0 }
+  private worldStart = { x: 0, y: 0 }
+  private events: GalaxyEvents = {}
+  private app: Application
+  private starfield: Container
+  private bobTime = 0
+  private tickerFn: (t: Ticker) => void
+
+  constructor(app: Application, events: GalaxyEvents = {}) {
+    this.app = app
+    this.events = events
+    this.root = new Container()
+    this.world = new Container()
+    this.root.addChild(this.world)
+
+    // Center the world (camera at 0,0)
+    this.recenter()
+
+    // Starfield in the world coordinate space.
+    this.starfield = drawStarfield(3000, 2000)
+    this.world.addChildAt(this.starfield, 0)
+
+    this.attachBackgroundInteractions()
+
+    this.tickerFn = (t: Ticker) => this.tick(t)
+    this.app.ticker.add(this.tickerFn)
+  }
+
+  recenter() {
+    this.world.position.set(this.app.screen.width / 2, this.app.screen.height / 2)
+  }
+
+  destroy() {
+    this.app.ticker.remove(this.tickerFn)
+    this.root.destroy({ children: true })
+  }
+
+  setShips(list: ShipSummary[], activeIds?: Set<number>) {
+    const incoming = new Map(list.map((s) => [s.id, s]))
+    // Remove gone ships.
+    for (const [id, entry] of this.ships) {
+      if (!incoming.has(id)) {
+        this.world.removeChild(entry.container)
+        entry.container.destroy({ children: true })
+        this.ships.delete(id)
+      }
+    }
+    // Add or update.
+    for (const ship of list) {
+      const existing = this.ships.get(ship.id)
+      const active = activeIds?.has(ship.id) ?? false
+      if (existing) {
+        // Update name label / glow if changed (simplest: rebuild if name or active changed).
+        if (existing.ship.name !== ship.name || existing.ship.state !== ship.state) {
+          this.world.removeChild(existing.container)
+          existing.container.destroy({ children: true })
+          this.spawnShip(ship, active)
+        } else {
+          // Just toggle glow if active changed (rebuild for simplicity).
+        }
+      } else {
+        this.spawnShip(ship, active)
+      }
+    }
+  }
+
+  setActiveIds(activeIds: Set<number>) {
+    for (const [id, entry] of this.ships) {
+      // Re-draw if its active state differs from current alpha mark.
+      const wanted = activeIds.has(id)
+      const current = entry.container.alpha === 1 // we don't track active flag; rebuild approach
+      if (wanted !== current) {
+        // No-op for now — keep simple. Phase 7 can add proper pulse animation.
+      }
+    }
+  }
+
+  private spawnShip(ship: ShipSummary, active: boolean) {
+    const pos = shipPositionFor(ship.id)
+    const sprite = drawShipSprite({ shipId: ship.id, name: ship.name, glow: active, pulse: active })
+    sprite.position.set(pos.x, pos.y)
+
+    sprite.on('pointerdown', (e) => {
+      // Stop propagation so the background drag doesn't fire.
+      e.stopPropagation()
+      this.events.onShipClick?.(ship.id)
+    })
+    sprite.on('pointerover', (e: FederatedPointerEvent) => {
+      this.events.onShipHover?.(ship.id, e.globalX, e.globalY)
+    })
+    sprite.on('pointerout', () => {
+      this.events.onShipHoverEnd?.()
+    })
+
+    this.world.addChild(sprite)
+    this.ships.set(ship.id, { container: sprite, ship })
+  }
+
+  private attachBackgroundInteractions() {
+    const stage = this.app.stage
+    stage.eventMode = 'static'
+    stage.hitArea = this.app.screen
+    stage.on('pointerdown', (e: FederatedPointerEvent) => {
+      this.dragging = true
+      this.dragStart = { x: e.globalX, y: e.globalY }
+      this.worldStart = { x: this.world.position.x, y: this.world.position.y }
+    })
+    stage.on('pointermove', (e: FederatedPointerEvent) => {
+      if (!this.dragging) return
+      this.world.position.set(
+        this.worldStart.x + (e.globalX - this.dragStart.x),
+        this.worldStart.y + (e.globalY - this.dragStart.y),
+      )
+    })
+    const endDrag = (e: FederatedPointerEvent) => {
+      const moved =
+        Math.abs(e.globalX - this.dragStart.x) > 4 || Math.abs(e.globalY - this.dragStart.y) > 4
+      this.dragging = false
+      // If we didn't actually drag, count it as a background click.
+      if (!moved) this.events.onBackgroundClick?.()
+    }
+    stage.on('pointerup', endDrag)
+    stage.on('pointerupoutside', endDrag)
+
+    // Wheel zoom — bind to the canvas DOM element.
+    this.app.canvas.addEventListener('wheel', this.onWheel, { passive: false })
+  }
+
+  private onWheel = (e: WheelEvent) => {
+    e.preventDefault()
+    const dz = -e.deltaY * ZOOM_SPEED
+    const oldScale = this.world.scale.x
+    const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldScale + dz * oldScale))
+    if (newScale === oldScale) return
+    // Zoom around mouse position.
+    const rect = this.app.canvas.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    // World coords under mouse before zoom.
+    const wx = (mx - this.world.position.x) / oldScale
+    const wy = (my - this.world.position.y) / oldScale
+    this.world.scale.set(newScale)
+    // Adjust position so the same world point stays under the cursor.
+    this.world.position.set(mx - wx * newScale, my - wy * newScale)
+  }
+
+  private tick(t: Ticker) {
+    // Idle bobbing — gentle Y wobble for each ship.
+    this.bobTime += t.deltaMS * 0.001
+    for (const [, entry] of this.ships) {
+      const base = shipPositionFor(entry.ship.id)
+      entry.container.position.y = base.y + Math.sin(this.bobTime + base.x * 0.01) * 2
+    }
+  }
+}
