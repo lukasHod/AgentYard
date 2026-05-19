@@ -14,6 +14,7 @@ import {
   createMarkNodeCompleteTool,
   type NodeCompleteOutputs,
 } from './tools/markNodeComplete.js'
+import { renderSkillContext } from '../skills.js'
 
 export interface RunWorkflowOptions {
   workflow: Workflow
@@ -27,12 +28,14 @@ async function runNodeOnSessions(
   manager: SessionManager,
   input: NodeRunInput,
 ): Promise<NodeRunResult> {
+  const skillContext = renderSkillContext(input.skills)
   const droneByRole = new Map<string, Session>()
   for (const slot of input.drones) {
+    const basePrompt = `You are the ${slot.role.toUpperCase()} drone for the ${input.node.title} phase of an AgentYard workflow. When the leader delegates to you, perform your role in a concise way (3–6 lines unless asked for more). If the request is ambiguous, use the request_clarification tool. Do not call tools you do not have.`
     const drone = manager.spawn({
       role: 'drone',
       label: `${input.node.id}/${slot.role}`,
-      systemPrompt: `You are the ${slot.role.toUpperCase()} drone for the ${input.node.title} phase of an AgentYard workflow. When the leader delegates to you, perform your role in a concise way (3–6 lines unless asked for more). If the request is ambiguous, use the request_clarification tool. Do not call tools you do not have.`,
+      systemPrompt: skillContext ? `${skillContext}\n\n## Your role\n${basePrompt}` : basePrompt,
     })
     droneByRole.set(slot.role, drone)
   }

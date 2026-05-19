@@ -16,9 +16,11 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowGraph, WorkflowNode } from '../../core/schema'
+import type { SkillSummary } from './SkillsView'
 
 interface Props {
   workflow: Workflow | null
+  skills: SkillSummary[]
   onSave: (workflow: Workflow) => Promise<void> | void
 }
 
@@ -64,7 +66,7 @@ function WorkflowNodeView({ data, selected }: { data: { node: WorkflowNode }; se
   )
 }
 
-export function EditorView({ workflow, onSave }: Props) {
+export function EditorView({ workflow, skills, onSave }: Props) {
   const [nodes, setNodes] = useState<WorkflowRFNode[]>([])
   const [edges, setEdges] = useState<RFEdge[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -182,7 +184,12 @@ export function EditorView({ workflow, onSave }: Props) {
       {/* Properties panel */}
       <aside className="w-96 border-l border-cyan-500/30 p-4 overflow-y-auto text-xs">
         {selectedNode ? (
-          <NodeEditor key={selectedNode.id} node={selectedNode} onChange={updateSelectedNode} />
+          <NodeEditor
+            key={selectedNode.id}
+            node={selectedNode}
+            skills={skills}
+            onChange={updateSelectedNode}
+          />
         ) : (
           <p className="text-zinc-600 italic">// click a node to edit it</p>
         )}
@@ -193,9 +200,11 @@ export function EditorView({ workflow, onSave }: Props) {
 
 function NodeEditor({
   node,
+  skills,
   onChange,
 }: {
   node: WorkflowNode
+  skills: SkillSummary[]
   onChange: (patch: Partial<WorkflowNode>) => void
 }) {
   return (
@@ -277,34 +286,57 @@ function NodeEditor({
 
       <div>
         <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">SKILLS</label>
-        <div className="space-y-1">
-          {node.skills.map((s, i) => (
-            <div key={i} className="flex items-center gap-1">
-              <input
-                value={s}
-                onChange={(e) => {
-                  const next = [...node.skills]
-                  next[i] = e.target.value
-                  onChange({ skills: next })
-                }}
-                className="flex-1 bg-black border border-cyan-500/40 rounded px-2 py-1"
-              />
-              <button
-                onClick={() => onChange({ skills: node.skills.filter((_, j) => j !== i) })}
-                className="px-2 py-1 border border-rose-500/60 text-rose-300 hover:bg-rose-500/20"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={() => onChange({ skills: [...node.skills, 'new-skill'] })}
-            className="px-2 py-1 border border-zinc-500 text-zinc-400 hover:bg-zinc-700"
-          >
-            + add skill
-          </button>
-        </div>
-        <p className="text-[10px] text-zinc-600 mt-1">(skills are placeholders for Phase 4)</p>
+        {skills.length === 0 ? (
+          <p className="text-[10px] text-zinc-600">
+            // no skills loaded. go to the <span className="text-cyan-400">skills</span> tab and refresh.
+          </p>
+        ) : (
+          <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+            {skills.map((s) => {
+              const attached = node.skills.includes(s.name)
+              return (
+                <label
+                  key={s.name}
+                  className="flex items-start gap-2 cursor-pointer hover:bg-zinc-800/40 px-1 py-0.5 rounded"
+                >
+                  <input
+                    type="checkbox"
+                    checked={attached}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                        ? [...node.skills, s.name]
+                        : node.skills.filter((n) => n !== s.name)
+                      onChange({ skills: next })
+                    }}
+                    className="mt-0.5 accent-cyan-500"
+                  />
+                  <span className="flex-1">
+                    <span className="text-cyan-300">{s.name}</span>
+                    {s.description && (
+                      <span className="block text-[10px] text-zinc-500 leading-tight">
+                        {s.description}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        )}
+        {/* Attached but no longer in the library: show as stale entries */}
+        {node.skills.filter((n) => !skills.find((s) => s.name === n)).map((n) => (
+          <div key={n} className="flex items-center gap-1 mt-1">
+            <span className="flex-1 text-amber-300 text-[10px]">
+              {n} <span className="text-zinc-500">(missing from library)</span>
+            </span>
+            <button
+              onClick={() => onChange({ skills: node.skills.filter((x) => x !== n) })}
+              className="px-2 py-0.5 border border-rose-500/60 text-rose-300 hover:bg-rose-500/20 text-[10px]"
+            >
+              remove
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   )
