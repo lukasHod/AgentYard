@@ -366,9 +366,14 @@ export function App() {
           ships={ships}
           features={features}
           sessions={sessionList}
+          transcripts={transcripts}
           pendings={pendings}
+          connected={connected}
           onCreateShip={createShip}
           onCreateFeature={createFeature}
+          onSend={sendMessage}
+          onClarificationReply={replyClarification}
+          onOpenWorkflow={() => setView('editor')}
           onJumpToRun={() => setView('run')}
         />
       )}

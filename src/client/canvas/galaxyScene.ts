@@ -1,6 +1,8 @@
-import { Application, Container, FederatedPointerEvent, Ticker } from 'pixi.js'
+import { Application, BlurFilter, Container, FederatedPointerEvent, Graphics, Ticker } from 'pixi.js'
 import type { ShipSummary } from '../../core/types'
 import { drawShipSprite, drawStarfield, shipPositionFor } from './sprites'
+
+export type ShipMood = 'idle' | 'active' | 'attention'
 
 export interface GalaxyEvents {
   onShipClick?: (shipId: number) => void
@@ -11,7 +13,9 @@ export interface GalaxyEvents {
 
 interface ShipEntry {
   container: Container
+  halo: Graphics
   ship: ShipSummary
+  mood: ShipMood
 }
 
 const MIN_ZOOM = 0.4
@@ -94,31 +98,36 @@ export class GalaxyScene {
     this.root.destroy({ children: true })
   }
 
-  setShips(list: ShipSummary[], activeIds?: Set<number>) {
+  setShips(list: ShipSummary[], moods?: Map<number, ShipMood>) {
     const incoming = new Map(list.map((s) => [s.id, s]))
     // Remove gone ships.
     for (const [id, entry] of this.ships) {
       if (!incoming.has(id)) {
         this.world.removeChild(entry.container)
+        this.world.removeChild(entry.halo)
         entry.container.destroy({ children: true })
+        entry.halo.destroy()
         this.ships.delete(id)
       }
     }
     // Add or update.
     for (const ship of list) {
       const existing = this.ships.get(ship.id)
-      const active = activeIds?.has(ship.id) ?? false
+      const mood = moods?.get(ship.id) ?? 'idle'
       if (existing) {
-        // Update name label / glow if changed (simplest: rebuild if name or active changed).
-        if (existing.ship.name !== ship.name || existing.ship.state !== ship.state) {
+        // Rebuild only if the name changed (visible label).
+        if (existing.ship.name !== ship.name) {
           this.world.removeChild(existing.container)
+          this.world.removeChild(existing.halo)
           existing.container.destroy({ children: true })
-          this.spawnShip(ship, active)
+          existing.halo.destroy()
+          this.spawnShip(ship, mood)
         } else {
-          // Just toggle glow if active changed (rebuild for simplicity).
+          this.updateMood(existing, mood)
+          existing.ship = ship
         }
       } else {
-        this.spawnShip(ship, active)
+        this.spawnShip(ship, mood)
       }
     }
 
@@ -129,24 +138,22 @@ export class GalaxyScene {
     }
   }
 
-  setActiveIds(activeIds: Set<number>) {
-    for (const [id, entry] of this.ships) {
-      // Re-draw if its active state differs from current alpha mark.
-      const wanted = activeIds.has(id)
-      const current = entry.container.alpha === 1 // we don't track active flag; rebuild approach
-      if (wanted !== current) {
-        // No-op for now — keep simple. Phase 7 can add proper pulse animation.
-      }
-    }
-  }
-
-  private spawnShip(ship: ShipSummary, active: boolean) {
+  private spawnShip(ship: ShipSummary, mood: ShipMood) {
     const pos = shipPositionFor(ship.id)
-    const sprite = drawShipSprite({ shipId: ship.id, name: ship.name, glow: active, pulse: active })
+
+    // Halo behind the ship, animated in tick().
+    const halo = new Graphics()
+    halo.circle(0, 0, 40).fill({ color: 0x22d3ee, alpha: 1 })
+    halo.filters = [new BlurFilter({ strength: 14 })]
+    halo.position.set(pos.x, pos.y)
+    halo.alpha = 0 // shown only when mood demands it
+    halo.eventMode = 'none'
+    this.world.addChild(halo)
+
+    const sprite = drawShipSprite({ shipId: ship.id, name: ship.name })
     sprite.position.set(pos.x, pos.y)
 
     sprite.on('pointerdown', (e) => {
-      // Stop propagation so the background drag doesn't fire.
       e.stopPropagation()
       this.events.onShipClick?.(ship.id)
     })
@@ -158,7 +165,18 @@ export class GalaxyScene {
     })
 
     this.world.addChild(sprite)
-    this.ships.set(ship.id, { container: sprite, ship })
+    const entry: ShipEntry = { container: sprite, halo, ship, mood }
+    this.ships.set(ship.id, entry)
+    this.updateMood(entry, mood)
+  }
+
+  private updateMood(entry: ShipEntry, mood: ShipMood): void {
+    if (entry.mood === mood) return
+    entry.mood = mood
+    // Recolor halo.
+    entry.halo.clear()
+    const color = mood === 'attention' ? 0xfbbf24 /* amber-400 */ : 0x22d3ee /* cyan-400 */
+    entry.halo.circle(0, 0, 40).fill({ color, alpha: 1 })
   }
 
   private attachBackgroundInteractions() {
@@ -210,11 +228,25 @@ export class GalaxyScene {
   }
 
   private tick(t: Ticker) {
-    // Idle bobbing — gentle Y wobble for each ship.
+    // Idle bobbing + halo pulse.
     this.bobTime += t.deltaMS * 0.001
     for (const [, entry] of this.ships) {
       const base = shipPositionFor(entry.ship.id)
-      entry.container.position.y = base.y + Math.sin(this.bobTime + base.x * 0.01) * 2
+      const y = base.y + Math.sin(this.bobTime + base.x * 0.01) * 2
+      entry.container.position.y = y
+      entry.halo.position.set(base.x, y)
+
+      // Halo pulse: 0 alpha if idle; otherwise sinusoidal alpha + scale.
+      if (entry.mood === 'idle') {
+        entry.halo.alpha = 0
+      } else {
+        const period = entry.mood === 'attention' ? 0.6 : 1.8 // seconds
+        const ph = (Math.sin((this.bobTime / period) * Math.PI * 2) + 1) / 2 // 0..1
+        const maxAlpha = entry.mood === 'attention' ? 0.65 : 0.35
+        const minAlpha = entry.mood === 'attention' ? 0.25 : 0.1
+        entry.halo.alpha = minAlpha + (maxAlpha - minAlpha) * ph
+        entry.halo.scale.set(0.85 + ph * 0.35)
+      }
     }
   }
 }

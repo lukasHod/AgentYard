@@ -5,16 +5,23 @@ import type {
   SessionDescriptor,
   ShipSummary,
 } from '../../core/types'
-import { GalaxyScene } from './galaxyScene'
+import { GalaxyScene, type ShipMood } from './galaxyScene'
 import { DockScene, type DockDroneSpec } from './dockScene'
+import { AgentChat, type AgentChatMessage, type AgentChatPending } from '../components/AgentChat'
+import { isAudioMuted, playClarificationChime, setAudioMuted } from './chime'
 
 interface Props {
   ships: ShipSummary[]
   features: Map<number, FeatureSummary[]>
   sessions: SessionDescriptor[]
-  pendings: Map<string, { toolUseId: string; question: string }>
+  transcripts: Map<string, AgentChatMessage[]>
+  pendings: Map<string, AgentChatPending>
+  connected: boolean
   onCreateShip: (name: string, projectPath: string) => Promise<void> | void
   onCreateFeature: (shipId: number, name: string, task: string) => Promise<FeatureSummary | null>
+  onSend: (agentRunId: string, content: string) => void
+  onClarificationReply: (agentRunId: string, toolUseId: string, answer: string) => void
+  onOpenWorkflow?: () => void
   onJumpToRun?: () => void
 }
 
@@ -34,10 +41,22 @@ export function GameCanvas(props: Props) {
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
   const [newShipOpen, setNewShipOpen] = useState(false)
   const [newFeatureOpen, setNewFeatureOpen] = useState(false)
+  const [openedDroneId, setOpenedDroneId] = useState<string | null>(null)
+  const [shipModalOpen, setShipModalOpen] = useState(false)
+  const [inboxOpen, setInboxOpen] = useState(false)
+  const [muted, setMuted] = useState<boolean>(isAudioMuted())
   const [shipName, setShipName] = useState('')
   const [shipPath, setShipPath] = useState('')
   const [featureName, setFeatureName] = useState('')
   const [featureTask, setFeatureTask] = useState('')
+
+  // Play chime whenever pendings count increases.
+  const prevPendingCountRef = useRef(props.pendings.size)
+  useEffect(() => {
+    const cur = props.pendings.size
+    if (cur > prevPendingCountRef.current) playClarificationChime()
+    prevPendingCountRef.current = cur
+  }, [props.pendings])
 
   // ---- 1. Mount PixiJS app on first render. ----
   useEffect(() => {
@@ -101,7 +120,8 @@ export function GameCanvas(props: Props) {
     } else {
       const dock = new DockScene(app, {
         onBack: () => setSelectedShipId(null),
-        onShipHullClick: () => setNewFeatureOpen(true),
+        onShipHullClick: () => setShipModalOpen(true),
+        onDroneClick: (_role, agentRunId) => setOpenedDroneId(agentRunId),
       })
       app.stage.addChild(dock.root)
       dockRef.current = dock
@@ -111,12 +131,17 @@ export function GameCanvas(props: Props) {
   // ---- 3. Push ships into the galaxy scene whenever they change. ----
   useEffect(() => {
     if (!galaxyRef.current) return
-    const activeShipIds = new Set<number>()
-    for (const [shipId, fs] of props.features) {
-      if (fs.some((f) => f.status === 'running')) activeShipIds.add(shipId)
+    const moods = new Map<number, ShipMood>()
+    const anyPending = props.pendings.size > 0
+    for (const ship of props.ships) {
+      const fs = props.features.get(ship.id) ?? []
+      const running = fs.some((f) => f.status === 'running')
+      if (running && anyPending) moods.set(ship.id, 'attention')
+      else if (running) moods.set(ship.id, 'active')
+      else moods.set(ship.id, 'idle')
     }
-    galaxyRef.current.setShips(props.ships, activeShipIds)
-  }, [props.ships, props.features, selectedShipId])
+    galaxyRef.current.setShips(props.ships, moods)
+  }, [props.ships, props.features, props.pendings, selectedShipId])
 
   // ---- 4. Push current ship + drones into the dock scene. ----
   useEffect(() => {
@@ -217,25 +242,94 @@ export function GameCanvas(props: Props) {
             </>
           )}
           {selectedShipId !== null && selectedShip && (
-            <button
-              onClick={() => setNewFeatureOpen(true)}
-              className="px-3 py-1 border border-fuchsia-500 text-fuchsia-300 hover:bg-fuchsia-500 hover:text-black tracking-wide bg-black/70"
-            >
-              ▶ new feature
-            </button>
+            <>
+              <button
+                onClick={() => setShipModalOpen(true)}
+                className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide bg-black/70"
+              >
+                ship details
+              </button>
+              <button
+                onClick={() => setNewFeatureOpen(true)}
+                className="px-3 py-1 border border-fuchsia-500 text-fuchsia-300 hover:bg-fuchsia-500 hover:text-black tracking-wide bg-black/70"
+              >
+                ▶ new feature
+              </button>
+            </>
           )}
         </div>
 
-        <div className="pointer-events-auto flex items-center gap-3 text-xs bg-black/70 border border-cyan-500/30 px-3 py-1">
-          <span className="text-cyan-200">
-            {props.ships.length} ship{props.ships.length === 1 ? '' : 's'}
-          </span>
-          <span className="text-zinc-700">·</span>
-          <span className={totalPendingClarifications > 0 ? 'text-amber-300 animate-pulse' : 'text-zinc-500'}>
-            {totalPendingClarifications} pending
-          </span>
+        <div className="pointer-events-auto flex items-center gap-2 text-xs">
+          <div className="bg-black/70 border border-cyan-500/30 px-3 py-1 flex items-center gap-3">
+            <span className="text-cyan-200">
+              {props.ships.length} ship{props.ships.length === 1 ? '' : 's'}
+            </span>
+            <span className="text-zinc-700">·</span>
+            <button
+              onClick={() => setInboxOpen((v) => !v)}
+              className={`${
+                totalPendingClarifications > 0 ? 'text-amber-300' : 'text-zinc-500'
+              } hover:text-amber-200 ${totalPendingClarifications > 0 ? 'animate-pulse' : ''}`}
+            >
+              {totalPendingClarifications} pending
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              const next = !muted
+              setMuted(next)
+              setAudioMuted(next)
+            }}
+            title={muted ? 'unmute clarification chime' : 'mute clarification chime'}
+            className="bg-black/70 border border-cyan-500/30 px-2 py-1 text-zinc-300 hover:text-cyan-200"
+          >
+            {muted ? '🔇' : '🔊'}
+          </button>
         </div>
       </div>
+
+      {/* Notifications inbox popover */}
+      {inboxOpen && (
+        <div
+          className="absolute right-3 top-12 w-80 bg-black/95 border border-amber-400/40 z-10 pointer-events-auto text-xs"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="border-b border-amber-400/30 px-3 py-2 flex items-center justify-between">
+            <span className="text-amber-300 tracking-widest text-[10px]">INBOX</span>
+            <button onClick={() => setInboxOpen(false)} className="text-zinc-500 hover:text-zinc-300">
+              ×
+            </button>
+          </div>
+          {props.pendings.size === 0 ? (
+            <p className="px-3 py-3 text-zinc-600 italic">// no pending transmissions.</p>
+          ) : (
+            <ul>
+              {Array.from(props.pendings.entries()).map(([agentRunId, p]) => {
+                const session = props.sessions.find((s) => s.id === agentRunId)
+                return (
+                  <li
+                    key={agentRunId}
+                    className="px-3 py-2 border-b border-amber-400/10 hover:bg-amber-500/5 cursor-pointer"
+                    onClick={() => {
+                      setInboxOpen(false)
+                      // Make sure the parent ship is open in dock view.
+                      // Heuristic: if a drone is awaiting input, the ship is the one with a running feature.
+                      const runningShip = props.ships.find(
+                        (s) => (props.features.get(s.id) ?? []).some((f) => f.status === 'running'),
+                      )
+                      if (runningShip) setSelectedShipId(runningShip.id)
+                      setOpenedDroneId(agentRunId)
+                    }}
+                  >
+                    <div className="text-cyan-300">{session?.label ?? agentRunId.slice(0, 8)}</div>
+                    <p className="text-zinc-300 mt-0.5 line-clamp-2">{p.question}</p>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Dock view side panel — feature list for selected ship */}
       {selectedShipId !== null && selectedShip && (
@@ -319,6 +413,62 @@ export function GameCanvas(props: Props) {
         </Modal>
       )}
 
+      {/* DroneModal — click a drone → chat with it */}
+      {openedDroneId && (
+        <ChatModal
+          title={`DRONE / ${props.sessions.find((s) => s.id === openedDroneId)?.label ?? openedDroneId.slice(0, 8)}`}
+          agentRunId={openedDroneId}
+          session={props.sessions.find((s) => s.id === openedDroneId) ?? null}
+          transcript={props.transcripts.get(openedDroneId) ?? []}
+          pending={props.pendings.get(openedDroneId) ?? null}
+          connected={props.connected}
+          onSend={(content) => props.onSend(openedDroneId, content)}
+          onReply={(toolUseId, answer) => props.onClarificationReply(openedDroneId, toolUseId, answer)}
+          onClose={() => setOpenedDroneId(null)}
+        />
+      )}
+
+      {/* ShipModal — click ship hull → ship details + leader chat */}
+      {shipModalOpen && selectedShip && (
+        <ShipDetailsModal
+          ship={selectedShip}
+          features={selectedShipFeatures}
+          sessions={props.sessions}
+          transcripts={props.transcripts}
+          pendings={props.pendings}
+          connected={props.connected}
+          onSend={props.onSend}
+          onReply={props.onClarificationReply}
+          onNewFeature={() => {
+            setShipModalOpen(false)
+            setNewFeatureOpen(true)
+          }}
+          onOpenWorkflow={() => {
+            setShipModalOpen(false)
+            props.onOpenWorkflow?.()
+          }}
+          onClose={() => setShipModalOpen(false)}
+        />
+      )}
+
+      {/* First-launch empty state */}
+      {props.ships.length === 0 && selectedShipId === null && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="bg-black/80 border border-cyan-500/40 px-8 py-6 text-center pointer-events-auto max-w-md">
+            <div className="text-cyan-300 tracking-[0.3em] text-xs mb-3">WELCOME, CAPTAIN</div>
+            <p className="text-zinc-300 mb-4">
+              The shipyard is quiet. Register your first ship to begin — point it at a git repo on your machine and the drones will report for duty.
+            </p>
+            <button
+              onClick={() => setNewShipOpen(true)}
+              className="px-4 py-2 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide text-xs"
+            >
+              + register first ship
+            </button>
+          </div>
+        </div>
+      )}
+
       {newFeatureOpen && selectedShip && (
         <Modal
           title={`NEW FEATURE — ${selectedShip.name}`}
@@ -380,6 +530,172 @@ function Modal({
           >
             launch
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ChatModal({
+  title,
+  agentRunId,
+  session,
+  transcript,
+  pending,
+  connected,
+  onSend,
+  onReply,
+  onClose,
+}: {
+  title: string
+  agentRunId: string
+  session: SessionDescriptor | null
+  transcript: AgentChatMessage[]
+  pending: AgentChatPending | null
+  connected: boolean
+  onSend: (content: string) => void
+  onReply: (toolUseId: string, answer: string) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-20">
+      <div className="bg-black border border-cyan-500/60 rounded w-full max-w-2xl h-[70vh] flex flex-col">
+        <div className="border-b border-cyan-500/40 px-4 py-2 flex items-center justify-between">
+          <h2 className="text-cyan-300 tracking-widest text-xs">{title}</h2>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-xs">
+            ×
+          </button>
+        </div>
+        <div className="flex-1 min-h-0">
+          <AgentChat
+            agentRunId={agentRunId}
+            label={session?.label}
+            role={session?.role}
+            state={session?.state}
+            transcript={transcript}
+            pending={pending}
+            connected={connected}
+            onSend={onSend}
+            onReply={onReply}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ShipDetailsModal({
+  ship,
+  features,
+  sessions,
+  transcripts,
+  pendings,
+  connected,
+  onSend,
+  onReply,
+  onNewFeature,
+  onOpenWorkflow,
+  onClose,
+}: {
+  ship: ShipSummary
+  features: FeatureSummary[]
+  sessions: SessionDescriptor[]
+  transcripts: Map<string, AgentChatMessage[]>
+  pendings: Map<string, AgentChatPending>
+  connected: boolean
+  onSend: (agentRunId: string, content: string) => void
+  onReply: (agentRunId: string, toolUseId: string, answer: string) => void
+  onNewFeature: () => void
+  onOpenWorkflow: () => void
+  onClose: () => void
+}) {
+  const runningFeature = features.find((f) => f.status === 'running')
+  // Heuristic: while a feature is running, the leader session is the one with role=leader.
+  const leader = runningFeature ? sessions.find((s) => s.role === 'leader') : undefined
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-20">
+      <div className="bg-black border border-cyan-500/60 rounded w-full max-w-3xl h-[80vh] flex flex-col">
+        <div className="border-b border-cyan-500/40 px-4 py-2 flex items-center justify-between">
+          <div>
+            <h2 className="text-cyan-300 tracking-widest text-xs">SHIP / {ship.name.toUpperCase()}</h2>
+            <p className="text-[10px] text-zinc-500 font-mono mt-0.5">{ship.projectPath}</p>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-xs">
+            ×
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 grid grid-cols-2 divide-x divide-cyan-500/20">
+          {/* Left: features list + actions */}
+          <div className="flex flex-col p-3 overflow-y-auto">
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={onNewFeature}
+                className="px-3 py-1 border border-fuchsia-500 text-fuchsia-300 hover:bg-fuchsia-500 hover:text-black text-xs tracking-wide"
+              >
+                ▶ new feature
+              </button>
+              <button
+                onClick={onOpenWorkflow}
+                className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black text-xs tracking-wide"
+              >
+                ⚙ workflow editor
+              </button>
+            </div>
+            <h3 className="text-[10px] tracking-widest text-zinc-500 mb-1">FEATURES</h3>
+            {features.length === 0 ? (
+              <p className="text-zinc-600 italic text-xs">// no features yet</p>
+            ) : (
+              <ul className="space-y-2 text-xs">
+                {features.map((f) => (
+                  <li key={f.id} className="border border-cyan-500/20 rounded p-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-cyan-300 truncate">{f.name}</span>
+                      <span
+                        className={`text-[10px] tracking-widest ${
+                          f.status === 'running'
+                            ? 'text-cyan-300'
+                            : f.status === 'complete'
+                              ? 'text-emerald-300'
+                              : f.status === 'failed'
+                                ? 'text-rose-400'
+                                : 'text-zinc-500'
+                        }`}
+                      >
+                        {f.status}
+                      </span>
+                    </div>
+                    <p className="text-zinc-300 mt-1 text-[11px] whitespace-pre-wrap line-clamp-2">{f.task}</p>
+                    {f.branch && (
+                      <p className="text-[10px] text-zinc-500 mt-1 font-mono truncate">{f.branch}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Right: leader chat (if active) */}
+          <div className="flex flex-col">
+            {leader ? (
+              <AgentChat
+                agentRunId={leader.id}
+                label={leader.label ?? 'leader'}
+                role={leader.role}
+                state={leader.state}
+                transcript={transcripts.get(leader.id) ?? []}
+                pending={pendings.get(leader.id) ?? null}
+                connected={connected}
+                onSend={(c) => onSend(leader.id, c)}
+                onReply={(t, a) => onReply(leader.id, t, a)}
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-xs text-zinc-600 italic p-4 text-center">
+                // no active leader for this ship. start a new feature to bring one online.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
