@@ -3,7 +3,10 @@ import fastifyStatic from '@fastify/static'
 import { Server as IOServer, type Socket } from 'socket.io'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { simpleGit } from 'simple-git'
 import { getDb } from './db.js'
 import { SessionManager, type SessionDescriptor } from './runtime/SessionManager.js'
 import type { Session, SessionEvent } from './runtime/Session.js'
@@ -18,6 +21,8 @@ import { getLoadedSkills, scanSkills } from './skills.js'
 import { createShip, deleteShip, getShip, listShips } from './ships.js'
 import { createFeature, getFeature, listFeatures, updateFeature, type Feature } from './features.js'
 import { createFeatureWorktree, removeFeatureWorktree } from './runtime/worktrees.js'
+
+const execFileP = promisify(execFile)
 import { WorkflowGraphSchema } from '../core/schema.js'
 import type { RunEvent } from '../core/executor.js'
 
@@ -322,6 +327,97 @@ export async function startServer(opts: ServerOptions) {
     deleteShip(Number(req.params.id))
     io.emit('ship:deleted', { id: Number(req.params.id) })
     return { ok: true }
+  })
+
+  // -------------------------------------------------------------------
+  // Ship metadata: description (README), tools (CLIs + MCPs)
+  // -------------------------------------------------------------------
+  app.get<{ Params: { id: string } }>('/api/ships/:id/description', async (req, reply) => {
+    const ship = getShip(Number(req.params.id))
+    if (!ship) return reply.code(404).send({ error: 'ship not found' })
+
+    let readme: string | null = null
+    let readmePath: string | null = null
+    for (const candidate of ['README.md', 'README', 'README.txt', 'Readme.md']) {
+      const p = path.join(ship.projectPath, candidate)
+      if (existsSync(p)) {
+        try {
+          readme = readFileSync(p, 'utf8')
+          readmePath = candidate
+          break
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    let git: { branch?: string; head?: { sha: string; subject: string } } = {}
+    if (existsSync(ship.projectPath)) {
+      try {
+        const g = simpleGit(ship.projectPath)
+        if (await g.checkIsRepo()) {
+          const branch = (await g.revparse(['--abbrev-ref', 'HEAD'])).trim()
+          const log = await g.log({ maxCount: 1 }).catch(() => null)
+          git = {
+            branch,
+            head: log?.latest ? { sha: log.latest.hash.slice(0, 7), subject: log.latest.message } : undefined,
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return { readme, readmePath, git, projectPath: ship.projectPath }
+  })
+
+  app.get('/api/mcp/servers', async () => {
+    const db = getDb()
+    const rows = db.prepare('SELECT id, name, config_json, enabled FROM mcp_servers ORDER BY name').all() as Array<{
+      id: number
+      name: string
+      config_json: string
+      enabled: number
+    }>
+    return rows.map((r) => {
+      let config: unknown = null
+      try {
+        config = JSON.parse(r.config_json)
+      } catch {
+        // ignore
+      }
+      return { id: r.id, name: r.name, enabled: r.enabled === 1, config }
+    })
+  })
+
+  // Curated CLIs that drones could plausibly call via Bash.
+  const CLI_PROBES: Array<{ name: string; args: string[] }> = [
+    { name: 'git', args: ['--version'] },
+    { name: 'gh', args: ['--version'] },
+    { name: 'node', args: ['--version'] },
+    { name: 'npm', args: ['--version'] },
+    { name: 'pnpm', args: ['--version'] },
+    { name: 'python', args: ['--version'] },
+    { name: 'docker', args: ['--version'] },
+    { name: 'claude', args: ['--version'] },
+  ]
+
+  app.get('/api/clis', async () => {
+    const results = await Promise.all(
+      CLI_PROBES.map(async (probe) => {
+        try {
+          const { stdout, stderr } = await execFileP(probe.name, probe.args, {
+            timeout: 3000,
+            windowsHide: true,
+          })
+          const out = (stdout || stderr || '').split(/\r?\n/)[0]?.trim() ?? ''
+          return { name: probe.name, available: true, version: out }
+        } catch {
+          return { name: probe.name, available: false, version: null }
+        }
+      }),
+    )
+    return results
   })
 
   // -------------------------------------------------------------------

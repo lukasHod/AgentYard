@@ -368,6 +368,7 @@ export function App() {
           sessions={sessionList}
           transcripts={transcripts}
           pendings={pendings}
+          skills={skills}
           connected={connected}
           onCreateShip={createShip}
           onCreateFeature={createFeature}
