@@ -1,0 +1,62 @@
+{
+  "name": "agentyard",
+  "version": "0.0.1",
+  "description": "Gamified agent orchestrator — a sci-fi shipyard for managing development workflows across many projects.",
+  "type": "module",
+  "bin": {
+    "agentyard": "dist/server/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,green \"node --import tsx --watch src/server/cli.ts start --dev\" \"vite\"",
+    "dev:server": "node --import tsx --watch src/server/cli.ts start --dev",
+    "dev:client": "vite",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "vite build",
+    "build:server": "tsup",
+    "start": "node dist/server/cli.js start",
+    "clean": "rimraf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.144",
+    "@fastify/static": "^7.0.4",
+    "better-sqlite3": "^11.5.0",
+    "commander": "^12.1.0",
+    "fastify": "^4.28.1",
+    "open": "^10.1.0",
+    "simple-git": "^3.27.0",
+    "socket.io": "^4.8.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@pixi/react": "^7.1.2",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/howler": "^2.2.12",
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "@xyflow/react": "^12.3.2",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.1",
+    "howler": "^2.2.4",
+    "pixi.js": "^8.5.1",
+    "postcss": "^8.4.47",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "rimraf": "^6.0.1",
+    "socket.io-client": "^4.8.1",
+    "tailwindcss": "^3.4.13",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8",
+    "zustand": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
