@@ -5,14 +5,17 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { getDb } from './db.js'
-import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
 import { SessionManager, type SessionDescriptor } from './runtime/SessionManager.js'
 import type { Session, SessionEvent } from './runtime/Session.js'
-import { createAssignTaskTool } from './runtime/tools/assignTask.js'
+import { runWorkflowOnSessions } from './runtime/runWorkflowOnSessions.js'
 import {
-  createMarkNodeCompleteTool,
-  type NodeCompleteOutputs,
-} from './runtime/tools/markNodeComplete.js'
+  ensureDefaultWorkflow,
+  getWorkflow,
+  listWorkflows,
+  updateWorkflow,
+} from './workflows.js'
+import { WorkflowGraphSchema } from '../core/schema.js'
+import type { RunEvent } from '../core/executor.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 
@@ -34,6 +37,7 @@ interface PendingClarification {
 
 export async function startServer(opts: ServerOptions) {
   getDb()
+  ensureDefaultWorkflow()
 
   const app = Fastify({ logger: true })
 
@@ -52,6 +56,17 @@ export async function startServer(opts: ServerOptions) {
   const transcripts = new Map<string, TranscriptEntry[]>()
   const pendingByAgent = new Map<string, Map<string, PendingClarification>>()
   const states = new Map<string, Session['state']>()
+
+  // Track the active run so reconnects see in-progress status.
+  let activeRun: {
+    runId: string
+    task: string
+    nodeIds: string[]
+    nodeStates: Record<string, 'pending' | 'running' | 'complete' | 'failed'>
+    nodeSummaries: Record<string, string>
+    finalSummary?: string
+    error?: string
+  } | null = null
 
   const io = new IOServer(app.server, {
     cors: opts.dev ? { origin: 'http://localhost:5173' } : undefined,
@@ -110,7 +125,6 @@ export async function startServer(opts: ServerOptions) {
   io.on('connection', (socket: Socket) => {
     app.log.info(`socket connected: ${socket.id}`)
 
-    // Replay snapshot on connect: session list, transcripts, states, pendings.
     socket.emit('session:list', manager.describeAll())
     for (const [id, transcript] of transcripts) {
       for (const entry of transcript) {
@@ -129,22 +143,19 @@ export async function startServer(opts: ServerOptions) {
         }
       }
     }
+    if (activeRun) socket.emit('run:snapshot', activeRun)
 
     socket.on('agent:send', (payload: { agentRunId: string; content: string }) => {
       if (typeof payload?.agentRunId !== 'string' || typeof payload?.content !== 'string') return
       if (payload.content.length === 0) return
-      const session = manager.get(payload.agentRunId)
-      if (!session) return
-      session.sendUserMessage(payload.content)
+      manager.get(payload.agentRunId)?.sendUserMessage(payload.content)
     })
 
     socket.on(
       'clarification:reply',
       (payload: { agentRunId: string; toolUseId: string; answer: string }) => {
         if (!payload?.agentRunId || !payload?.toolUseId || typeof payload.answer !== 'string') return
-        const session = manager.get(payload.agentRunId)
-        if (!session) return
-        session.resolveClarification(payload.toolUseId, payload.answer)
+        manager.get(payload.agentRunId)?.resolveClarification(payload.toolUseId, payload.answer)
       },
     )
 
@@ -154,81 +165,110 @@ export async function startServer(opts: ServerOptions) {
   })
 
   // -------------------------------------------------------------------
-  // Phase 2 develop-demo endpoint
+  // Workflow CRUD
   // -------------------------------------------------------------------
-  app.post('/api/demo/develop', async (request, reply) => {
-    const body = (request.body as { task?: string }) ?? {}
-    const task =
-      body.task?.trim() ||
-      "Plan a simple 'TODO list' web component. Delegate to the implementer to describe the component structure (HTML+JS, ~5 lines), and to the tester to list 3 test cases. Then mark the node complete with a brief summary."
+  app.get('/api/workflows', async () => listWorkflows())
 
-    // Don't spawn duplicates while a demo is in-flight.
-    const existing = manager.list().filter((s) => s.opts.label === 'leader')
-    if (existing.length > 0) {
-      return reply.code(409).send({ error: 'Develop demo already running.' })
-    }
-
-    const droneImplementer = manager.spawn({
-      role: 'drone',
-      label: 'implementer',
-      systemPrompt:
-        'You are the IMPLEMENTER drone on a small dev team. You design and describe features in concise pseudocode/HTML when delegated to. Keep responses brief (~5 lines). If the request is ambiguous, use the request_clarification tool.',
-    })
-
-    const droneTester = manager.spawn({
-      role: 'drone',
-      label: 'tester',
-      systemPrompt:
-        'You are the TESTER drone on a small dev team. When delegated to, list concise test cases (one per line). Keep it brief. If the request is ambiguous, use the request_clarification tool.',
-    })
-
-    const onNodeComplete = (result: NodeCompleteOutputs) => {
-      app.log.info({ result }, 'develop node complete')
-      io.emit('node:complete', { node: 'develop', ...result })
-    }
-
-    const assignTaskTool = createAssignTaskTool({
-      resolveDrone: (target) => {
-        const byLabel = manager.findByLabel(target)
-        if (byLabel) return byLabel
-        return manager.get(target)
-      },
-      rosterDescription: 'implementer, tester',
-    })
-
-    const markCompleteTool = createMarkNodeCompleteTool(onNodeComplete)
-
-    const leader = manager.spawn({
-      role: 'leader',
-      label: 'leader',
-      systemPrompt: `You are the LEADER of a small development team running a "develop" workflow node.
-
-Your team:
-- "implementer" — a drone that writes code/designs
-- "tester" — a drone that writes test cases
-
-Use the assign_task tool to delegate work to your team — name the drone by label ("implementer" or "tester"). Each delegation blocks until the drone finishes; their response becomes your tool result.
-Use mark_node_complete when you are fully done. You may use request_clarification if the user's task is ambiguous.
-
-Keep delegations small. Do not call assign_task on yourself. Do not invent tools beyond the three you have.`,
-      extraTools: [assignTaskTool, markCompleteTool] as SdkMcpToolDefinition<any>[],
-    })
-
-    // Kick off the leader.
-    leader.sendUserMessage(task)
-
-    return {
-      ok: true,
-      leader: leader.id,
-      drones: [droneImplementer.id, droneTester.id],
-    }
+  app.get<{ Params: { id: string } }>('/api/workflows/:id', async (req, reply) => {
+    const wf = getWorkflow(Number(req.params.id))
+    if (!wf) return reply.code(404).send({ error: 'not found' })
+    return wf
   })
 
-  app.post('/api/demo/reset', async () => {
+  app.put<{ Params: { id: string }; Body: { name?: string; graph?: unknown } }>(
+    '/api/workflows/:id',
+    async (req, reply) => {
+      const id = Number(req.params.id)
+      const patch: { name?: string; graph?: ReturnType<typeof WorkflowGraphSchema.parse> } = {}
+      if (typeof req.body.name === 'string') patch.name = req.body.name
+      if (req.body.graph !== undefined) {
+        const parsed = WorkflowGraphSchema.safeParse(req.body.graph)
+        if (!parsed.success) return reply.code(400).send({ error: parsed.error.message })
+        patch.graph = parsed.data
+      }
+      const wf = updateWorkflow(id, patch)
+      if (!wf) return reply.code(404).send({ error: 'not found' })
+      return wf
+    },
+  )
+
+  // -------------------------------------------------------------------
+  // Runs
+  // -------------------------------------------------------------------
+  function emitRunEvent(ev: RunEvent) {
+    if (!activeRun) return
+    switch (ev.type) {
+      case 'run:started':
+        activeRun.nodeIds = ev.nodeIds
+        for (const id of ev.nodeIds) activeRun.nodeStates[id] = 'pending'
+        break
+      case 'node:started':
+        activeRun.nodeStates[ev.nodeId] = 'running'
+        break
+      case 'node:complete':
+        activeRun.nodeStates[ev.nodeId] = 'complete'
+        activeRun.nodeSummaries[ev.nodeId] = ev.summary
+        break
+      case 'run:complete':
+        activeRun.finalSummary = ev.finalSummary
+        break
+      case 'run:failed':
+        if (ev.nodeId) activeRun.nodeStates[ev.nodeId] = 'failed'
+        activeRun.error = ev.error
+        break
+    }
+    io.emit(ev.type, ev)
+  }
+
+  app.post<{ Body: { workflowId?: number; task?: string } }>('/api/runs', async (req, reply) => {
+    const body = req.body ?? {}
+    const wfId = body.workflowId ?? listWorkflows()[0]?.id
+    if (typeof wfId !== 'number') {
+      return reply.code(400).send({ error: 'No workflow available' })
+    }
+    const wf = getWorkflow(wfId)
+    if (!wf) return reply.code(404).send({ error: 'workflow not found' })
+    const task = body.task?.trim()
+    if (!task) return reply.code(400).send({ error: 'task is required' })
+
+    if (activeRun && !activeRun.finalSummary && !activeRun.error) {
+      return reply.code(409).send({ error: 'A run is already in flight; reset first.' })
+    }
+
+    activeRun = {
+      runId: '(pending)',
+      task,
+      nodeIds: [],
+      nodeStates: {},
+      nodeSummaries: {},
+    }
+
+    // Run asynchronously — respond immediately with the runId once the
+    // executor emits run:started. We do that synchronously here by
+    // capturing the runId before awaiting completion.
+    const runId = await runWorkflowOnSessions({
+      workflow: wf,
+      task,
+      manager,
+      emit: (ev) => {
+        if (activeRun) activeRun.runId = ev.runId
+        emitRunEvent(ev)
+      },
+    }).catch((err) => {
+      app.log.error({ err }, 'workflow run failed')
+      if (activeRun) activeRun.error = err instanceof Error ? err.message : String(err)
+      return null
+    })
+
+    return { ok: true, runId: runId ?? activeRun.runId }
+  })
+
+  app.post('/api/runs/reset', async () => {
     await manager.destroyAll()
     transcripts.clear()
     pendingByAgent.clear()
     states.clear()
+    activeRun = null
     return { ok: true }
   })
 

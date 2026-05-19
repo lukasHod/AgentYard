@@ -62,6 +62,18 @@ export interface SessionDescriptor {
   state: AgentState
 }
 
+export type NodeRunStatus = 'pending' | 'running' | 'complete' | 'failed'
+
+export interface RunSnapshot {
+  runId: string
+  task: string
+  nodeIds: string[]
+  nodeStates: Record<string, NodeRunStatus>
+  nodeSummaries: Record<string, string>
+  finalSummary?: string
+  error?: string
+}
+
 // Wire protocol — messages over Socket.IO.
 // Server → Client events
 export interface ServerEvents {
@@ -73,7 +85,12 @@ export interface ServerEvents {
   'ship:state':       { shipId: number; state: ShipState }
   'clarification:requested': { agentRunId: string; toolUseId: string; question: string }
   'clarification:resolved':  { agentRunId: string; toolUseId: string }
-  'node:complete':    { node: string; summary: string; outputs?: Record<string, string> }
+  'run:snapshot':     RunSnapshot
+  'run:started':      { runId: string; task: string; nodeIds: string[] }
+  'node:started':     { runId: string; nodeId: string; title: string }
+  'node:complete':    { runId: string; nodeId: string; title: string; summary: string; outputs?: Record<string, string> }
+  'run:complete':     { runId: string; finalSummary: string }
+  'run:failed':       { runId: string; nodeId?: string; error: string }
 }
 
 // Client → Server events

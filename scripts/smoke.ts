@@ -1,93 +1,116 @@
 /**
- * Phase 2 smoke test:
- *   1. Trigger /api/demo/develop — spawns leader + implementer + tester.
- *   2. Wait for session:added events for all three.
- *   3. Wait for node:complete event (leader → drones → leader → mark_complete).
- *   4. Sanity-check both drones produced at least one assistant message.
+ * Phase 3 smoke test:
+ *   1. Reset any prior state.
+ *   2. Fetch default workflow.
+ *   3. POST /api/runs with a small task.
+ *   4. Watch the run lifecycle (run:started → node:started/complete × N → run:complete).
+ *   5. Verify each node spawned a leader session.
  *
  * Run with: npx tsx scripts/smoke.ts
  * (Assumes `npm run dev` is already running.)
  */
 import { io } from 'socket.io-client'
 
-const TIMEOUT_MS = 180_000
+const TIMEOUT_MS = 300_000 // 5 min — three Claude turns sequentially.
 const BASE = 'http://localhost:4242'
+const TASK = 'Add a "back to top" button to a long article page.'
 
 function fail(msg: string): never {
   console.error(`[smoke] FAIL: ${msg}`)
   process.exit(1)
 }
 
-const droneLabels = new Set(['implementer', 'tester'])
-const seenLabels = new Set<string>()
-const assistantCountByLabel = new Map<string, number>()
-let leaderId: string | null = null
-let nodeComplete: { summary: string } | null = null
+const nodeStarted = new Set<string>()
+const nodeComplete = new Set<string>()
+const leaderLabels = new Set<string>()
+let runId: string | null = null
+let finalSummary: string | null = null
+let runFailed: string | null = null
 
-// Reset any previous demo state so the test is idempotent.
-await fetch(`${BASE}/api/demo/reset`, { method: 'POST' }).catch(() => {})
+// Reset.
+await fetch(`${BASE}/api/runs/reset`, { method: 'POST' }).catch(() => {})
+
+// Workflow lookup.
+const wfList = await fetch(`${BASE}/api/workflows`).then((r) => r.json())
+if (!Array.isArray(wfList) || wfList.length === 0) fail('no workflows available')
+const wf = wfList[0]
+console.log(`[smoke] using workflow #${wf.id} "${wf.name}" with ${wf.graph.nodes.length} nodes`)
 
 const socket = io(BASE, { transports: ['websocket'] })
 
-const finished = new Promise<void>((resolve) => {
+const done = new Promise<void>((resolve, reject) => {
   socket.on('connect', async () => {
-    console.log('[smoke] connected')
-    const res = await fetch(`${BASE}/api/demo/develop`, { method: 'POST' })
-    const body = await res.json()
-    if (!res.ok) fail(`POST /api/demo/develop -> ${res.status} ${JSON.stringify(body)}`)
-    console.log(`[smoke] demo started: leader=${body.leader} drones=${body.drones.join(',')}`)
+    console.log('[smoke] connected, kicking off run')
+    const res = await fetch(`${BASE}/api/runs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflowId: wf.id, task: TASK }),
+    })
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      reject(new Error(`POST /api/runs -> ${res.status}: ${JSON.stringify(j)}`))
+    }
   })
 
-  socket.on('session:added', (s: { id: string; role: string; label?: string }) => {
-    console.log(`[smoke] session:added  ${s.role}/${s.label ?? '?'} (${s.id})`)
-    if (s.role === 'leader') leaderId = s.id
-    if (s.label) seenLabels.add(s.label)
+  socket.on('run:started', (ev: { runId: string; nodeIds: string[] }) => {
+    runId = ev.runId
+    console.log(`[smoke] run:started ${ev.runId} nodes=${ev.nodeIds.join(',')}`)
+  })
+
+  socket.on('node:started', (ev: { nodeId: string; title: string }) => {
+    nodeStarted.add(ev.nodeId)
+    console.log(`[smoke] node:started ${ev.nodeId} (${ev.title})`)
   })
 
   socket.on(
-    'agent:message',
-    (m: { agentRunId: string; role: string; content: string }) => {
-      if (m.role !== 'assistant') return
-      // Tally per label so we can verify the drones actually responded.
-      const idTag = m.agentRunId === leaderId ? 'leader' : m.agentRunId.slice(0, 8)
-      assistantCountByLabel.set(idTag, (assistantCountByLabel.get(idTag) ?? 0) + 1)
-      console.log(`[smoke] ${idTag} >> ${m.content.slice(0, 120).replace(/\n/g, ' ')}`)
+    'node:complete',
+    (ev: { nodeId: string; title: string; summary: string }) => {
+      nodeComplete.add(ev.nodeId)
+      console.log(`[smoke] node:complete ${ev.nodeId} -> ${ev.summary.slice(0, 100).replace(/\n/g, ' ')}`)
     },
   )
 
-  socket.on(
-    'agent:state',
-    (s: { agentRunId: string; state: string }) => {
-      // Compact state-transition log.
-      const idTag = s.agentRunId === leaderId ? 'leader' : s.agentRunId.slice(0, 8)
-      console.log(`[smoke] ${idTag} state=${s.state}`)
-    },
-  )
+  socket.on('session:added', (s: { role: string; label?: string }) => {
+    if (s.role === 'leader' && s.label) leaderLabels.add(s.label)
+  })
 
-  socket.on('node:complete', (ev: { node: string; summary: string }) => {
-    nodeComplete = ev
-    console.log(`[smoke] node:complete (${ev.node}) -> ${ev.summary.slice(0, 200)}`)
+  socket.on('run:complete', (ev: { finalSummary: string }) => {
+    finalSummary = ev.finalSummary
+    console.log(`[smoke] run:complete final="${ev.finalSummary.slice(0, 120).replace(/\n/g, ' ')}…"`)
     resolve()
+  })
+
+  socket.on('run:failed', (ev: { error: string }) => {
+    runFailed = ev.error
+    reject(new Error(`run:failed ${ev.error}`))
   })
 })
 
 const timeout = setTimeout(
   () =>
     fail(
-      `timed out after ${TIMEOUT_MS}ms (labels=${[...seenLabels].join(',')}, node_complete=${!!nodeComplete})`,
+      `timeout after ${TIMEOUT_MS}ms; run=${runId} started=${[...nodeStarted].join(',')} complete=${[...nodeComplete].join(',')} fail=${runFailed}`,
     ),
   TIMEOUT_MS,
 )
-await finished
+try {
+  await done
+} catch (e) {
+  fail(String(e))
+}
 clearTimeout(timeout)
 
 // Post-checks
-for (const label of droneLabels) {
-  if (!seenLabels.has(label)) fail(`drone "${label}" was never spawned`)
+if (!runId) fail('no run id')
+if (!finalSummary) fail('no final summary')
+const expectedNodes = wf.graph.nodes.map((n: { id: string }) => n.id)
+for (const id of expectedNodes) {
+  if (!nodeComplete.has(id)) fail(`node ${id} never completed`)
 }
-if (!leaderId) fail('leader id was never observed')
-if (!nodeComplete) fail('node:complete never fired')
+if (leaderLabels.size < expectedNodes.length) {
+  fail(`expected ${expectedNodes.length} leader sessions, saw ${leaderLabels.size}: ${[...leaderLabels].join(',')}`)
+}
 
-console.log(`[smoke] PASS — labels=${[...seenLabels].join(',')} node="${nodeComplete!.summary.slice(0, 80)}"`)
+console.log(`[smoke] PASS — ${nodeComplete.size}/${expectedNodes.length} nodes complete; leaders=${[...leaderLabels].join(',')}`)
 socket.close()
 process.exit(0)
