@@ -131,7 +131,7 @@ export function ShipDetailsPanel(props: Props) {
         <p className="text-[10px] text-zinc-500 font-mono mt-0.5 break-all">{ship.projectPath}</p>
       </header>
 
-      <nav className="flex items-center border-b border-cyan-500/20 px-1 text-[10px] tracking-widest">
+      <nav className="flex items-center flex-wrap gap-2 border-b border-cyan-500/20 px-3 py-3">
         {TABS.map((t) => {
           const active = t.id === tab
           const showBadge = t.id === 'chat' && chatBadge
@@ -139,10 +139,10 @@ export function ShipDetailsPanel(props: Props) {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-3 py-2 border-b-2 flex items-center gap-1 ${
+              className={`px-3 py-1 border text-[10px] tracking-widest flex items-center gap-1 transition-colors ${
                 active
-                  ? 'border-cyan-400 text-cyan-200'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                  ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100'
+                  : 'border-cyan-500/50 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/10'
               }`}
             >
               {t.label.toUpperCase()}
