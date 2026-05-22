@@ -7,6 +7,7 @@ import type {
   SessionDescriptor,
 } from '../../core/types'
 import type { Workflow } from '../../core/schema'
+import { useDismissable } from '../hooks/useDismissable'
 
 export interface ChatMessage {
   role: 'assistant' | 'user' | 'system'
@@ -84,6 +85,8 @@ export function RunView(props: Props) {
   const [runPromptOpen, setRunPromptOpen] = useState(false)
   const [taskDraft, setTaskDraft] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  useDismissable(runPromptOpen, () => setRunPromptOpen(false))
 
   // Auto-select first agent if none selected.
   useEffect(() => {
@@ -284,8 +287,14 @@ export function RunView(props: Props) {
       )}
 
       {runPromptOpen && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-20">
-          <div className="bg-black border border-cyan-500/60 rounded p-6 max-w-xl w-full">
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-20"
+          onClick={() => setRunPromptOpen(false)}
+        >
+          <div
+            className="bg-black border border-cyan-500/60 rounded p-6 max-w-xl w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 className="text-cyan-300 tracking-widest text-sm mb-2">RUN WORKFLOW</h2>
             <p className="text-zinc-400 text-xs mb-4">
               workflow: <span className="text-zinc-200">{workflow?.name}</span>

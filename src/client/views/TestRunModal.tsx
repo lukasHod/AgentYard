@@ -8,6 +8,7 @@ import type {
   ShipSummary,
 } from '../../core/types'
 import type { Workflow, WorkflowNode } from '../../core/schema'
+import { useDismissable } from '../hooks/useDismissable'
 
 export interface TestRunRequest {
   scope: 'workflow' | 'node'
@@ -334,9 +335,17 @@ export function TestRunModal({ request, workflow, ships, socket, onClose }: Prop
       ? `test workflow › ${workflow.name}`
       : `test node › ${targetNode?.title ?? request.nodeId}`
 
+  useDismissable(true, onClose)
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="relative bg-black border border-fuchsia-500/60 shadow-[0_0_30px_rgba(217,70,239,0.25)] w-[min(1100px,95vw)] h-[min(800px,90vh)] flex flex-col">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-black border border-fuchsia-500/60 shadow-[0_0_30px_rgba(217,70,239,0.25)] w-[min(1100px,95vw)] h-[min(800px,90vh)] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="px-4 py-2 border-b border-fuchsia-500/40 flex items-center justify-between">
           <div className="flex items-center gap-3">

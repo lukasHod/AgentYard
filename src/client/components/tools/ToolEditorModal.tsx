@@ -10,6 +10,7 @@ import type {
   ToolSummary,
   ToolType,
 } from '../../../core/tools'
+import { useDismissable } from '../../hooks/useDismissable'
 
 export type EditorScope = 'ship' | 'global'
 
@@ -35,6 +36,7 @@ const TYPE_TITLE: Record<ToolType, string> = {
 }
 
 export function ToolEditorModal({ mode, shipId, library, onClose, onSaved }: Props) {
+  useDismissable(true, onClose)
   const [saving, setSaving] = useState(false)
   const [scope, setScope] = useState<EditorScope>(mode.scope)
   const editing = mode.kind === 'edit'
@@ -105,8 +107,14 @@ export function ToolEditorModal({ mode, shipId, library, onClose, onSaved }: Pro
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-30">
-      <div className="bg-black border border-cyan-500/60 rounded w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col text-xs">
+    <div
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-30"
+      onClick={onClose}
+    >
+      <div
+        className="bg-black border border-cyan-500/60 rounded w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col text-xs"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="border-b border-cyan-500/40 px-4 py-2 flex items-center justify-between">
           <h2 className="text-cyan-300 tracking-widest">{title}</h2>
           <div className="flex items-center gap-2">

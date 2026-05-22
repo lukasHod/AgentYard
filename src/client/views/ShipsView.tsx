@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FeatureSummary, ShipSummary } from '../../core/types'
+import { useDismissable } from '../hooks/useDismissable'
 
 interface Props {
   ships: ShipSummary[]
@@ -240,9 +241,16 @@ function Modal({
   onClose: () => void
   onSubmit: () => void
 }) {
+  useDismissable(true, onClose)
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-20">
-      <div className="bg-black border border-cyan-500/60 rounded p-6 max-w-xl w-full text-sm">
+    <div
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-20"
+      onClick={onClose}
+    >
+      <div
+        className="bg-black border border-cyan-500/60 rounded p-6 max-w-xl w-full text-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 className="text-cyan-300 tracking-widest text-sm mb-4">{title}</h2>
         {children}
         <div className="flex gap-2 mt-4 justify-end">
