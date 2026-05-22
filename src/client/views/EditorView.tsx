@@ -18,6 +18,7 @@ import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowGraph, WorkflowNode } from '../../core/schema'
 import type { ScriptTool, ToolSummary } from '../../core/tools'
 import type { TestRunRequest } from './TestRunModal'
+import { ToolEditorModal, type EditorMode } from '../components/tools/ToolEditorModal'
 
 interface Props {
   workflow: Workflow | null
@@ -84,6 +85,38 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
   const [name, setName] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [toolEditor, setToolEditor] = useState<EditorMode | null>(null)
+
+  // Click-through from a node's connected-agents list (or chosen script) to
+  // open the tool editor modal with that tool's definition prefilled.
+  // Only global-scope tools can be edited from here — claude-user / claude-project
+  // are catalog entries that require adoption first.
+  const openToolEditor = useCallback(async (t: ToolSummary) => {
+    if (t.scope !== 'global') {
+      alert(
+        `'${t.name}' has scope=${t.scope}, which can't be edited here — adopt or fork it first via the Tools tab.`,
+      )
+      return
+    }
+    try {
+      const res = await fetch(`/api/global-tools/${t.type}/${encodeURIComponent(t.name)}`)
+      if (!res.ok) {
+        alert(`Could not load ${t.type} '${t.name}' (HTTP ${res.status})`)
+        return
+      }
+      const entry = (await res.json()) as { data: unknown }
+      // ToolEditorModal validates the shape via its EditorMode discriminator.
+      setToolEditor({
+        kind: 'edit',
+        type: t.type,
+        scope: 'global',
+        // The endpoint returns the full data including body/prompt.
+        initial: entry.data as never,
+      })
+    } catch (err) {
+      alert(`Could not load ${t.name}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [])
 
   useEffect(() => {
     if (!workflow) return
@@ -297,6 +330,7 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
             agents={agents}
             scripts={scripts}
             onChange={updateSelectedNode}
+            onOpenToolEditor={openToolEditor}
           />
         ) : (
           <p className="text-zinc-600 italic">
@@ -304,6 +338,18 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
           </p>
         )}
       </aside>
+      {toolEditor && (
+        <ToolEditorModal
+          mode={toolEditor}
+          shipId={null}
+          library={tools}
+          onClose={() => setToolEditor(null)}
+          onSaved={() => {
+            setToolEditor(null)
+            onRefreshTools()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -313,11 +359,13 @@ function NodeEditor({
   agents,
   scripts,
   onChange,
+  onOpenToolEditor,
 }: {
   node: WorkflowNode
   agents: ToolSummary[]
   scripts: ToolSummary[]
   onChange: (patch: Partial<WorkflowNode>) => void
+  onOpenToolEditor: (t: ToolSummary) => void
 }) {
   return (
     <div className="space-y-4 text-zinc-300">
@@ -369,9 +417,19 @@ function NodeEditor({
       </div>
 
       {node.type === 'ai' ? (
-        <AiNodeFields node={node} agents={agents} onChange={onChange} />
+        <AiNodeFields
+          node={node}
+          agents={agents}
+          onChange={onChange}
+          onOpenToolEditor={onOpenToolEditor}
+        />
       ) : (
-        <CustomNodeFields node={node} scripts={scripts} onChange={onChange} />
+        <CustomNodeFields
+          node={node}
+          scripts={scripts}
+          onChange={onChange}
+          onOpenToolEditor={onOpenToolEditor}
+        />
       )}
     </div>
   )
@@ -381,10 +439,12 @@ function AiNodeFields({
   node,
   agents,
   onChange,
+  onOpenToolEditor,
 }: {
   node: WorkflowNode
   agents: ToolSummary[]
   onChange: (patch: Partial<WorkflowNode>) => void
+  onOpenToolEditor: (t: ToolSummary) => void
 }) {
   const attached = node.agents ?? []
   return (
@@ -412,6 +472,7 @@ function AiNodeFields({
           <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
             {agents.map((a) => {
               const isAttached = attached.includes(a.name)
+              const editable = a.scope === 'global' || a.scope === 'ship'
               return (
                 <label
                   key={a.name}
@@ -429,8 +490,24 @@ function AiNodeFields({
                     className="mt-0.5 accent-cyan-500"
                   />
                   <span className="flex-1">
-                    <span className="text-cyan-300">{a.name}</span>
-                    <span className="text-[10px] text-zinc-600 ml-1">({a.scope})</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-cyan-300">{a.name}</span>
+                      <span className="text-[10px] text-zinc-600">({a.scope})</span>
+                      {editable && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            onOpenToolEditor(a)
+                          }}
+                          className="text-[10px] text-zinc-500 hover:text-cyan-300 underline"
+                          title="open agent definition — system prompt, tool preset, attached skills/mcps/scripts"
+                        >
+                          edit
+                        </button>
+                      )}
+                    </span>
                     {a.description && (
                       <span className="block text-[10px] text-zinc-500 leading-tight">
                         {a.description}
@@ -466,11 +543,16 @@ function CustomNodeFields({
   node,
   scripts,
   onChange,
+  onOpenToolEditor,
 }: {
   node: WorkflowNode
   scripts: ToolSummary[]
   onChange: (patch: Partial<WorkflowNode>) => void
+  onOpenToolEditor: (t: ToolSummary) => void
 }) {
+  const selectedScript = node.scriptName ? scripts.find((s) => s.name === node.scriptName) : null
+  const selectedScriptEditable =
+    selectedScript && (selectedScript.scope === 'global' || selectedScript.scope === 'ship')
   const [scriptArgs, setScriptArgs] = useState<ScriptTool['args']>([])
   const [loadingArgs, setLoadingArgs] = useState(false)
 
@@ -515,18 +597,30 @@ function CustomNodeFields({
     <>
       <div>
         <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">SCRIPT</label>
-        <select
-          value={node.scriptName ?? ''}
-          onChange={(e) => onChange({ scriptName: e.target.value || undefined, args: {} })}
-          className="w-full bg-black border border-amber-500/40 rounded px-2 py-1 focus:outline-none focus:border-amber-300"
-        >
-          <option value="">// pick a script</option>
-          {scripts.map((s) => (
-            <option key={s.name} value={s.name}>
-              {s.name} ({s.scope})
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={node.scriptName ?? ''}
+            onChange={(e) => onChange({ scriptName: e.target.value || undefined, args: {} })}
+            className="flex-1 bg-black border border-amber-500/40 rounded px-2 py-1 focus:outline-none focus:border-amber-300"
+          >
+            <option value="">// pick a script</option>
+            {scripts.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name} ({s.scope})
+              </option>
+            ))}
+          </select>
+          {selectedScript && selectedScriptEditable && (
+            <button
+              type="button"
+              onClick={() => onOpenToolEditor(selectedScript)}
+              className="px-2 py-1 border border-amber-500/60 text-amber-300 hover:bg-amber-500/20 text-[10px]"
+              title="open script definition — cmd, args, body"
+            >
+              edit
+            </button>
+          )}
+        </div>
         {scripts.length === 0 && (
           <p className="text-[10px] text-zinc-600 mt-1">
             // no scripts in the global library. create one from{' '}
