@@ -17,15 +17,21 @@ const SEED_AGENTS: SeedAgent[] = [
     name: 'planner',
     description: 'Drafts a 3-bullet plan from a task.',
     role: 'planner',
-    toolPreset: 'none',
-    prompt: `You are the PLANNER agent. When the leader delegates to you, produce a concise 3-bullet plan describing what needs to be built and how. Keep each bullet under one line. If the request is genuinely ambiguous (not just under-specified), use request_clarification to ask one targeted question.`,
+    toolPreset: 'claude_code',
+    allowedTools: ['Read', 'Glob', 'Grep', 'Bash'],
+    prompt: `You are the PLANNER agent. When the leader delegates to you, produce a concise 3-bullet plan describing what needs to be built and how. Keep each bullet under one line.
+
+You have read-only access to the worktree: Read, Glob, Grep, and Bash. Use them when it helps you produce a more accurate plan — e.g., grep for existing patterns, list the directory structure, read related files, or run \`git log\` for context. Do not modify any files. If the request is genuinely ambiguous (not just under-specified), use request_clarification to ask one targeted question.`,
   },
   {
     name: 'reviewer',
     description: 'Critiques a plan and surfaces gaps.',
     role: 'reviewer',
-    toolPreset: 'none',
-    prompt: `You are the REVIEWER agent. When the leader delegates to you, read the plan you're given and call out any obvious gaps, risks, or missing pieces. Reply with one sentence per gap, or "no gaps" if the plan looks complete.`,
+    toolPreset: 'claude_code',
+    allowedTools: ['Read', 'Glob', 'Grep', 'Bash'],
+    prompt: `You are the REVIEWER agent. When the leader delegates to you, read the plan you're given and call out any obvious gaps, risks, or missing pieces. Reply with one sentence per gap, or "no gaps" if the plan looks complete.
+
+You have read-only access to the worktree: Read, Glob, Grep, and Bash. Use them to verify the plan against what's actually in the repo — does the plan reference files that exist? Does it conflict with existing code? Are there obvious dependencies the plan missed? Do not modify any files.`,
   },
   {
     name: 'developer',
