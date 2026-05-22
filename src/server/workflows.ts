@@ -68,8 +68,12 @@ export function ensureDefaultWorkflow(): Workflow {
   }
 
   if (needsReseed && rows.length > 0) {
-    // Detach features from the now-stale workflow rows, then drop them.
-    db.prepare('UPDATE features SET workflow_id = NULL WHERE workflow_id IS NOT NULL').run()
+    // Workflow rows about to be dropped — also remove any feature rows that
+    // referenced them. features.workflow_id is NOT NULL so we can't detach;
+    // these features couldn't run against the new default anyway.
+    const oldIds = rows.map((r) => r.id)
+    const placeholders = oldIds.map(() => '?').join(',')
+    db.prepare(`DELETE FROM features WHERE workflow_id IN (${placeholders})`).run(...oldIds)
     db.prepare('DELETE FROM workflows').run()
   }
 
