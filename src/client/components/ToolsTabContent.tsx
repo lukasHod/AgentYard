@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ToolScope, ToolSummary, ToolType } from '../../core/tools'
+import { ToolEditorModal, type AnyToolData, type EditorMode } from './tools/ToolEditorModal'
 
 interface Props {
   shipId: number
@@ -39,6 +40,7 @@ export function ToolsTabContent({ shipId }: Props) {
   const [clis, setClis] = useState<CLIInfo[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null) // key of tool currently performing an action
+  const [editor, setEditor] = useState<EditorMode | null>(null)
 
   const refetch = useCallback(async () => {
     try {
@@ -115,6 +117,26 @@ export function ToolsTabContent({ shipId }: Props) {
     )
   }
 
+  function createNew(type: ToolType) {
+    setEditor({ kind: 'create', type, scope: 'ship' })
+  }
+
+  async function edit(t: ToolSummary) {
+    if (t.scope !== 'ship' && t.scope !== 'global') return
+    // Fetch full ToolEntry to populate the form.
+    const url =
+      t.scope === 'ship'
+        ? `/api/ships/${shipId}/tools/${t.scope}/${t.type}/${t.name}`
+        : `/api/global-tools/${t.type}/${t.name}`
+    const res = await fetch(url)
+    if (!res.ok) {
+      alert(`Could not load ${t.name}`)
+      return
+    }
+    const entry = (await res.json()) as { data: AnyToolData }
+    setEditor({ kind: 'edit', type: t.type, scope: t.scope, initial: entry.data })
+  }
+
   if (tools === null && error === null) {
     return <p className="text-zinc-600 italic">// loading library…</p>
   }
@@ -124,10 +146,7 @@ export function ToolsTabContent({ shipId }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[10px] text-zinc-500 italic">
-          // creating + editing tools is the next step (A5). browse + adopt / elevate / fork / delete are live now.
-        </p>
+      <div className="flex items-center justify-end">
         <button
           onClick={() => void refetch()}
           className="text-[10px] text-zinc-400 hover:text-cyan-200"
@@ -141,9 +160,17 @@ export function ToolsTabContent({ shipId }: Props) {
         const list = byType[type]
         return (
           <section key={type}>
-            <h3 className="text-[10px] tracking-widest text-zinc-500 mb-2">
-              {TYPE_LABEL[type]} ({list.length})
-            </h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-[10px] tracking-widest text-zinc-500">
+                {TYPE_LABEL[type]} ({list.length})
+              </h3>
+              <button
+                onClick={() => createNew(type)}
+                className="text-[10px] text-cyan-300 hover:text-cyan-200 border border-cyan-500/40 px-2 py-0.5 hover:bg-cyan-500/10"
+              >
+                + new {type}
+              </button>
+            </div>
             {list.length === 0 ? (
               <p className="text-zinc-600 italic">// none</p>
             ) : (
@@ -171,6 +198,15 @@ export function ToolsTabContent({ shipId }: Props) {
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                        {(t.scope === 'ship' || t.scope === 'global') && (
+                          <button
+                            disabled={isBusy}
+                            onClick={() => void edit(t)}
+                            className="px-2 py-0.5 border border-zinc-600 text-zinc-300 hover:border-cyan-400 hover:text-cyan-200 disabled:opacity-30"
+                          >
+                            edit
+                          </button>
+                        )}
                         {actionsForScope(t.scope).map((action) => (
                           <button
                             key={action}
@@ -220,6 +256,16 @@ export function ToolsTabContent({ shipId }: Props) {
           // drones with the Claude Code tool preset can call these via Bash.
         </p>
       </section>
+
+      {editor && (
+        <ToolEditorModal
+          mode={editor}
+          shipId={shipId}
+          library={tools ?? []}
+          onClose={() => setEditor(null)}
+          onSaved={() => void refetch()}
+        />
+      )}
     </div>
   )
 }
