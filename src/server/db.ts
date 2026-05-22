@@ -27,25 +27,11 @@ CREATE TABLE IF NOT EXISTS workflows (
   is_template INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS skills (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  name        TEXT NOT NULL UNIQUE,
-  path        TEXT NOT NULL,
-  description TEXT,
-  source      TEXT NOT NULL DEFAULT 'user'
-);
-
 CREATE TABLE IF NOT EXISTS mcp_servers (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT NOT NULL UNIQUE,
   config_json TEXT NOT NULL,
   enabled     INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS node_skills (
-  node_id  TEXT NOT NULL,
-  skill_id INTEGER NOT NULL,
-  PRIMARY KEY (node_id, skill_id)
 );
 
 CREATE TABLE IF NOT EXISTS features (
@@ -103,6 +89,10 @@ export function getDb(): DB {
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   db.exec(SCHEMA)
+  // Phase B migration: filesystem is canonical for skills now; drop the
+  // orphan SQLite tables if they were ever created.
+  db.exec('DROP TABLE IF EXISTS skills')
+  db.exec('DROP TABLE IF EXISTS node_skills')
   const row = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number } | undefined
   if (!row) {
     db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(1)

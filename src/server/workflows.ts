@@ -24,18 +24,48 @@ function rowToWorkflow(row: WorkflowRow): Workflow {
   })
 }
 
+/**
+ * Phase B migration: the WorkflowNode shape changed (kind/drones/skills →
+ * type/agents/customType/scriptName/args). Any pre-B rows are incompatible,
+ * so we wipe & reseed. Detect pre-B rows by attempting to parse — if it fails,
+ * drop everything and reseed. New installs hit the empty branch immediately.
+ */
 export function ensureDefaultWorkflow(): Workflow {
   const db = getDb()
-  const existing = db.prepare('SELECT * FROM workflows ORDER BY id LIMIT 1').get() as WorkflowRow | undefined
-  if (existing) return rowToWorkflow(existing)
-  const stmt = db.prepare(
-    'INSERT INTO workflows (name, graph_json, is_template) VALUES (?, ?, ?)',
-  )
-  const info = stmt.run('Default analyze → develop → deploy', JSON.stringify(DEFAULT_WORKFLOW_GRAPH), 1)
-  const row = db
-    .prepare('SELECT * FROM workflows WHERE id = ?')
-    .get(info.lastInsertRowid) as WorkflowRow
-  return rowToWorkflow(row)
+  const rows = db.prepare('SELECT * FROM workflows ORDER BY id').all() as WorkflowRow[]
+
+  let needsReseed = rows.length === 0
+  for (const row of rows) {
+    try {
+      WorkflowGraphSchema.parse(JSON.parse(row.graph_json))
+    } catch {
+      needsReseed = true
+      break
+    }
+  }
+
+  if (needsReseed && rows.length > 0) {
+    // Detach features from the now-invalid workflow rows, then drop them.
+    db.prepare('UPDATE features SET workflow_id = NULL WHERE workflow_id IS NOT NULL').run()
+    db.prepare('DELETE FROM workflows').run()
+  }
+
+  if (needsReseed) {
+    const stmt = db.prepare(
+      'INSERT INTO workflows (name, graph_json, is_template) VALUES (?, ?, ?)',
+    )
+    const info = stmt.run(
+      'Default analyze → develop → deploy',
+      JSON.stringify(DEFAULT_WORKFLOW_GRAPH),
+      1,
+    )
+    const row = db
+      .prepare('SELECT * FROM workflows WHERE id = ?')
+      .get(info.lastInsertRowid) as WorkflowRow
+    return rowToWorkflow(row)
+  }
+
+  return rowToWorkflow(rows[0]!)
 }
 
 export function listWorkflows(): Workflow[] {

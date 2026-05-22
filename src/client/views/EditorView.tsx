@@ -16,6 +16,11 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowGraph, WorkflowNode } from '../../core/schema'
+
+// Phase B.1: this view is intentionally stubbed.
+// The properties panel only exposes id/title/prompt — the proper UI for
+// type / agents / customType / scriptName / args lands in B.2.
+
 interface SkillSummary {
   name: string
   description: string
@@ -24,17 +29,16 @@ interface SkillSummary {
 
 interface Props {
   workflow: Workflow | null
+  // Kept for prop compatibility — unused in B.1 stub.
   skills: SkillSummary[]
   onSave: (workflow: Workflow) => Promise<void> | void
 }
 
 type WorkflowRFNode = RFNode<{ node: WorkflowNode }>
 
-const KIND_COLOR: Record<WorkflowNode['kind'], string> = {
-  analyze: 'border-cyan-500/60 text-cyan-200',
-  develop: 'border-fuchsia-500/60 text-fuchsia-200',
-  deploy: 'border-emerald-500/60 text-emerald-200',
-  custom: 'border-zinc-500/60 text-zinc-200',
+const TYPE_COLOR: Record<WorkflowNode['type'], string> = {
+  ai: 'border-cyan-500/60 text-cyan-200',
+  custom: 'border-amber-500/60 text-amber-200',
 }
 
 function toRFNode(node: WorkflowNode): WorkflowRFNode {
@@ -52,25 +56,28 @@ function toRFEdge(e: { from: string; to: string }): RFEdge {
 
 function WorkflowNodeView({ data, selected }: { data: { node: WorkflowNode }; selected?: boolean }) {
   const n = data.node
+  const subtitle =
+    n.type === 'ai'
+      ? `${(n.agents ?? []).length} agent${(n.agents ?? []).length === 1 ? '' : 's'}`
+      : n.scriptName
+        ? `script: ${n.scriptName}`
+        : 'custom (no script)'
   return (
     <div
-      className={`px-4 py-3 rounded border-2 ${KIND_COLOR[n.kind]} bg-black/90 font-mono min-w-[180px] shadow-lg ${
+      className={`px-4 py-3 rounded border-2 ${TYPE_COLOR[n.type]} bg-black/90 font-mono min-w-[180px] shadow-lg ${
         selected ? 'ring-2 ring-cyan-400' : ''
       }`}
     >
-      <div className="text-[10px] tracking-widest opacity-70 uppercase">{n.kind}</div>
+      <div className="text-[10px] tracking-widest opacity-70 uppercase">{n.type}</div>
       <div className="text-sm mt-0.5">{n.title}</div>
-      <div className="text-[10px] mt-2 text-zinc-500">
-        {n.drones.length} drone{n.drones.length === 1 ? '' : 's'} · {n.skills.length} skill
-        {n.skills.length === 1 ? '' : 's'}
-      </div>
+      <div className="text-[10px] mt-2 text-zinc-500">{subtitle}</div>
       <Handle type="target" position={Position.Left} style={{ background: '#22d3ee' }} />
       <Handle type="source" position={Position.Right} style={{ background: '#22d3ee' }} />
     </div>
   )
 }
 
-export function EditorView({ workflow, skills, onSave }: Props) {
+export function EditorView({ workflow, onSave }: Props) {
   const [nodes, setNodes] = useState<WorkflowRFNode[]>([])
   const [edges, setEdges] = useState<RFEdge[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -78,7 +85,6 @@ export function EditorView({ workflow, skills, onSave }: Props) {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // Sync workflow → local state when it (re)loads.
   useEffect(() => {
     if (!workflow) return
     setNodes(workflow.graph.nodes.map(toRFNode))
@@ -146,7 +152,6 @@ export function EditorView({ workflow, skills, onSave }: Props) {
 
   return (
     <div className="flex-1 flex">
-      {/* Canvas */}
       <div className="flex-1 relative">
         <div className="absolute top-2 left-2 z-10 flex items-center gap-2 text-xs">
           <input
@@ -185,15 +190,9 @@ export function EditorView({ workflow, skills, onSave }: Props) {
         </div>
       </div>
 
-      {/* Properties panel */}
       <aside className="w-96 border-l border-cyan-500/30 p-4 overflow-y-auto text-xs">
         {selectedNode ? (
-          <NodeEditor
-            key={selectedNode.id}
-            node={selectedNode}
-            skills={skills}
-            onChange={updateSelectedNode}
-          />
+          <NodeEditor key={selectedNode.id} node={selectedNode} onChange={updateSelectedNode} />
         ) : (
           <p className="text-zinc-600 italic">// click a node to edit it</p>
         )}
@@ -204,11 +203,9 @@ export function EditorView({ workflow, skills, onSave }: Props) {
 
 function NodeEditor({
   node,
-  skills,
   onChange,
 }: {
   node: WorkflowNode
-  skills: SkillSummary[]
   onChange: (patch: Partial<WorkflowNode>) => void
 }) {
   return (
@@ -219,17 +216,8 @@ function NodeEditor({
       </div>
 
       <div>
-        <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">KIND</label>
-        <select
-          value={node.kind}
-          onChange={(e) => onChange({ kind: e.target.value as WorkflowNode['kind'] })}
-          className="w-full bg-black border border-cyan-500/40 rounded px-2 py-1 focus:outline-none focus:border-cyan-300"
-        >
-          <option value="analyze">analyze</option>
-          <option value="develop">develop</option>
-          <option value="deploy">deploy</option>
-          <option value="custom">custom</option>
-        </select>
+        <div className="text-[10px] tracking-widest text-zinc-500 mb-1">TYPE</div>
+        <div className="text-zinc-400">{node.type}</div>
       </div>
 
       <div>
@@ -241,107 +229,56 @@ function NodeEditor({
         />
       </div>
 
-      <div>
-        <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">
-          PROMPT (supports {'{task}'} and {'{upstream_outputs}'})
-        </label>
-        <textarea
-          value={node.prompt}
-          onChange={(e) => onChange({ prompt: e.target.value })}
-          rows={10}
-          className="w-full bg-black border border-cyan-500/40 rounded p-2 text-zinc-200 focus:outline-none focus:border-cyan-300 font-mono"
-        />
-      </div>
-
-      <div>
-        <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">DRONES</label>
-        <div className="space-y-1">
-          {node.drones.map((d, i) => (
-            <div key={i} className="flex items-center gap-1">
-              <input
-                value={d.role}
-                onChange={(e) => {
-                  const next = [...node.drones]
-                  next[i] = { ...d, role: e.target.value }
-                  onChange({ drones: next })
-                }}
-                className="flex-1 bg-black border border-cyan-500/40 rounded px-2 py-1"
-              />
-              <button
-                onClick={() => onChange({ drones: node.drones.filter((_, j) => j !== i) })}
-                className="px-2 py-1 border border-rose-500/60 text-rose-300 hover:bg-rose-500/20"
-              >
-                ×
-              </button>
+      {node.type === 'ai' && (
+        <>
+          <div>
+            <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">
+              PROMPT (supports {'{task}'} and {'{upstream_outputs}'})
+            </label>
+            <textarea
+              value={node.prompt ?? ''}
+              onChange={(e) => onChange({ prompt: e.target.value })}
+              rows={10}
+              className="w-full bg-black border border-cyan-500/40 rounded p-2 text-zinc-200 focus:outline-none focus:border-cyan-300 font-mono"
+            />
+          </div>
+          <div>
+            <div className="text-[10px] tracking-widest text-zinc-500 mb-1">AGENTS</div>
+            <div className="text-zinc-400">
+              {(node.agents ?? []).length === 0 ? (
+                <span className="text-zinc-600 italic">// none — node will fail at run time</span>
+              ) : (
+                <ul className="list-disc list-inside">
+                  {(node.agents ?? []).map((a) => (
+                    <li key={a} className="text-cyan-300">
+                      {a}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[10px] text-zinc-600 italic mt-2">
+                // agent attach/detach UI lands in B.2
+              </p>
             </div>
-          ))}
-          <button
-            onClick={() =>
-              onChange({
-                drones: [...node.drones, { role: 'new-role', requiredSkills: [], required: true }],
-              })
-            }
-            className="px-2 py-1 border border-zinc-500 text-zinc-400 hover:bg-zinc-700"
-          >
-            + add drone
-          </button>
-        </div>
-      </div>
+          </div>
+        </>
+      )}
 
-      <div>
-        <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">SKILLS</label>
-        {skills.length === 0 ? (
-          <p className="text-[10px] text-zinc-600">
-            // no skills loaded. go to the <span className="text-cyan-400">skills</span> tab and refresh.
-          </p>
-        ) : (
-          <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-            {skills.map((s) => {
-              const attached = node.skills.includes(s.name)
-              return (
-                <label
-                  key={s.name}
-                  className="flex items-start gap-2 cursor-pointer hover:bg-zinc-800/40 px-1 py-0.5 rounded"
-                >
-                  <input
-                    type="checkbox"
-                    checked={attached}
-                    onChange={(e) => {
-                      const next = e.target.checked
-                        ? [...node.skills, s.name]
-                        : node.skills.filter((n) => n !== s.name)
-                      onChange({ skills: next })
-                    }}
-                    className="mt-0.5 accent-cyan-500"
-                  />
-                  <span className="flex-1">
-                    <span className="text-cyan-300">{s.name}</span>
-                    {s.description && (
-                      <span className="block text-[10px] text-zinc-500 leading-tight">
-                        {s.description}
-                      </span>
-                    )}
-                  </span>
-                </label>
-              )
-            })}
+      {node.type === 'custom' && (
+        <div>
+          <div className="text-[10px] tracking-widest text-zinc-500 mb-1">SCRIPT</div>
+          <div className="text-zinc-400">
+            {node.scriptName ? (
+              <span className="text-amber-300">{node.scriptName}</span>
+            ) : (
+              <span className="text-zinc-600 italic">// no script bound</span>
+            )}
+            <p className="text-[10px] text-zinc-600 italic mt-2">
+              // script picker + args form lands in B.2
+            </p>
           </div>
-        )}
-        {/* Attached but no longer in the library: show as stale entries */}
-        {node.skills.filter((n) => !skills.find((s) => s.name === n)).map((n) => (
-          <div key={n} className="flex items-center gap-1 mt-1">
-            <span className="flex-1 text-amber-300 text-[10px]">
-              {n} <span className="text-zinc-500">(missing from library)</span>
-            </span>
-            <button
-              onClick={() => onChange({ skills: node.skills.filter((x) => x !== n) })}
-              className="px-2 py-0.5 border border-rose-500/60 text-rose-300 hover:bg-rose-500/20 text-[10px]"
-            >
-              remove
-            </button>
-          </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

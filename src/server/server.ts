@@ -22,6 +22,7 @@ import { createShip, deleteShip, getShip, listShips } from './ships.js'
 import { createFeature, getFeature, listFeatures, updateFeature, type Feature } from './features.js'
 import { createFeatureWorktree, removeFeatureWorktree } from './runtime/worktrees.js'
 import { loadSecrets } from './secrets.js'
+import { seedDefaultAgentsIfMissing } from './agentsSeed.js'
 import { scanAllTools, scanScopeType } from './tools/scanner.js'
 import { writeTool, deleteTool, readToolBody } from './tools/crud.js'
 import { adoptTool, elevateTool, forkTool } from './tools/lifecycle.js'
@@ -66,6 +67,11 @@ export async function startServer(opts: ServerOptions) {
   getDb()
   ensureDefaultWorkflow()
   scanSkills()
+  const seeded = seedDefaultAgentsIfMissing()
+  if (seeded.wrote.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`seeded default agents: ${seeded.wrote.join(', ')}`)
+  }
   const secretsResult = loadSecrets()
   if (secretsResult.loaded > 0) {
     // eslint-disable-next-line no-console
@@ -560,6 +566,7 @@ export async function startServer(opts: ServerOptions) {
       workflow: wf,
       task,
       manager,
+      ctx: { shipProjectPath: null }, // ship-less run (legacy /api/runs path)
       emit: (ev) => {
         if (activeRun) activeRun.runId = ev.runId
         emitRunEvent(ev)
@@ -791,6 +798,7 @@ export async function startServer(opts: ServerOptions) {
       workflow: wf,
       task,
       manager,
+      ctx: { shipProjectPath: ship.projectPath },
       cwd,
       emit: (ev) => {
         if (activeRun) activeRun.runId = ev.runId

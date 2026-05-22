@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import {
   createSdkMcpServer,
   query,
+  type McpServerConfig,
   type Query,
   type SdkMcpToolDefinition,
   type SDKMessage,
@@ -35,30 +36,44 @@ export type ToolPreset = 'none' | 'claude_code'
 export interface SessionOptions {
   id: string
   role: AgentRole
-  /** Display label for the agent (e.g. "implementer", "leader", "drone-1"). */
+  /** Display label for the agent. */
   label?: string
-  /** Role-specific system prompt. Required for non-default sessions. */
+  /** System prompt — the agent's body + any pre-rendered skill context. */
   systemPrompt?: string
-  /** Additional MCP tools beyond request_clarification. */
-  extraTools?: AnyTool[]
+  /**
+   * Runtime tools registered under `mcp__ay_runtime__*` alongside
+   * request_clarification. Used for leader-only tools (assign_task,
+   * mark_node_complete). request_clarification is always wired by Session.
+   */
+  runtimeTools?: AnyTool[]
+  /**
+   * Script tools — registered under `mcp__ay_scripts__*` in a separate MCP
+   * server so user scripts can never collide with runtime tool names.
+   */
+  scriptTools?: AnyTool[]
+  /**
+   * External MCP server configs (per-agent attached MCPs from the tool
+   * library). Forwarded to the SDK's options.mcpServers as-is.
+   * `${env:VAR}` substitution must be done by the caller before passing in.
+   */
+  mcpServerConfigs?: Record<string, McpServerConfig>
   /** Model override, otherwise SDK default. */
   model?: string
-  /** Names of tools the agent is allowed to call (MCP qualified). */
-  allowedToolNames?: string[]
-  /** Working directory for the agent. File tools resolve paths against this. */
+  /** Optional restrict to a subset of Claude Code tools (only used when toolPreset === 'claude_code'). */
+  allowedTools?: string[]
+  /** Working directory — file tools and Bash resolve against this. */
   cwd?: string
   /**
    * Built-in tool preset.
-   * - 'none' (default): only the SDK-MCP tools (request_clarification, etc.)
-   * - 'claude_code': the full Claude Code toolset (Read/Edit/Write/Glob/Grep/Bash/...)
-   *   Use this for drones that need to edit code inside a worktree. Permissions
-   *   are auto-bypassed; scope safety via `cwd`.
+   * - 'none'        : only the MCP-registered tools (clarification, runtime, scripts, user MCPs)
+   * - 'claude_code' : full Claude Code toolset (Read/Edit/Write/Glob/Grep/Bash/...)
    */
   toolPreset?: ToolPreset
 }
 
-const MCP_NAMESPACE = 'agentyard'
-const CLARIFICATION_TOOL_NAME = `mcp__${MCP_NAMESPACE}__request_clarification`
+const RUNTIME_NAMESPACE = 'ay_runtime'
+const SCRIPTS_NAMESPACE = 'ay_scripts'
+const CLARIFICATION_TOOL_NAME = `mcp__${RUNTIME_NAMESPACE}__request_clarification`
 
 /**
  * One Claude Agent SDK session. Wraps query() with a streamable input
@@ -97,39 +112,57 @@ export class Session extends EventEmitter implements ClarificationGateway {
   start(): void {
     if (this.q) throw new Error('Session already started')
 
+    // Always wire request_clarification under ay_runtime.
     const clarificationTool = createClarificationTool(this) as AnyTool
-    const allTools: AnyTool[] = [clarificationTool, ...(this.opts.extraTools ?? [])]
-    const mcp = createSdkMcpServer({
-      name: MCP_NAMESPACE,
-      tools: allTools,
+    const runtimeTools: AnyTool[] = [clarificationTool, ...(this.opts.runtimeTools ?? [])]
+    const runtimeMcp = createSdkMcpServer({
+      name: RUNTIME_NAMESPACE,
+      tools: runtimeTools,
       alwaysLoad: true,
     })
 
-    const defaultAllowed = [
-      CLARIFICATION_TOOL_NAME,
-      ...(this.opts.extraTools ?? []).map((t) => `mcp__${MCP_NAMESPACE}__${t.name}`),
-    ]
-    const allowedTools = this.opts.allowedToolNames ?? defaultAllowed
+    const mcpServers: Record<string, McpServerConfig> = {
+      [RUNTIME_NAMESPACE]: runtimeMcp,
+    }
+
+    if (this.opts.scriptTools && this.opts.scriptTools.length > 0) {
+      mcpServers[SCRIPTS_NAMESPACE] = createSdkMcpServer({
+        name: SCRIPTS_NAMESPACE,
+        tools: this.opts.scriptTools,
+        alwaysLoad: true,
+      })
+    }
+
+    if (this.opts.mcpServerConfigs) {
+      for (const [name, cfg] of Object.entries(this.opts.mcpServerConfigs)) {
+        if (name === RUNTIME_NAMESPACE || name === SCRIPTS_NAMESPACE) continue
+        mcpServers[name] = cfg
+      }
+    }
 
     const useClaudeCode = this.opts.toolPreset === 'claude_code'
     const tools = useClaudeCode
       ? ({ type: 'preset', preset: 'claude_code' } as const)
       : []
-    // For agents with the claude_code preset we also pre-approve every tool so
-    // file edits / Bash calls don't block on a permission prompt.
-    const permissionMode = useClaudeCode ? 'bypassPermissions' : 'default'
-    // Agent definition limits the agent to a focused tool set; when using the
-    // Claude Code preset we omit `tools` from the agent so it can use all of them.
-    const agentToolsForDef = useClaudeCode ? undefined : allowedTools
+
+    // Auto-allow every tool we registered. For the Claude Code preset we
+    // additionally bypass permissions (file edits / Bash run without prompts).
+    const autoAllowed: string[] = [
+      CLARIFICATION_TOOL_NAME,
+      ...runtimeTools.slice(1).map((t) => `mcp__${RUNTIME_NAMESPACE}__${t.name}`),
+      ...(this.opts.scriptTools ?? []).map((t) => `mcp__${SCRIPTS_NAMESPACE}__${t.name}`),
+    ]
+    const allowedTools = useClaudeCode ? this.opts.allowedTools : autoAllowed
+    const agentToolsForDef = useClaudeCode ? this.opts.allowedTools : autoAllowed
 
     this.q = query({
       prompt: this.inputQueue,
       options: {
-        mcpServers: { [MCP_NAMESPACE]: mcp },
+        mcpServers,
         tools,
-        ...(useClaudeCode
-          ? { permissionMode, allowDangerouslySkipPermissions: true }
-          : { allowedTools }),
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        ...(allowedTools ? { allowedTools } : {}),
         persistSession: false,
         settingSources: [],
         ...(this.opts.cwd ? { cwd: this.opts.cwd } : {}),
@@ -202,7 +235,7 @@ export class Session extends EventEmitter implements ClarificationGateway {
       this.resolveAsk()
     }
     // Other message types (system, user echo, tool_result, partial) are
-    // ignored for the chat surface in Phase 2.
+    // ignored for the chat surface.
   }
 
   /** Push a user message into the agent's input stream. */
