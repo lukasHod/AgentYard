@@ -8,6 +8,7 @@ import type {
   ShipSummary,
 } from '../core/types'
 import type { Workflow } from '../core/schema'
+import type { ToolSummary } from '../core/tools'
 import { RunView, type ChatMessage, type PendingClarification } from './views/RunView'
 import { EditorView } from './views/EditorView'
 import { GameCanvas } from './canvas/GameCanvas'
@@ -25,6 +26,7 @@ export function App() {
   const [pendings, setPendings] = useState<Map<string, PendingClarification>>(new Map())
   const [activeRun, setActiveRun] = useState<RunSnapshot | null>(null)
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
+  const [tools, setTools] = useState<ToolSummary[]>([])
   const [ships, setShips] = useState<ShipSummary[]>([])
   const [features, setFeatures] = useState<Map<number, FeatureSummary[]>>(new Map())
   const socketRef = useRef<Socket | null>(null)
@@ -176,7 +178,16 @@ export function App() {
     }
   }, [pushMessage])
 
-  // Load default workflow once for editor + run-with-default.
+  const refreshTools = useCallback(async () => {
+    try {
+      const list = (await fetch('/api/global-tools').then((r) => r.json())) as ToolSummary[]
+      setTools(list)
+    } catch {
+      // ignore — editor will show empty palette
+    }
+  }, [])
+
+  // Load default workflow + global tools once for editor + run-with-default.
   useEffect(() => {
     fetch('/api/workflows')
       .then((r) => r.json())
@@ -184,6 +195,7 @@ export function App() {
         if (list[0]) setWorkflow(list[0])
       })
       .catch(() => {})
+    void refreshTools()
     fetch('/api/ships')
       .then((r) => r.json())
       .then(async (list: ShipSummary[]) => {
@@ -200,7 +212,7 @@ export function App() {
         setFeatures(featureMap)
       })
       .catch(() => {})
-  }, [])
+  }, [refreshTools])
 
   const sessionList = useMemo(() => Array.from(sessions.values()), [sessions])
 
@@ -380,7 +392,12 @@ export function App() {
         />
       )}
       {view === 'editor' && (
-        <EditorView workflow={workflow} skills={[]} onSave={saveWorkflow} />
+        <EditorView
+          workflow={workflow}
+          tools={tools}
+          onSave={saveWorkflow}
+          onRefreshTools={refreshTools}
+        />
       )}
     </main>
   )
