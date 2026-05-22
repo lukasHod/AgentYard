@@ -149,6 +149,10 @@ export function GameCanvas(props: Props) {
   }, [ready, selectedShipId])
 
   // ---- 3. Push ships into the galaxy scene whenever they change. ----
+  // `ready` is in the deps because effect 2 (which creates the GalaxyScene) only
+  // runs once the PixiJS app finishes its async init. Without it, switching away
+  // from the canvas (e.g. to the editor) and back leaves the new scene empty —
+  // props.ships hasn't changed by reference, so this effect would never re-run.
   useEffect(() => {
     if (!galaxyRef.current) return
     const moods = new Map<number, ShipMood>()
@@ -166,7 +170,7 @@ export function GameCanvas(props: Props) {
       else moods.set(ship.id, 'idle')
     }
     galaxyRef.current.setShips(props.ships, moods)
-  }, [props.ships, props.features, props.pendings, selectedShipId])
+  }, [ready, props.ships, props.features, props.pendings, selectedShipId])
 
   // ---- 4. Push current ship + drones into the dock scene. ----
   useEffect(() => {
@@ -185,7 +189,7 @@ export function GameCanvas(props: Props) {
           .map((s) => ({ role: s.label ?? s.id.slice(0, 6), agentRunId: s.id }))
       : []
     dockRef.current.setDrones(droneSpecs)
-  }, [props.ships, props.features, props.sessions, selectedShipId])
+  }, [ready, props.ships, props.features, props.sessions, selectedShipId])
 
   // ---- HUD actions ----
   const submitNewShip = useCallback(async () => {
