@@ -5,6 +5,7 @@ import type {
   ShipSummary,
 } from '../../core/types'
 import { AgentChat, type AgentChatMessage, type AgentChatPending } from './AgentChat'
+import { ToolsTabContent } from './ToolsTabContent'
 
 export type ShipPanelTab = 'features' | 'tools' | 'plans' | 'description' | 'chat'
 
@@ -20,19 +21,6 @@ interface ShipDescriptionData {
   git: { branch?: string; head?: { sha: string; subject: string } }
   projectPath: string
   pathExists: boolean
-}
-
-interface MCPServer {
-  id: number
-  name: string
-  enabled: boolean
-  config: unknown
-}
-
-interface CLIInfo {
-  name: string
-  available: boolean
-  version: string | null
 }
 
 interface Props {
@@ -87,8 +75,6 @@ export function ShipDetailsPanel(props: Props) {
   }
 
   const [description, setDescription] = useState<ShipDescriptionData | null>(null)
-  const [mcps, setMcps] = useState<MCPServer[] | null>(null)
-  const [clis, setClis] = useState<CLIInfo[] | null>(null)
 
   // Reset description when ship changes.
   useEffect(() => {
@@ -110,15 +96,8 @@ export function ShipDetailsPanel(props: Props) {
           }),
         )
     }
-    if (tab === 'tools') {
-      if (mcps === null) {
-        fetch('/api/mcp/servers').then((r) => r.json()).then(setMcps).catch(() => setMcps([]))
-      }
-      if (clis === null) {
-        fetch('/api/clis').then((r) => r.json()).then(setClis).catch(() => setClis([]))
-      }
-    }
-  }, [tab, description, mcps, clis, ship.id, ship.projectPath])
+    // Tools tab self-fetches (see ToolsTabContent); no work here.
+  }, [tab, description, ship.id, ship.projectPath])
 
   const runningFeature = features.find((f) => f.status === 'running')
   const leader = useMemo(
@@ -190,7 +169,7 @@ export function ShipDetailsPanel(props: Props) {
         )}
         {tab === 'tools' && (
           <div className="h-full overflow-y-auto p-3">
-            <ToolsTab skills={skills} mcps={mcps} clis={clis} />
+            <ToolsTabContent shipId={ship.id} />
           </div>
         )}
         {tab === 'plans' && (
@@ -285,87 +264,6 @@ function FeaturesTab({
         </ul>
       )}
     </>
-  )
-}
-
-function ToolsTab({
-  skills,
-  mcps,
-  clis,
-}: {
-  skills: SkillSummary[]
-  mcps: MCPServer[] | null
-  clis: CLIInfo[] | null
-}) {
-  return (
-    <div className="space-y-4">
-      <section>
-        <h3 className="text-[10px] tracking-widest text-zinc-500 mb-2">SKILLS ({skills.length})</h3>
-        {skills.length === 0 ? (
-          <p className="text-zinc-600 italic">// no skills loaded — drop folders in ~/.agentyard/skills/</p>
-        ) : (
-          <ul className="space-y-1">
-            {skills.map((s) => (
-              <li key={s.name} className="border border-cyan-500/15 rounded px-2 py-1">
-                <div className="text-cyan-300">{s.name}</div>
-                {s.description && <div className="text-zinc-400 text-[11px]">{s.description}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h3 className="text-[10px] tracking-widest text-zinc-500 mb-2">
-          MCP SERVERS ({mcps?.length ?? '…'})
-        </h3>
-        {mcps === null ? (
-          <p className="text-zinc-600 italic">// loading...</p>
-        ) : mcps.length === 0 ? (
-          <p className="text-zinc-600 italic">
-            // none configured yet. MCP attachment to nodes is planned for v2.
-          </p>
-        ) : (
-          <ul className="space-y-1">
-            {mcps.map((m) => (
-              <li
-                key={m.id}
-                className="border border-cyan-500/15 rounded px-2 py-1 flex items-center justify-between"
-              >
-                <span className="text-cyan-300">{m.name}</span>
-                <span className={m.enabled ? 'text-emerald-300 text-[10px]' : 'text-zinc-500 text-[10px]'}>
-                  {m.enabled ? 'enabled' : 'disabled'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h3 className="text-[10px] tracking-widest text-zinc-500 mb-2">DETECTED CLIs</h3>
-        {clis === null ? (
-          <p className="text-zinc-600 italic">// probing…</p>
-        ) : (
-          <ul className="space-y-1">
-            {clis.map((c) => (
-              <li
-                key={c.name}
-                className="border border-cyan-500/15 rounded px-2 py-1 flex items-center justify-between"
-              >
-                <span className={c.available ? 'text-cyan-300' : 'text-zinc-600'}>{c.name}</span>
-                <span className="text-[10px] text-zinc-500 font-mono truncate ml-2">
-                  {c.available ? c.version : 'not installed'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="text-[10px] text-zinc-600 mt-2 italic">
-          // drones with the Claude Code tool preset can call these via Bash.
-        </p>
-      </section>
-    </div>
   )
 }
 
