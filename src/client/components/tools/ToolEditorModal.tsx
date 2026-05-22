@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type {
   AgentTool,
-  AgentToolPreset,
   McpTool,
   McpTransport,
   ScriptArg,
@@ -617,7 +616,8 @@ function AgentForm({
   const [description, setDescription] = useState(initial?.description ?? '')
   const [role, setRole] = useState(initial?.role ?? '')
   const [model, setModel] = useState(initial?.model ?? '')
-  const [toolPreset, setToolPreset] = useState<AgentToolPreset>(initial?.toolPreset ?? 'claude_code')
+  // Every agent uses the claude_code preset — the UI picker was removed,
+  // restrict the surface via the ALLOWED TOOLS list instead.
   const [allowedToolsText, setAllowedToolsText] = useState((initial?.allowedTools ?? []).join(','))
   const [skills, setSkills] = useState<string[]>(initial?.skills ?? [])
   const [mcps, setMcps] = useState<string[]>(initial?.mcps ?? [])
@@ -649,7 +649,7 @@ function AgentForm({
       description: description.trim(),
       role: role.trim() || name.trim(),
       model: model.trim() || undefined,
-      toolPreset,
+      toolPreset: 'claude_code',
       allowedTools,
       skills,
       mcps,
@@ -690,36 +690,16 @@ function AgentForm({
         <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>TOOL PRESET</Label>
-          <div className="flex gap-1 text-[10px]">
-            {(['none', 'claude_code'] as AgentToolPreset[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setToolPreset(p)}
-                className={`px-2 py-1 border ${
-                  toolPreset === p
-                    ? 'border-cyan-400 text-cyan-200 bg-cyan-500/10'
-                    : 'border-zinc-600 text-zinc-400'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-        {toolPreset === 'claude_code' && (
-          <div>
-            <Label hint="comma-separated; leave blank for full preset">ALLOWED TOOLS</Label>
-            <input
-              value={allowedToolsText}
-              onChange={(e) => setAllowedToolsText(e.target.value)}
-              placeholder="Read,Edit,Write,Glob,Grep,Bash"
-              className={inputCls}
-            />
-          </div>
-        )}
+      <div>
+        <Label hint="comma-separated subset of Claude Code's toolset (Read, Edit, Write, Glob, Grep, Bash, NotebookEdit, …); leave blank for the full preset">
+          ALLOWED TOOLS
+        </Label>
+        <input
+          value={allowedToolsText}
+          onChange={(e) => setAllowedToolsText(e.target.value)}
+          placeholder="Read,Edit,Write,Glob,Grep,Bash"
+          className={inputCls}
+        />
       </div>
 
       <CapabilityMultiselect
