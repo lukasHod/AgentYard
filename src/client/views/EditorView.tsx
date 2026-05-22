@@ -243,8 +243,8 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
   }
 
   return (
-    <div className="flex-1 flex">
-      <div className="flex-1 relative">
+    <div className="flex-1 flex bg-black">
+      <div className="flex-1 relative bg-black">
         <div className="absolute top-2 left-2 z-10 flex items-center gap-2 text-xs">
           <input
             value={name}

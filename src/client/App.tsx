@@ -317,7 +317,7 @@ export function App() {
   }, [])
 
   return (
-    <main className="min-h-screen flex flex-col font-mono">
+    <main className="min-h-screen flex flex-col font-mono bg-black">
       <header className="border-b border-cyan-500/30 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.7)]" />

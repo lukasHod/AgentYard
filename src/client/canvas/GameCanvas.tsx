@@ -232,9 +232,9 @@ export function GameCanvas(props: Props) {
   const totalPendingClarifications = props.pendings.size
 
   return (
-    <div className="flex-1 relative overflow-hidden">
+    <div className="flex-1 relative overflow-hidden bg-black">
       {/* Canvas mount target */}
-      <div ref={mountRef} className="absolute inset-0" />
+      <div ref={mountRef} className="absolute inset-0 bg-[#020617]" />
 
       {/* HUD top bar */}
       <div className="absolute top-3 left-3 right-3 flex items-start justify-between pointer-events-none">

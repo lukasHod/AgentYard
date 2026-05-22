@@ -4,4 +4,9 @@
 
 html, body, #root {
   height: 100%;
+  /* Hard-black background at every layer so view swaps and PixiJS canvas
+     destroy/recreate cycles never expose the browser's white default for a
+     paint frame. */
+  background-color: #000;
+  color-scheme: dark;
 }
