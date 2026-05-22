@@ -23,6 +23,7 @@ import { createFeature, getFeature, listFeatures, updateFeature, type Feature } 
 import { createFeatureWorktree, removeFeatureWorktree } from './runtime/worktrees.js'
 import { loadSecrets } from './secrets.js'
 import { seedDefaultAgentsIfMissing } from './agentsSeed.js'
+import { seedDefaultScriptsIfMissing } from './scriptsSeed.js'
 import { scanAllTools, scanScopeType } from './tools/scanner.js'
 import { writeTool, deleteTool, readToolBody } from './tools/crud.js'
 import { adoptTool, elevateTool, forkTool } from './tools/lifecycle.js'
@@ -65,6 +66,13 @@ interface PendingClarification {
 
 export async function startServer(opts: ServerOptions) {
   getDb()
+  // Seed scripts before workflow so the default workflow's script node has a
+  // resolvable target on first boot.
+  const seededScripts = seedDefaultScriptsIfMissing()
+  if (seededScripts.wrote.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`seeded default scripts: ${seededScripts.wrote.join(', ')}`)
+  }
   ensureDefaultWorkflow()
   scanSkills()
   const seeded = seedDefaultAgentsIfMissing()

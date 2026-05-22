@@ -74,9 +74,12 @@ export type WorkflowGraph = z.infer<typeof WorkflowGraphSchema>
 export type Workflow = z.infer<typeof WorkflowSchema>
 
 /**
- * The default workflow seeded on first boot — three AI nodes wired in series.
- * Each node references agents by name; the agents themselves are seeded as
- * `~/.agentyard/agents/<name>.md` so the resolver finds them via global scope.
+ * The default workflow seeded on first boot. Pipeline:
+ *   analyze (AI) → print-context (custom/script) → develop (AI) → deploy (AI)
+ * The print-context script node is a demo of the custom/script runtime — it
+ * echoes the analyze plan and proves data flows through a non-AI node.
+ * Referenced agents (planner/reviewer/...) and the print-task script are
+ * seeded under `~/.agentyard/` so the resolver finds them in global scope.
  */
 export const DEFAULT_WORKFLOW_GRAPH: WorkflowGraph = {
   nodes: [
@@ -91,6 +94,17 @@ export const DEFAULT_WORKFLOW_GRAPH: WorkflowGraph = {
 Your job: produce a concise plan describing what needs to be built and how. Delegate to the planner agent to draft a 3-bullet plan, and to the reviewer agent to call out any obvious gaps in one sentence. Then call mark_node_complete with the final plan as the summary.`,
       agents: ['planner', 'reviewer'],
       position: { x: 0, y: 0 },
+    },
+    {
+      id: 'print-context',
+      type: 'custom',
+      title: 'Print context (demo)',
+      customType: 'script',
+      scriptName: 'print-task',
+      args: {
+        message: 'Plan handed off to develop:\n{upstream_outputs}',
+      },
+      position: { x: 350, y: 0 },
     },
     {
       id: 'develop',
@@ -113,7 +127,7 @@ DELEGATION RULES — read carefully:
 3. After the developer completes, delegate the tester to VERIFY by using Read/Bash to inspect what the developer actually produced.
 4. Only after both agents have actually performed file work, call mark_node_complete with a 1–2 paragraph summary of WHAT WAS WRITTEN TO DISK (file paths + brief description).`,
       agents: ['developer', 'tester'],
-      position: { x: 350, y: 0 },
+      position: { x: 700, y: 0 },
     },
     {
       id: 'deploy',
@@ -134,11 +148,12 @@ DELEGATION RULES:
    "Run \`git status\` to confirm changes are present. If there are changes, run \`git add -A && git commit -m 'agentyard: <short summary>'\` to commit them. Then run \`git log -1 --format=%H\` to get the commit SHA and report it back."
 2. After the agent completes, call mark_node_complete with a 2–3 sentence release note that includes the commit SHA the agent reported. Do NOT push or open a PR (manual user step for now).`,
       agents: ['deployer'],
-      position: { x: 700, y: 0 },
+      position: { x: 1050, y: 0 },
     },
   ],
   edges: [
-    { from: 'analyze', to: 'develop' },
+    { from: 'analyze', to: 'print-context' },
+    { from: 'print-context', to: 'develop' },
     { from: 'develop', to: 'deploy' },
   ],
 }
