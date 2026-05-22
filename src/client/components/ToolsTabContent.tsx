@@ -3,7 +3,8 @@ import type { ToolScope, ToolSummary, ToolType } from '../../core/tools'
 import { ToolEditorModal, type AnyToolData, type EditorMode } from './tools/ToolEditorModal'
 
 interface Props {
-  shipId: number
+  /** Null when used in the galaxy library view — list endpoint switches to /api/global-tools. */
+  shipId: number | null
 }
 
 interface CLIInfo {
@@ -44,7 +45,8 @@ export function ToolsTabContent({ shipId }: Props) {
 
   const refetch = useCallback(async () => {
     try {
-      const res = await fetch(`/api/ships/${shipId}/tools`)
+      const url = shipId === null ? '/api/global-tools' : `/api/ships/${shipId}/tools`
+      const res = await fetch(url)
       if (!res.ok) throw new Error(`tools ${res.status}`)
       setTools(await res.json())
       setError(null)
@@ -89,22 +91,33 @@ export function ToolsTabContent({ shipId }: Props) {
   }
 
   function adopt(t: ToolSummary, target: 'ship' | 'global') {
-    void runAction(keyOf(t), () =>
-      fetch(`/api/ships/${shipId}/tools/adopt`, {
+    if (target === 'ship' && shipId === null) return
+    void runAction(keyOf(t), () => {
+      // In galaxy library view: only claude-user → global is supported, via a different endpoint.
+      if (shipId === null) {
+        return fetch(`/api/global-tools/adopt`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: t.type, name: t.name }),
+        })
+      }
+      return fetch(`/api/ships/${shipId}/tools/adopt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourceScope: t.scope, type: t.type, name: t.name, target }),
-      }),
-    )
+      })
+    })
   }
 
   function elevate(t: ToolSummary) {
+    if (shipId === null) return
     void runAction(keyOf(t), () =>
       fetch(`/api/ships/${shipId}/tools/${t.type}/${t.name}/elevate`, { method: 'POST' }),
     )
   }
 
   function fork(t: ToolSummary) {
+    if (shipId === null) return
     void runAction(keyOf(t), () =>
       fetch(`/api/ships/${shipId}/tools/${t.type}/${t.name}/fork-from-global`, { method: 'POST' }),
     )
@@ -112,22 +125,26 @@ export function ToolsTabContent({ shipId }: Props) {
 
   function del(t: ToolSummary) {
     if (!confirm(`Delete ${t.type} "${t.name}" from ${SCOPE_LABEL[t.scope]}?`)) return
-    void runAction(keyOf(t), () =>
-      fetch(`/api/ships/${shipId}/tools/${t.type}/${t.name}`, { method: 'DELETE' }),
-    )
+    void runAction(keyOf(t), () => {
+      const url =
+        t.scope === 'global'
+          ? `/api/global-tools/${t.type}/${t.name}`
+          : `/api/ships/${shipId}/tools/${t.type}/${t.name}`
+      return fetch(url, { method: 'DELETE' })
+    })
   }
 
   function createNew(type: ToolType) {
-    setEditor({ kind: 'create', type, scope: 'ship' })
+    setEditor({ kind: 'create', type, scope: shipId === null ? 'global' : 'ship' })
   }
 
   async function edit(t: ToolSummary) {
     if (t.scope !== 'ship' && t.scope !== 'global') return
     // Fetch full ToolEntry to populate the form.
     const url =
-      t.scope === 'ship'
-        ? `/api/ships/${shipId}/tools/${t.scope}/${t.type}/${t.name}`
-        : `/api/global-tools/${t.type}/${t.name}`
+      t.scope === 'global'
+        ? `/api/global-tools/${t.type}/${t.name}`
+        : `/api/ships/${shipId}/tools/${t.scope}/${t.type}/${t.name}`
     const res = await fetch(url)
     if (!res.ok) {
       alert(`Could not load ${t.name}`)
@@ -207,7 +224,7 @@ export function ToolsTabContent({ shipId }: Props) {
                             edit
                           </button>
                         )}
-                        {actionsForScope(t.scope).map((action) => (
+                        {actionsForScope(t.scope, shipId !== null).map((action) => (
                           <button
                             key={action}
                             disabled={isBusy}
@@ -270,15 +287,15 @@ export function ToolsTabContent({ shipId }: Props) {
   )
 }
 
-function actionsForScope(scope: ToolScope): string[] {
+function actionsForScope(scope: ToolScope, hasShip: boolean): string[] {
   switch (scope) {
     case 'claude-project':
-      return ['adopt → ship']
+      return hasShip ? ['adopt → ship'] : []
     case 'claude-user':
       return ['adopt → global']
     case 'ship':
-      return ['↑ elevate', 'delete']
+      return hasShip ? ['↑ elevate', 'delete'] : []
     case 'global':
-      return ['↓ fork', 'delete']
+      return hasShip ? ['↓ fork', 'delete'] : ['delete']
   }
 }

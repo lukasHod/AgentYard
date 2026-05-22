@@ -10,13 +10,12 @@ import type {
 import type { Workflow } from '../core/schema'
 import { RunView, type ChatMessage, type PendingClarification } from './views/RunView'
 import { EditorView } from './views/EditorView'
-import { SkillsView, type SkillSummary } from './views/SkillsView'
 import { GameCanvas } from './canvas/GameCanvas'
 
 let messageIdCounter = 0
 const nextMessageId = () => `m${++messageIdCounter}`
 
-type ViewMode = 'ships' | 'run' | 'editor' | 'skills'
+type ViewMode = 'ships' | 'run' | 'editor'
 
 export function App() {
   const [view, setView] = useState<ViewMode>('ships')
@@ -26,7 +25,6 @@ export function App() {
   const [pendings, setPendings] = useState<Map<string, PendingClarification>>(new Map())
   const [activeRun, setActiveRun] = useState<RunSnapshot | null>(null)
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
-  const [skills, setSkills] = useState<SkillSummary[]>([])
   const [ships, setShips] = useState<ShipSummary[]>([])
   const [features, setFeatures] = useState<Map<number, FeatureSummary[]>>(new Map())
   const socketRef = useRef<Socket | null>(null)
@@ -186,10 +184,6 @@ export function App() {
         if (list[0]) setWorkflow(list[0])
       })
       .catch(() => {})
-    fetch('/api/skills')
-      .then((r) => r.json())
-      .then((list: SkillSummary[]) => setSkills(list))
-      .catch(() => {})
     fetch('/api/ships')
       .then((r) => r.json())
       .then(async (list: ShipSummary[]) => {
@@ -206,14 +200,6 @@ export function App() {
         setFeatures(featureMap)
       })
       .catch(() => {})
-  }, [])
-
-  const refreshSkills = useCallback(async () => {
-    const res = await fetch('/api/skills/refresh', { method: 'POST' })
-    if (res.ok) {
-      const list: SkillSummary[] = await res.json()
-      setSkills(list)
-    }
   }, [])
 
   const sessionList = useMemo(() => Array.from(sessions.values()), [sessions])
@@ -355,16 +341,6 @@ export function App() {
           >
             editor
           </button>
-          <button
-            onClick={() => setView('skills')}
-            className={`px-3 py-1 border tracking-wide ${
-              view === 'skills'
-                ? 'border-cyan-500 text-cyan-300 bg-cyan-500/10'
-                : 'border-zinc-600 text-zinc-400 hover:bg-zinc-800/50'
-            }`}
-          >
-            skills
-          </button>
           <span className="mx-2 text-zinc-700">|</span>
           <span className={connected ? 'text-emerald-400' : 'text-amber-400'}>
             {connected ? '◉ link' : '○ offline'}
@@ -379,7 +355,6 @@ export function App() {
           sessions={sessionList}
           transcripts={transcripts}
           pendings={pendings}
-          skills={skills}
           connected={connected}
           onCreateShip={createShip}
           onDeleteShip={deleteShip}
@@ -405,9 +380,8 @@ export function App() {
         />
       )}
       {view === 'editor' && (
-        <EditorView workflow={workflow} skills={skills} onSave={saveWorkflow} />
+        <EditorView workflow={workflow} skills={[]} onSave={saveWorkflow} />
       )}
-      {view === 'skills' && <SkillsView skills={skills} onRefresh={refreshSkills} />}
     </main>
   )
 }

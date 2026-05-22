@@ -9,6 +9,7 @@ import { GalaxyScene, type ShipMood } from './galaxyScene'
 import { DockScene, type DockDroneSpec } from './dockScene'
 import { AgentChat, type AgentChatMessage, type AgentChatPending } from '../components/AgentChat'
 import { ShipDetailsPanel, type ShipPanelTab } from '../components/ShipDetailsPanel'
+import { ToolsTabContent } from '../components/ToolsTabContent'
 import { isAudioMuted, playClarificationChime, setAudioMuted } from './chime'
 
 const COCKPIT_PANEL_WIDTH = 480
@@ -19,7 +20,6 @@ interface Props {
   sessions: SessionDescriptor[]
   transcripts: Map<string, AgentChatMessage[]>
   pendings: Map<string, AgentChatPending>
-  skills: Array<{ name: string; description: string; path: string }>
   connected: boolean
   onCreateShip: (name: string, projectPath: string) => Promise<void> | void
   onDeleteShip: (shipId: number) => Promise<void> | void
@@ -49,6 +49,7 @@ export function GameCanvas(props: Props) {
   const [openedDroneId, setOpenedDroneId] = useState<string | null>(null)
   const [panelTab, setPanelTab] = useState<ShipPanelTab>('features')
   const [inboxOpen, setInboxOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [muted, setMuted] = useState<boolean>(isAudioMuted())
   const [shipName, setShipName] = useState('')
   const [shipPath, setShipPath] = useState('')
@@ -259,6 +260,13 @@ export function GameCanvas(props: Props) {
               >
                 ⛶ fit
               </button>
+              <button
+                onClick={() => setLibraryOpen(true)}
+                className="px-3 py-1 border border-emerald-500 text-emerald-300 hover:bg-emerald-500 hover:text-black tracking-wide bg-black/70"
+                title="global tool library"
+              >
+                library
+              </button>
             </>
           )}
         </div>
@@ -347,7 +355,6 @@ export function GameCanvas(props: Props) {
             sessions={props.sessions}
             transcripts={props.transcripts}
             pendings={props.pendings}
-            skills={props.skills}
             connected={props.connected}
             tab={panelTab}
             onTabChange={setPanelTab}
@@ -430,6 +437,23 @@ export function GameCanvas(props: Props) {
           onReply={(toolUseId, answer) => props.onClarificationReply(openedDroneId, toolUseId, answer)}
           onClose={() => setOpenedDroneId(null)}
         />
+      )}
+
+      {/* Galaxy global library overlay */}
+      {libraryOpen && selectedShipId === null && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-30">
+          <div className="bg-black border border-emerald-500/60 rounded w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col text-xs">
+            <div className="border-b border-emerald-500/40 px-4 py-2 flex items-center justify-between">
+              <h2 className="text-emerald-300 tracking-widest">GLOBAL TOOL LIBRARY</h2>
+              <button onClick={() => setLibraryOpen(false)} className="text-zinc-500 hover:text-zinc-300">
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              <ToolsTabContent shipId={null} />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* First-launch empty state */}

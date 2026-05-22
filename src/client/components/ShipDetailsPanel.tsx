@@ -9,12 +9,6 @@ import { ToolsTabContent } from './ToolsTabContent'
 
 export type ShipPanelTab = 'features' | 'tools' | 'plans' | 'description' | 'chat'
 
-interface SkillSummary {
-  name: string
-  description: string
-  path: string
-}
-
 interface ShipDescriptionData {
   readme: string | null
   readmePath: string | null
@@ -29,7 +23,6 @@ interface Props {
   sessions: SessionDescriptor[]
   transcripts: Map<string, AgentChatMessage[]>
   pendings: Map<string, AgentChatPending>
-  skills: SkillSummary[]
   connected: boolean
   /** Controlled tab. Pass undefined for internal state. */
   tab?: ShipPanelTab
@@ -56,7 +49,6 @@ export function ShipDetailsPanel(props: Props) {
     sessions,
     transcripts,
     pendings,
-    skills,
     connected,
     tab: controlledTab,
     onTabChange,

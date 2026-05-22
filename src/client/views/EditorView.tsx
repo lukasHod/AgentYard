@@ -16,7 +16,11 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowGraph, WorkflowNode } from '../../core/schema'
-import type { SkillSummary } from './SkillsView'
+interface SkillSummary {
+  name: string
+  description: string
+  path: string
+}
 
 interface Props {
   workflow: Workflow | null

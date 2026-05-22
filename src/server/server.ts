@@ -17,7 +17,7 @@ import {
   listWorkflows,
   updateWorkflow,
 } from './workflows.js'
-import { getLoadedSkills, scanSkills } from './skills.js'
+import { scanSkills } from './skills.js'
 import { createShip, deleteShip, getShip, listShips } from './ships.js'
 import { createFeature, getFeature, listFeatures, updateFeature, type Feature } from './features.js'
 import { createFeatureWorktree, removeFeatureWorktree } from './runtime/worktrees.js'
@@ -224,18 +224,6 @@ export async function startServer(opts: ServerOptions) {
       return wf
     },
   )
-
-  // -------------------------------------------------------------------
-  // Skills
-  // -------------------------------------------------------------------
-  app.get('/api/skills', async () =>
-    getLoadedSkills().map((s) => ({ name: s.name, description: s.description, path: s.path })),
-  )
-
-  app.post('/api/skills/refresh', async () => {
-    const skills = scanSkills()
-    return skills.map((s) => ({ name: s.name, description: s.description, path: s.path }))
-  })
 
   // -------------------------------------------------------------------
   // Tools (new tool model: skill / mcp / script / agent, 4 scopes)
