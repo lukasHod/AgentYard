@@ -1,6 +1,10 @@
 /**
  * Phase A smoke test — tool library lifecycle.
  *
+ * Runs against the existing "smoke-ship" ship (must point at a real git repo
+ * — by default the AgentYard repo itself). The smoke does NOT create or
+ * delete the ship; pre-flight just verifies one exists.
+ *
  * Exercises:
  *  1. Create per-ship skill via API, verify on disk
  *  2. Edit it, verify changes persist
@@ -13,58 +17,36 @@
  *  8. Create per-ship Script, verify manifest.yaml on disk
  *
  * Run with: npx tsx scripts/smoke-tools.ts
- * (Assumes `npm run dev` is already running.)
+ * (Assumes `npm run dev` is already running and a "smoke-ship" exists.)
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import path from 'node:path'
-import { simpleGit } from 'simple-git'
 
 const BASE = 'http://localhost:4242'
-const SHIP_NAME = `smoke-tools-throwaway-${Date.now()}`
-const SKILL_NAME = `smoke-skill-${Date.now()}`
-const AGENT_NAME = 'smoke-claude-agent'
-const MCP_NAME = `smoke-mcp-${Date.now()}`
-const SCRIPT_NAME = `smoke-script-${Date.now()}`
+const SHIP_NAME = 'smoke-ship'
+const STAMP = Date.now()
+// Timestamped names so concurrent / repeated runs don't collide with each other.
+const SKILL_NAME = `smoke-skill-${STAMP}`
+const AGENT_NAME = `smoke-claude-agent-${STAMP}`
+const MCP_NAME = `smoke-mcp-${STAMP}`
+const SCRIPT_NAME = `smoke-script-${STAMP}`
 
-const repoPath = path.join(tmpdir(), `agentyard-smoke-tools-${Date.now()}`)
+interface Ship {
+  id: number
+  name: string
+  projectPath: string
+  pathExists: boolean
+}
+
 let shipId: number | null = null
+let shipPath: string | null = null
 
 function fail(msg: string): never {
   console.error(`[smoke] FAIL: ${msg}`)
   void cleanup().finally(() => process.exit(1))
-  // The IIFE above is async; force exit if it doesn't fire quickly.
   setTimeout(() => process.exit(1), 5_000)
   throw new Error(msg)
-}
-
-async function cleanup(): Promise<void> {
-  try {
-    if (shipId !== null) await fetch(`${BASE}/api/ships/${shipId}`, { method: 'DELETE' })
-  } catch {
-    /* ignore */
-  }
-  // Also nuke any global skill we created, in case elevate succeeded but delete didn't.
-  try {
-    await fetch(`${BASE}/api/global-tools/skill/${SKILL_NAME}`, { method: 'DELETE' })
-  } catch {
-    /* ignore */
-  }
-  await new Promise((r) => setTimeout(r, 200))
-  try {
-    rmSync(repoPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
-  } catch (e) {
-    console.warn(`[smoke] cleanup warning: ${e}`)
-  }
-}
-
-async function step(label: string, fn: () => Promise<void>): Promise<void> {
-  try {
-    await fn()
-    console.log(`[smoke] ✓ ${label}`)
-  } catch (e) {
-    fail(`${label} — ${e instanceof Error ? e.message : String(e)}`)
-  }
 }
 
 async function api(
@@ -85,28 +67,57 @@ async function api(
   return { ok: res.ok, status: res.status, data, text }
 }
 
-// -------------------------------------------------------------
-// Setup
-// -------------------------------------------------------------
-
-mkdirSync(repoPath, { recursive: true })
-const git = simpleGit(repoPath)
-await git.init()
-await git.addConfig('user.email', 'smoke@agentyard.test')
-await git.addConfig('user.name', 'AgentYard Smoke')
-writeFileSync(path.join(repoPath, 'README.md'), '# smoke\n')
-await git.add('.')
-await git.commit('initial')
-try {
-  await git.raw(['branch', '-M', 'main'])
-} catch {
-  /* ignore */
+async function cleanup(): Promise<void> {
+  if (shipId === null || shipPath === null) return
+  // Restore the smoke-ship's filesystem to pre-test state. Best-effort —
+  // a failed test may have left a partial state; each DELETE is independent.
+  await api('DELETE', `/api/ships/${shipId}/tools/skill/${SKILL_NAME}`).catch(() => {})
+  await api('DELETE', `/api/global-tools/skill/${SKILL_NAME}`).catch(() => {})
+  await api('DELETE', `/api/ships/${shipId}/tools/agent/${AGENT_NAME}`).catch(() => {})
+  await api('DELETE', `/api/ships/${shipId}/tools/mcp/${MCP_NAME}`).catch(() => {})
+  await api('DELETE', `/api/ships/${shipId}/tools/script/${SCRIPT_NAME}`).catch(() => {})
+  // Remove the .claude fixture we seeded.
+  const fixture = path.join(shipPath, '.claude', 'agents', `${AGENT_NAME}.md`)
+  if (existsSync(fixture)) {
+    try {
+      rmSync(fixture, { force: true })
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
+async function step(label: string, fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn()
+    console.log(`[smoke] ✓ ${label}`)
+  } catch (e) {
+    fail(`${label} — ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+// -------------------------------------------------------------
+// Setup — locate smoke-ship, seed Claude-format agent fixture
+// -------------------------------------------------------------
+const ships = (await fetch(`${BASE}/api/ships`).then((r) => r.json())) as Ship[]
+const ship = ships.find((s) => s.name === SHIP_NAME)
+if (!ship) {
+  fail(
+    `no ship named "${SHIP_NAME}" registered. Create one pointing at any git repo via the galaxy view first.`,
+  )
+}
+if (!ship!.pathExists) {
+  fail(`ship "${SHIP_NAME}" projectPath does not exist on disk: ${ship!.projectPath}`)
+}
+shipId = ship!.id
+shipPath = ship!.projectPath
+console.log(`[smoke] using smoke-ship #${shipId} at ${shipPath}`)
+
 // Seed a Claude-format agent in .claude/ so we can test adoption + transform.
-mkdirSync(path.join(repoPath, '.claude', 'agents'), { recursive: true })
+const claudeAgentFile = path.join(shipPath, '.claude', 'agents', `${AGENT_NAME}.md`)
+mkdirSync(path.dirname(claudeAgentFile), { recursive: true })
 writeFileSync(
-  path.join(repoPath, '.claude', 'agents', `${AGENT_NAME}.md`),
+  claudeAgentFile,
   `---
 name: ${AGENT_NAME}
 description: Test agent for the smoke adopt flow
@@ -117,18 +128,11 @@ You are a smoke-test agent.
 `,
   'utf8',
 )
-console.log(`[smoke] repo at ${repoPath}, .claude/agents/${AGENT_NAME}.md seeded`)
-
-// Register as a ship.
-const ship = await api('POST', `/api/ships`, { name: SHIP_NAME, projectPath: repoPath })
-if (!ship.ok) fail(`POST /api/ships -> ${ship.status} ${ship.text}`)
-shipId = (ship.data as { id: number }).id
-console.log(`[smoke] ship #${shipId}`)
 
 // -------------------------------------------------------------
 // 1. Create per-ship skill
 // -------------------------------------------------------------
-const shipSkillFile = path.join(repoPath, '.agentyard', 'skills', SKILL_NAME, 'SKILL.md')
+const shipSkillFile = path.join(shipPath, '.agentyard', 'skills', SKILL_NAME, 'SKILL.md')
 const globalSkillFile = path.join(homedir(), '.agentyard', 'skills', SKILL_NAME, 'SKILL.md')
 
 await step('create per-ship skill', async () => {
@@ -201,8 +205,7 @@ await step('delete global', async () => {
 // -------------------------------------------------------------
 // 6. Adopt .claude/agents/* with format transform
 // -------------------------------------------------------------
-const claudeAgentFile = path.join(repoPath, '.claude', 'agents', `${AGENT_NAME}.md`)
-const adoptedAgentFile = path.join(repoPath, '.agentyard', 'agents', `${AGENT_NAME}.md`)
+const adoptedAgentFile = path.join(shipPath, '.agentyard', 'agents', `${AGENT_NAME}.md`)
 
 await step('catalog list shows .claude agent', async () => {
   const r = await api('GET', `/api/ships/${shipId}/tools`)
@@ -239,7 +242,7 @@ await step('adopt .claude agent transforms format and leaves origin untouched', 
 // -------------------------------------------------------------
 // 7. Create per-ship MCP with ${env:VAR} placeholder
 // -------------------------------------------------------------
-const mcpFile = path.join(repoPath, '.agentyard', 'mcps', `${MCP_NAME}.json`)
+const mcpFile = path.join(shipPath, '.agentyard', 'mcps', `${MCP_NAME}.json`)
 
 await step('create per-ship MCP with ${env:VAR} placeholder', async () => {
   const r = await api('POST', `/api/ships/${shipId}/tools/mcp`, {
@@ -263,7 +266,7 @@ await step('create per-ship MCP with ${env:VAR} placeholder', async () => {
 // -------------------------------------------------------------
 // 8. Create per-ship Script
 // -------------------------------------------------------------
-const scriptManifestFile = path.join(repoPath, '.agentyard', 'scripts', SCRIPT_NAME, 'manifest.yaml')
+const scriptManifestFile = path.join(shipPath, '.agentyard', 'scripts', SCRIPT_NAME, 'manifest.yaml')
 
 await step('create per-ship script', async () => {
   const r = await api('POST', `/api/ships/${shipId}/tools/script`, {

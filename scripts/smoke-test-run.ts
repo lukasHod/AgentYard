@@ -1,28 +1,31 @@
 /**
  * Phase D smoke — sandbox test-run endpoint.
  *
+ * Runs against the existing "smoke-ship" ship (must point at a real git repo,
+ * e.g. the AgentYard repo itself). The smoke does NOT create or delete the
+ * ship; pre-flight just verifies one exists.
+ *
  * Flow:
- *  1. Create a throwaway git repo.
- *  2. Register it as a ship.
- *  3. POST /api/test-runs against the default workflow's `print-context`
- *     script node, scope='node' (so we don't burn API calls on real AI).
- *  4. Listen on socket.io for test-run:* events scoped to that testRunId.
- *  5. Wait for test-run:teardown, then verify:
+ *  1. Find the "smoke-ship" via /api/ships.
+ *  2. POST /api/test-runs against the default workflow's `print-context`
+ *     script node, scope='node' (no real AI calls).
+ *  3. Listen on socket.io for test-run:* events scoped to that testRunId.
+ *  4. Wait for test-run:teardown, then verify:
  *     - test-run:started, test-run:node:started, test-run:node:complete,
  *       test-run:complete, test-run:teardown all fired
- *     - The test-worktree directory was deleted from disk
- *     - The throwaway branch is gone from `git branch --list`
+ *     - The test-worktree directory was deleted from <shipPath>/.agentyard/test-worktrees/
+ *     - The throwaway agentyard-test/* branch is gone from `git branch --list`
  *
  * Run with: npx tsx scripts/smoke-test-run.ts
- * (Assumes `npm run dev` is already running.)
+ * (Assumes `npm run dev` is already running and a "smoke-ship" exists.)
  */
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { simpleGit } from 'simple-git'
 import { io, type Socket } from 'socket.io-client'
 
 const BASE = 'http://localhost:4242'
+const SHIP_NAME = 'smoke-ship'
 const TIMEOUT_MS = 60_000
 
 interface CheckResult {
@@ -31,17 +34,18 @@ interface CheckResult {
   detail?: string
 }
 
+interface Ship {
+  id: number
+  name: string
+  projectPath: string
+  pathExists: boolean
+}
+
 const results: CheckResult[] = []
-let shipId: number | null = null
 let socket: Socket | null = null
-const repoPath = path.join(tmpdir(), `agentyard-smoke-D-${Date.now()}`)
 
 async function cleanup() {
   if (socket) socket.close()
-  if (shipId !== null) {
-    await fetch(`${BASE}/api/ships/${shipId}`, { method: 'DELETE' }).catch(() => {})
-  }
-  if (existsSync(repoPath)) rmSync(repoPath, { recursive: true, force: true })
 }
 
 function fail(msg: string): never {
@@ -51,35 +55,22 @@ function fail(msg: string): never {
   throw new Error(msg)
 }
 
-// 1. Throwaway repo.
-mkdirSync(repoPath, { recursive: true })
-const git = simpleGit(repoPath)
-await git.init()
-await git.addConfig('user.email', 'smoke@agentyard.test')
-await git.addConfig('user.name', 'AgentYard Smoke')
-writeFileSync(path.join(repoPath, 'README.md'), '# smoke D\n', 'utf8')
-await git.add('.')
-await git.commit('initial')
-try {
-  await git.raw(['branch', '-M', 'main'])
-} catch {
-  // ignore — older git
+// 1. Look up the existing smoke-ship.
+const ships = (await fetch(`${BASE}/api/ships`).then((r) => r.json())) as Ship[]
+const ship = ships.find((s) => s.name === SHIP_NAME)
+if (!ship) {
+  fail(
+    `no ship named "${SHIP_NAME}" registered. Create one pointing at any git repo via the galaxy view first.`,
+  )
 }
-
-// 2. Register ship.
-{
-  const r = await fetch(`${BASE}/api/ships`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: `smoke-D-${Date.now()}`, projectPath: repoPath }),
-  })
-  if (!r.ok) fail(`create ship: HTTP ${r.status}`)
-  const ship = (await r.json()) as { id?: number }
-  shipId = ship.id ?? null
-  if (typeof shipId !== 'number') fail(`create ship: no id in response`)
+if (!ship!.pathExists) {
+  fail(`ship "${SHIP_NAME}" projectPath does not exist on disk: ${ship!.projectPath}`)
 }
+const shipId = ship!.id
+const shipPath = ship!.projectPath
+const git = simpleGit(shipPath)
 
-// 3. Find default workflow + print-context node.
+// 2. Find default workflow + print-context node.
 const wfList = (await fetch(`${BASE}/api/workflows`).then((r) => r.json())) as Array<{
   id: number
   graph: { nodes: Array<{ id: string; type: string }> }
@@ -88,7 +79,7 @@ const wf = wfList.find((w) => w.graph.nodes.find((n) => n.id === 'print-context'
 if (!wf) fail('no workflow with print-context node')
 const workflowId: number = wf!.id
 
-// 4. Open socket.io and start collecting events.
+// 3. Open socket.io and start collecting events.
 socket = io(BASE, { transports: ['websocket', 'polling'] })
 await new Promise<void>((resolve) => socket!.on('connect', () => resolve()))
 
@@ -113,7 +104,7 @@ bind('test-run:complete')
 bind('test-run:failed')
 bind('test-run:teardown')
 
-// 5. POST the test-run.
+// 4. POST the test-run.
 {
   const r = await fetch(`${BASE}/api/test-runs`, {
     method: 'POST',
@@ -135,7 +126,7 @@ bind('test-run:teardown')
   observedRunId = body.testRunId
 }
 
-// 6. Wait for teardown (or timeout).
+// 5. Wait for teardown (or timeout).
 const teardownReached = await Promise.race([
   teardownPromise.then(() => true),
   new Promise<boolean>((resolve) => setTimeout(() => resolve(false), TIMEOUT_MS)),
@@ -151,7 +142,7 @@ if (!teardownReached) {
   results.push({ name: 'test-run reached teardown within timeout', pass: true })
 }
 
-// 7. Structural checks.
+// 6. Structural checks.
 for (const ev of [
   'test-run:started',
   'test-run:node:started',
@@ -172,8 +163,8 @@ results.push({
   detail: seen.has('test-run:failed') ? 'unexpected test-run:failed' : undefined,
 })
 
-// 8. Worktree dir gone.
-const wtRoot = path.join(repoPath, '.agentyard', 'test-worktrees')
+// 7. Worktree dir gone under the smoke-ship.
+const wtRoot = path.join(shipPath, '.agentyard', 'test-worktrees')
 const wtChildren = existsSync(wtRoot) ? readdirSync(wtRoot) : []
 results.push({
   name: 'sandbox worktree dir removed from disk',
@@ -181,7 +172,7 @@ results.push({
   detail: wtChildren.length === 0 ? undefined : `leftover dirs: ${wtChildren.join(', ')}`,
 })
 
-// 9. Throwaway branch gone.
+// 8. Throwaway branch gone from the smoke-ship's repo.
 const branchList = (await git.branch()).all
 const leftoverBranches = branchList.filter((b) => b.startsWith('agentyard-test/'))
 results.push({

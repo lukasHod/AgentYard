@@ -1,118 +1,117 @@
 /**
- * Phase 5 smoke test:
- *   1. Create a throwaway git repo in os.tmpdir().
- *   2. POST /api/ships to register it.
- *   3. POST /api/ships/:id/features with a concrete file-writing task.
- *   4. Wait for the feature to reach status=complete (via socket events).
- *   5. Verify the worktree exists and contains the expected file.
+ * Phase 5 smoke test — full feature flow with real AI agents.
+ *
+ * Runs against the existing "smoke-ship" ship (must point at a real git repo,
+ * e.g. the AgentYard repo itself). The smoke does NOT create or delete the
+ * ship; pre-flight just verifies one exists.
+ *
+ *  1. Look up smoke-ship.
+ *  2. POST /api/ships/:id/features with a concrete file-writing task.
+ *  3. Wait for the feature to reach status=complete (via socket events).
+ *  4. Verify the worktree exists and contains the expected file.
+ *  5. Tear down: remove worktree via /teardown, delete throwaway branch.
+ *
+ * This test makes real Claude API calls (3 workflow nodes) — expect it to
+ * take a few minutes and burn tokens.
  *
  * Run with: npx tsx scripts/smoke.ts
- * (Assumes `npm run dev` is already running.)
+ * (Assumes `npm run dev` is already running and a "smoke-ship" exists.)
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { simpleGit } from 'simple-git'
 import { io } from 'socket.io-client'
 
 const BASE = 'http://localhost:4242'
+const SHIP_NAME = 'smoke-ship'
 const TIMEOUT_MS = 600_000 // 10 min — three nodes with real file work.
 const SENTINEL_FILE = 'hello-agentyard.txt'
 const SENTINEL_CONTENT = 'hello, agentyard'
 const TASK = `Create a file named ${SENTINEL_FILE} at the repo root containing exactly the text "${SENTINEL_CONTENT}" (no surrounding quotes, no trailing newline required). The deploy phase must commit this change.`
+
+interface Ship {
+  id: number
+  name: string
+  projectPath: string
+  pathExists: boolean
+}
 
 function fail(msg: string): never {
   console.error(`[smoke] FAIL: ${msg}`)
   process.exit(1)
 }
 
-// 1. Throwaway repo.
-const repoPath = path.join(tmpdir(), `agentyard-smoke-${Date.now()}`)
-mkdirSync(repoPath, { recursive: true })
-const git = simpleGit(repoPath)
-await git.init()
-await git.addConfig('user.email', 'smoke@agentyard.test')
-await git.addConfig('user.name', 'AgentYard Smoke')
-writeFileSync(path.join(repoPath, 'README.md'), '# Smoke test repo\n', 'utf8')
-await git.add('.')
-await git.commit('initial')
-// Ensure a default branch named main.
-try {
-  await git.raw(['branch', '-M', 'main'])
-} catch {
-  // ignore — older git versions
+// 1. Find the existing smoke-ship.
+const ships = (await fetch(`${BASE}/api/ships`).then((r) => r.json())) as Ship[]
+const ship = ships.find((s) => s.name === SHIP_NAME)
+if (!ship) {
+  fail(`no ship named "${SHIP_NAME}" registered. Create one pointing at a git repo via the galaxy view first.`)
 }
-console.log(`[smoke] created repo: ${repoPath}`)
+if (!ship!.pathExists) {
+  fail(`ship "${SHIP_NAME}" projectPath does not exist on disk: ${ship!.projectPath}`)
+}
+const shipId = ship!.id
+const shipPath = ship!.projectPath
+console.log(`[smoke] using smoke-ship #${shipId} at ${shipPath}`)
+
+let featureId: number | null = null
+let featureBranch: string | null = null
 
 async function cleanup() {
   // Tear down agent sessions first so they release worktree file handles.
   try {
     await fetch(`${BASE}/api/runs/reset`, { method: 'POST' })
   } catch {
-    // ignore
+    /* ignore */
   }
-  // Delete the ship row so the cockpit isn't littered with broken smoke ships.
-  if (ship?.id) {
+  if (featureId !== null) {
     try {
-      await fetch(`${BASE}/api/ships/${ship.id}`, { method: 'DELETE' })
+      await fetch(`${BASE}/api/features/${featureId}/teardown`, { method: 'POST' })
     } catch {
-      // ignore
+      /* ignore */
     }
   }
+  // Wait a beat for file handles to close, then delete the throwaway branch.
   await new Promise((r) => setTimeout(r, 1500))
-  try {
-    rmSync(repoPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
-    console.log('[smoke] cleaned up temp repo')
-  } catch (e) {
-    console.warn(`[smoke] cleanup warning (orphan temp dir at ${repoPath}): ${e}`)
+  if (featureBranch) {
+    try {
+      await simpleGit(shipPath).raw(['branch', '-D', featureBranch])
+      console.log(`[smoke] deleted branch ${featureBranch}`)
+    } catch (e) {
+      console.warn(`[smoke] could not delete branch ${featureBranch}: ${e}`)
+    }
   }
 }
 
-// 2. Reset and create a ship.
-await fetch(`${BASE}/api/runs/reset`, { method: 'POST' }).catch(() => {})
-// Distinctive name with timestamp so leftover rows are obviously test artifacts.
-const shipName = `smoke-throwaway-${Date.now()}`
-const shipRes = await fetch(`${BASE}/api/ships`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ name: shipName, projectPath: repoPath }),
-})
-if (!shipRes.ok) {
-  const j = await shipRes.json().catch(() => ({}))
-  await cleanup()
-  fail(`POST /api/ships -> ${shipRes.status}: ${JSON.stringify(j)}`)
-}
-const ship = await shipRes.json()
-console.log(`[smoke] created ship #${ship.id}`)
-
-// 3. Subscribe to events, then create feature.
+// 2. Subscribe to events, then create feature.
 const socket = io(BASE, { transports: ['websocket'] })
-let featureId: number | null = null
 let featureComplete = false
 let featureError: string | null = null
 let worktreePath: string | null = null
 
 const done = new Promise<void>((resolve, reject) => {
   socket.on('connect', async () => {
-    const res = await fetch(`${BASE}/api/ships/${ship.id}/features`, {
+    const res = await fetch(`${BASE}/api/ships/${shipId}/features`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'add-greeting', task: TASK }),
     })
     if (!res.ok) {
       const j = await res.json().catch(() => ({}))
-      reject(new Error(`POST /api/ships/${ship.id}/features -> ${res.status}: ${JSON.stringify(j)}`))
+      reject(new Error(`POST /api/ships/${shipId}/features -> ${res.status}: ${JSON.stringify(j)}`))
       return
     }
     const body = await res.json()
     featureId = body.feature.id
     worktreePath = body.feature.worktreePath
-    console.log(`[smoke] feature #${featureId} created; worktree=${worktreePath ?? '(pending)'}`)
+    featureBranch = body.feature.branch ?? null
+    console.log(`[smoke] feature #${featureId} created; worktree=${worktreePath ?? '(pending)'} branch=${featureBranch ?? '(pending)'}`)
   })
 
-  socket.on('feature:updated', (f: { id: number; status: string; worktreePath?: string; error?: string; finalSummary?: string }) => {
+  socket.on('feature:updated', (f: { id: number; status: string; worktreePath?: string; branch?: string; error?: string; finalSummary?: string }) => {
     if (f.id !== featureId) return
     if (f.worktreePath && !worktreePath) worktreePath = f.worktreePath
+    if (f.branch && !featureBranch) featureBranch = f.branch
     console.log(`[smoke] feature:updated status=${f.status}${f.error ? ` error=${f.error}` : ''}`)
     if (f.status === 'complete') {
       featureComplete = true
@@ -143,7 +142,7 @@ try {
 clearTimeout(timeout)
 socket.close()
 
-// 4. Verify worktree + file.
+// 3. Verify worktree + file.
 if (!worktreePath) {
   await cleanup()
   fail('no worktree path observed')
