@@ -11,6 +11,7 @@ import type { Workflow } from '../core/schema'
 import type { ToolSummary } from '../core/tools'
 import { RunView, type ChatMessage, type PendingClarification } from './views/RunView'
 import { EditorView } from './views/EditorView'
+import { TestRunModal, type TestRunRequest } from './views/TestRunModal'
 import { GameCanvas } from './canvas/GameCanvas'
 
 let messageIdCounter = 0
@@ -28,6 +29,7 @@ export function App() {
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
   const [tools, setTools] = useState<ToolSummary[]>([])
   const [ships, setShips] = useState<ShipSummary[]>([])
+  const [testRunRequest, setTestRunRequest] = useState<TestRunRequest | null>(null)
   const [features, setFeatures] = useState<Map<number, FeatureSummary[]>>(new Map())
   const socketRef = useRef<Socket | null>(null)
 
@@ -397,6 +399,16 @@ export function App() {
           tools={tools}
           onSave={saveWorkflow}
           onRefreshTools={refreshTools}
+          onOpenTestRun={(req) => setTestRunRequest(req)}
+        />
+      )}
+      {testRunRequest && workflow && (
+        <TestRunModal
+          request={testRunRequest}
+          workflow={workflow}
+          ships={ships}
+          socket={socketRef.current}
+          onClose={() => setTestRunRequest(null)}
         />
       )}
     </main>

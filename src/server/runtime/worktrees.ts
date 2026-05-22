@@ -66,3 +66,69 @@ export async function removeFeatureWorktree(shipPath: string, worktreePath: stri
   }
   if (existsSync(worktreePath)) rmSync(worktreePath, { recursive: true, force: true })
 }
+
+/**
+ * Create a disposable worktree for a sandbox test run.
+ *
+ * Mirrors createFeatureWorktree but:
+ *  - Path: `<shipPath>/.agentyard/test-worktrees/<testRunId>`
+ *  - Branch: `agentyard-test/<testRunId>`
+ *  - Caller is expected to remove both worktree AND branch when done
+ *    (via removeTestWorktree) since nothing here is meant to survive.
+ */
+export async function createTestWorktree(opts: {
+  shipPath: string
+  testRunId: string
+  baseBranch?: string
+}): Promise<FeatureWorktree> {
+  if (!existsSync(opts.shipPath)) {
+    throw new Error(`Ship path does not exist: ${opts.shipPath}`)
+  }
+  const git: SimpleGit = simpleGit(opts.shipPath)
+  if (!(await git.checkIsRepo())) {
+    throw new Error(`Ship path is not a git repo: ${opts.shipPath}`)
+  }
+
+  const base = opts.baseBranch ?? (await git.revparse(['--abbrev-ref', 'HEAD'])).trim()
+  const branch = `agentyard-test/${sanitize(opts.testRunId)}`
+
+  const worktreesRoot = path.join(opts.shipPath, '.agentyard', 'test-worktrees')
+  mkdirSync(worktreesRoot, { recursive: true })
+  const wtPath = path.join(worktreesRoot, opts.testRunId)
+
+  if (existsSync(wtPath)) {
+    try {
+      await git.raw(['worktree', 'remove', '--force', wtPath])
+    } catch {
+      // ignore
+    }
+    if (existsSync(wtPath)) rmSync(wtPath, { recursive: true, force: true })
+  }
+
+  await git.raw(['worktree', 'add', '-b', branch, wtPath, base])
+  return { path: wtPath, branch }
+}
+
+/**
+ * Tear down a test worktree AND delete its branch.
+ * Best-effort — never throws.
+ */
+export async function removeTestWorktree(
+  shipPath: string,
+  worktreePath: string,
+  branch: string,
+): Promise<void> {
+  if (!existsSync(shipPath)) return
+  const git = simpleGit(shipPath)
+  try {
+    await git.raw(['worktree', 'remove', '--force', worktreePath])
+  } catch {
+    // best effort
+  }
+  if (existsSync(worktreePath)) rmSync(worktreePath, { recursive: true, force: true })
+  try {
+    await git.raw(['branch', '-D', branch])
+  } catch {
+    // best effort — branch may already be gone
+  }
+}

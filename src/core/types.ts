@@ -120,10 +120,30 @@ export interface ServerEvents {
   'ship:deleted':     { id: number }
   'feature:created':  FeatureSummary
   'feature:updated':  FeatureSummary
+  // ── Sandbox test-run events ──
+  // Scoped so the normal Run view + galaxy don't ever pick them up. Every payload
+  // carries testRunId so the modal can filter to the one it's watching.
+  'test-run:started':                  { testRunId: string; nodeIds: string[]; task: string; scope: 'workflow' | 'node' }
+  'test-run:complete':                 { testRunId: string; finalSummary: string }
+  'test-run:failed':                   { testRunId: string; error: string; nodeId?: string }
+  'test-run:node:started':             { testRunId: string; nodeId: string; title: string }
+  'test-run:node:complete':            { testRunId: string; nodeId: string; title: string; summary: string }
+  'test-run:node:skipped':             { testRunId: string; nodeId: string; title: string }
+  'test-run:session:added':            { testRunId: string; descriptor: SessionDescriptor }
+  'test-run:session:removed':          { testRunId: string; id: string }
+  'test-run:agent:message':            { testRunId: string; agentRunId: string; role: 'assistant' | 'user' | 'system'; content: string; timestamp: number }
+  'test-run:agent:state':              { testRunId: string; agentRunId: string; state: AgentState }
+  'test-run:clarification:requested':  { testRunId: string; agentRunId: string; toolUseId: string; question: string }
+  'test-run:clarification:resolved':   { testRunId: string; agentRunId: string; toolUseId: string }
+  'test-run:teardown':                 { testRunId: string }
 }
 
 // Client → Server events
 export interface ClientEvents {
   'agent:send':          { agentRunId: string; content: string }
   'clarification:reply': { agentRunId: string; toolUseId: string; answer: string }
+  // ── Sandbox test-run client→server messages ──
+  // Forwarded by the server to the test-run's isolated SessionManager.
+  'test-run:agent:send':           { testRunId: string; agentRunId: string; content: string }
+  'test-run:clarification:reply':  { testRunId: string; agentRunId: string; toolUseId: string; answer: string }
 }

@@ -21,6 +21,7 @@ import { scanSkills } from './skills.js'
 import { createShip, deleteShip, getShip, listShips } from './ships.js'
 import { createFeature, getFeature, listFeatures, updateFeature, type Feature } from './features.js'
 import { createFeatureWorktree, removeFeatureWorktree } from './runtime/worktrees.js'
+import { TestRunRegistry } from './runtime/testRun.js'
 import { loadSecrets } from './secrets.js'
 import { seedDefaultAgentsIfMissing } from './agentsSeed.js'
 import { seedDefaultScriptsIfMissing } from './scriptsSeed.js'
@@ -169,6 +170,8 @@ export async function startServer(opts: ServerOptions) {
     }
   })
 
+  const testRuns = new TestRunRegistry(io)
+
   io.on('connection', (socket: Socket) => {
     app.log.info(`socket connected: ${socket.id}`)
 
@@ -203,6 +206,44 @@ export async function startServer(opts: ServerOptions) {
       (payload: { agentRunId: string; toolUseId: string; answer: string }) => {
         if (!payload?.agentRunId || !payload?.toolUseId || typeof payload.answer !== 'string') return
         manager.get(payload.agentRunId)?.resolveClarification(payload.toolUseId, payload.answer)
+      },
+    )
+
+    socket.on(
+      'test-run:agent:send',
+      (payload: { testRunId: string; agentRunId: string; content: string }) => {
+        if (
+          typeof payload?.testRunId !== 'string' ||
+          typeof payload?.agentRunId !== 'string' ||
+          typeof payload?.content !== 'string'
+        )
+          return
+        if (payload.content.length === 0) return
+        testRuns.sendToAgent(payload.testRunId, payload.agentRunId, payload.content)
+      },
+    )
+
+    socket.on(
+      'test-run:clarification:reply',
+      (payload: {
+        testRunId: string
+        agentRunId: string
+        toolUseId: string
+        answer: string
+      }) => {
+        if (
+          !payload?.testRunId ||
+          !payload?.agentRunId ||
+          !payload?.toolUseId ||
+          typeof payload.answer !== 'string'
+        )
+          return
+        testRuns.replyClarification(
+          payload.testRunId,
+          payload.agentRunId,
+          payload.toolUseId,
+          payload.answer,
+        )
       },
     )
 
@@ -595,6 +636,57 @@ export async function startServer(opts: ServerOptions) {
     states.clear()
     activeRun = null
     activeFeatureId = null
+    return { ok: true }
+  })
+
+  // -------------------------------------------------------------------
+  // Sandbox test runs — isolated worktree + isolated SessionManager.
+  // No DB persistence. Tears down on completion / failure / abort.
+  // -------------------------------------------------------------------
+  app.post<{
+    Body: {
+      shipId?: number
+      workflowId?: number
+      task?: string
+      scope?: 'workflow' | 'node'
+      nodeId?: string
+      upstreamOutputs?: string
+    }
+  }>('/api/test-runs', async (req, reply) => {
+    const { shipId, workflowId, task, scope, nodeId, upstreamOutputs } = req.body ?? {}
+    if (typeof shipId !== 'number') return reply.code(400).send({ error: 'shipId is required' })
+    if (typeof workflowId !== 'number')
+      return reply.code(400).send({ error: 'workflowId is required' })
+    if (typeof task !== 'string' || task.trim().length === 0)
+      return reply.code(400).send({ error: 'task is required' })
+    if (scope !== 'workflow' && scope !== 'node')
+      return reply.code(400).send({ error: "scope must be 'workflow' or 'node'" })
+    if (scope === 'node' && (typeof nodeId !== 'string' || nodeId.length === 0))
+      return reply.code(400).send({ error: 'nodeId is required for scope=node' })
+
+    const ship = getShip(shipId)
+    if (!ship) return reply.code(404).send({ error: 'ship not found' })
+    const wf = getWorkflow(workflowId)
+    if (!wf) return reply.code(404).send({ error: 'workflow not found' })
+
+    try {
+      const testRunId = await testRuns.start({
+        ship,
+        workflow: wf,
+        task,
+        scope,
+        nodeId,
+        upstreamOutputs,
+      })
+      return { ok: true, testRunId }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return reply.code(500).send({ error: msg })
+    }
+  })
+
+  app.post<{ Params: { id: string } }>('/api/test-runs/:id/abort', async (req) => {
+    await testRuns.abort(req.params.id)
     return { ok: true }
   })
 

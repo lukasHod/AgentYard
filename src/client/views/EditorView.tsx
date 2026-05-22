@@ -17,12 +17,14 @@ import {
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowGraph, WorkflowNode } from '../../core/schema'
 import type { ScriptTool, ToolSummary } from '../../core/tools'
+import type { TestRunRequest } from './TestRunModal'
 
 interface Props {
   workflow: Workflow | null
   tools: ToolSummary[]
   onSave: (workflow: Workflow) => Promise<void> | void
   onRefreshTools: () => void
+  onOpenTestRun: (req: TestRunRequest) => void
 }
 
 type WorkflowRFNode = RFNode<{ node: WorkflowNode }>
@@ -75,7 +77,7 @@ function uniqueId(existing: Set<string>, base: string): string {
   return `${base}-${i}`
 }
 
-export function EditorView({ workflow, tools, onSave, onRefreshTools }: Props) {
+export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTestRun }: Props) {
   const [nodes, setNodes] = useState<WorkflowRFNode[]>([])
   const [edges, setEdges] = useState<RFEdge[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -249,6 +251,23 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools }: Props) {
               delete
             </button>
           )}
+          <span className="mx-1 text-zinc-700">|</span>
+          {selectedId && (
+            <button
+              onClick={() => onOpenTestRun({ scope: 'node', nodeId: selectedId })}
+              className="px-3 py-1 border border-fuchsia-500/60 text-fuchsia-300 hover:bg-fuchsia-500/20"
+              title="test the selected node in a sandbox worktree"
+            >
+              ▶ test node
+            </button>
+          )}
+          <button
+            onClick={() => onOpenTestRun({ scope: 'workflow' })}
+            className="px-3 py-1 border border-fuchsia-500/60 text-fuchsia-300 hover:bg-fuchsia-500/20"
+            title="test the whole workflow in a sandbox worktree"
+          >
+            ▶ test workflow
+          </button>
         </div>
 
         <div style={{ height: 'calc(100vh - 60px)' }}>
