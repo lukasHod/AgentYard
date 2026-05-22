@@ -1,6 +1,6 @@
 # Tools and Workflow Editor — Design
 
-Spec produced via the `obra/superpowers` brainstorming methodology. All five sections were confirmed section-by-section by the user before writing.
+Spec produced via the `obra/superpowers` brainstorming methodology. Five sections were confirmed section-by-section, then a 12-point user review surfaced fixes that have been applied to this version.
 
 ## Context
 
@@ -14,69 +14,71 @@ Today an AgentYard workflow has:
 The user wants the orchestrator to feel like a real shipyard where each ship can be configured with its own toolset, and a workflow editor that supports growth (new node types, branching, custom scripts). This spec replaces the static drone-slot model with a first-class tool library, agent presets, and an extensible node-type system.
 
 Out of scope (logged as follow-ups):
-- **Watchers** — scheduled polling triggers that create features (e.g. "every 15 min check GitHub issues, on new issue run analyze→develop→deploy"). Separate sub-project.
-- **Loop nodes inside a workflow** — explicitly dropped by the user.
-- **Pure rule-based conditional nodes** — branching is handled by AI leaders for now.
+- **Watchers** — scheduled polling triggers that create features. Separate sub-project.
+- **Loop nodes inside a workflow** — dropped by user.
+- **Pure rule-based conditional nodes** — branching is handled by AI leaders.
+- **OS keyring integration for secrets** — punted to a later phase.
 
 ## Locked decisions
 
 | Decision | Choice |
 |---|---|
 | Tool types in v1 | skill, mcp, script, agent (4 total) |
-| Storage scopes | `.claude/` (catalog, read-only), `<ship>/.agentyard/` (per-ship, editable), `~/.agentyard/` (global, editable) |
-| Lifecycle actions | Adopt (`.claude → per-ship`), Elevate (`per-ship → global`), Fork to ship (`global → per-ship`) |
-| Resolution | Per-ship overrides global; `.claude` only visible as catalog |
-| Agent role | An agent IS a drone preset. Workflow nodes connect to agents directly; "drone slots" concept is removed. |
-| Capability attachment | Skills / MCPs / scripts attach to AGENTS, not to nodes. Connecting an agent to a node brings its full load-out. |
-| Node types | Two: `ai` (LLM-driven, leader + agents) and `custom` (deterministic). First custom subtype: `script`. |
-| Branching | AI leaders can pass `next?: string[]` in `mark_node_complete` to choose which downstream edges to follow. No dedicated "conditional" node type. |
-| Workflow editor | Add/rename/delete nodes via palette; edit edges; replace drone-slots UI with agent multiselect. |
-| Migration | Wipe & reseed default workflow + seed default agents (no auto-migrate of existing rows). |
+| `<ship>` resolution | `ship.projectPath` — `<ship>/.agentyard/` is a sibling of `.git/`. **Deleting the project repo deletes the per-ship tools.** |
+| Catalog sources | `<ship>/.claude/` (project-level) + `~/.claude/` (user-level). Both read-only. |
+| AgentYard scopes | `<ship>/.agentyard/` (per-ship editable) + `~/.agentyard/` (global editable) |
+| Lifecycle actions | Adopt, Elevate, Fork — see lifecycle table below |
+| Resolution | per-ship → global → error. Catalog never resolves directly; must be adopted first. |
+| Agent role | An agent IS a drone preset. Workflow nodes connect to agents directly; drone slots are gone. |
+| Capability attachment | Skills / MCPs / scripts attach to AGENTS, not nodes. Connecting an agent brings its full load-out. |
+| Node types | Two: `ai` (LLM-driven) and `custom` (deterministic). First custom subtype: `script`. |
+| Branching | AI leaders pass `next?: string[]` in `mark_node_complete`. Pulled into Phase B. |
+| Script body | Implicit `script.sh` dropped. Manifest `cmd:` is authoritative — for non-trivial logic, write `cmd: "bash script.sh {filter}"`. |
+| Secrets | `${env:VAR}` substitution in MCP configs at runtime. Optional `~/.agentyard/.secrets/secrets.env` (gitignored) auto-loaded at startup. |
+| Library freshness | Explicit endpoint, no in-memory cache. Rescan disk on every list call. |
+| MCP namespace split | Runtime tools → `mcp__ay_runtime__*`. User scripts → `mcp__ay_scripts__*`. (Was: `mcp__agentyard__*` — collision-prone.) |
+| Migration | Wipe & reseed. Drop `skills` + `node_skills` SQLite tables. Set `features.workflow_id` NULL on wipe. |
 
 ## Conceptual model
 
 ```
-                ┌───────────────────────────────────────┐
-                │              TOOL LIBRARY             │
-                │  (per-ship .agentyard/ + global ~/    │
-                │  + .claude/ catalog)                  │
-                │                                       │
-                │  ╭─ skills ─╮  ╭─ mcps ──╮            │
-                │  │ react-bp │  │ github  │            │
-                │  ╰──────────╯  ╰─────────╯            │
-                │                                       │
-                │  ╭─ scripts ╮  ╭─ agents ────────╮    │
-                │  │ run-tests│  │ developer       │    │
-                │  ╰──────────╯  │   skills: [...]  │    │
-                │                │   mcps:   [...]  │    │
-                │                │   scripts:[...]  │    │
-                │                ╰──────────────────╯    │
-                └───────────────────────────────────────┘
-                                  │
-                                  │ (workflow node connects to agents only)
-                                  ▼
-        ┌──────────────────────────────────────────────────────┐
-        │                  WORKFLOW (per ship)                 │
-        │                                                      │
-        │   [Analyze]──→[Classify]──→[Develop]──→[Deploy]      │
-        │   (AI)         (AI)         (AI)        (AI)         │
-        │   agents:      agents:       agents:    agents:      │
-        │   - planner    - classifier  - dev     - releaser    │
-        │   - reviewer                 - reviewer              │
-        │                  │                                   │
-        │                  └─→[Debug] (AI, agents: [debugger]) │
-        │                          │                           │
-        │                          └─────────────────→[Deploy] │
-        │                                                      │
-        │   (Debug routed-to via mark_node_complete.next)      │
-        └──────────────────────────────────────────────────────┘
+   READ-ONLY CATALOG                       AGENTYARD-MANAGED
+   ─────────────────                       ─────────────────
+   ~/.claude/{agents,skills}/  ──┐
+                                 ├──► ~/.agentyard/{...}/      (global, editable)
+   <ship>/.claude/{...}/       ──┤            │
+                                 │            │ resolution: per-ship → global
+                                 ├──► <ship>/.agentyard/{...}/ (per-ship, editable)
+   adopt / elevate / fork ───────┘
+                                              │
+                                              ▼
+                            ┌───────────────────────────────────┐
+                            │      WORKFLOW (per ship)          │
+                            │                                   │
+                            │  [Analyze] → [Classify] →         │
+                            │    AI         AI (branches)       │
+                            │    agents:    agents: [classifier]│
+                            │    [planner,            │         │
+                            │     reviewer]      ┌────┴────┐    │
+                            │                    ▼         ▼    │
+                            │                 [Develop] [Debug] │
+                            │                    AI       AI    │
+                            │                  agents:  agents: │
+                            │                    │         │    │
+                            │                    └────┬────┘    │
+                            │                         ▼         │
+                            │                     [Deploy]      │
+                            │                       AI          │
+                            └───────────────────────────────────┘
 ```
+
+`<ship>` everywhere below resolves to `ship.projectPath` from the SQLite `ships` table.
 
 ## Per-tool schemas
 
 ### Skill
 
-`<ship>/.agentyard/skills/<name>/SKILL.md` — existing format, just per-ship:
+`<ship>/.agentyard/skills/<name>/SKILL.md` (per-ship) or `~/.agentyard/skills/<name>/SKILL.md` (global):
 
 ```
 ---
@@ -88,7 +90,7 @@ description: One-line description
 Markdown instructions loaded into the drone's system prompt.
 ```
 
-Catalog source: `<ship>/.claude/skills/<name>/SKILL.md` (same format).
+Catalog sources scanned in this order: `<ship>/.claude/skills/<name>/SKILL.md`, `~/.claude/skills/<name>/SKILL.md` (Claude Code's actual user-level convention).
 
 ### MCP
 
@@ -101,13 +103,13 @@ One file per server. `<ship>/.agentyard/mcps/<name>.json`:
   "transport": "stdio",
   "command": "npx",
   "args": ["@modelcontextprotocol/server-github"],
-  "env": { "GITHUB_TOKEN": "..." }
+  "env": { "GITHUB_TOKEN": "${env:GITHUB_TOKEN}" }
 }
 ```
 
-HTTP variant uses `"transport": "http"`, `"url"`, `"headers"`.
-
-Catalog source: `<ship>/.claude/mcp.json` (Claude's single-file format). AgentYard splits each entry as a virtual catalog item; adopting writes out a single-file `.agentyard/mcps/<name>.json`.
+- HTTP variant uses `"transport": "http"`, `"url"`, `"headers"`.
+- **`${env:VAR}` substitution** is resolved at MCP-server-spawn time from `process.env`. Never persisted, never logged. Applies to any string field in the config (env values, args, urls, headers).
+- Catalog sources: `<ship>/.claude/mcp.json` (Claude project-level single-file format — AgentYard splits each entry as a virtual catalog item) and `~/.claude/mcp.json` (user-level, same format).
 
 ### Script
 
@@ -123,7 +125,19 @@ args:
     required: false
 ```
 
-Plus optional `script.sh` (or `.ps1`, `.py`) for non-trivial logic. When attached to an agent, AgentYard registers an MCP-style custom tool (`mcp__agentyard__<scriptName>`); calling it runs `cmd` (with `{argName}` substitution) via Bash inside the worktree, returns stdout/stderr.
+`cmd:` is the **only** thing AgentYard executes. There is no implicit `script.sh` execution.
+
+For non-trivial logic, place a script file beside the manifest and reference it explicitly:
+
+```yaml
+cmd: "bash script.sh {filter}"
+```
+
+…with `<name>/script.sh` next to the manifest. Works the same on Windows, macOS, and Linux as long as the user's shell can resolve the interpreter.
+
+When attached to an agent, AgentYard registers an MCP-style custom tool named `mcp__ay_scripts__<name>`; calling it substitutes `{argName}` tokens (from the call's args, themselves substituted with `{task}` / `{upstream_outputs}` at node-render time), then runs `cmd` via the shell inside the worktree, returning stdout/stderr.
+
+There is no Claude Code catalog source for scripts — they are AgentYard-only.
 
 ### Agent
 
@@ -146,62 +160,106 @@ You are the developer drone on the AgentYard team. When the leader assigns you a
 read the relevant files first, then make focused edits…
 ```
 
-Body is the system prompt. Frontmatter uses Claude's existing keys where possible:
-- `description`, `model`, `tools`→`allowedTools`, `mcpServers`→`mcps`, `skills`
+**Compatibility with `.claude/agents/*.md` is via transform, not copy.** Claude Code's agent frontmatter uses `mcpServers` (we use `mcps`); has no `role`, `toolPreset`, or `scripts` fields. Adopting from a `.claude/` agent runs through `lifecycle.adopt` which:
+1. Parses the source frontmatter
+2. Maps `mcpServers` → `mcps`
+3. Fills `role` from the file's basename (e.g. `developer.md` → `role: developer`)
+4. Defaults `toolPreset: claude_code` (preserves Claude Code's general expectation that agents have file tools)
+5. Defaults `scripts: []`
+6. Writes a new file in `.agentyard/agents/` with the transformed frontmatter + the original body unchanged
 
-AgentYard extensions: `role`, `scripts`, `toolPreset`. Existing `.claude/agents/*.md` Just Work once adopted.
+The `.claude/` original is untouched.
 
-### Shadowing
+### Shadowing rules
 
-If a tool with the same name exists in both `.claude/` and `.agentyard/`, the `.agentyard/` copy wins (already adopted/edited). The `.claude/` original is hidden from the library to avoid confusion. Same applies between `.agentyard/` per-ship and `~/.agentyard/` global: per-ship wins.
+| Both exist | Wins |
+|---|---|
+| `<ship>/.agentyard/X` + `~/.agentyard/X` | per-ship |
+| `<ship>/.claude/X` + `<ship>/.agentyard/X` | per-ship (`.claude` hidden from catalog) |
+| `~/.claude/X` + `~/.agentyard/X` | global (`~/.claude` hidden from catalog) |
+| `<ship>/.claude/X` + `~/.claude/X` | per-ship catalog entry shown; user-level catalog entry hidden |
+
+Resolution at runtime: per-ship `.agentyard` → global `~/.agentyard` → error. Catalog never resolves directly.
 
 ## Library UI
 
-### Two entry points (same component)
+### Two entry points
 
-1. **Ship cockpit → Tools tab** (primary): shows all three scopes for that ship; all lifecycle actions available.
-2. **Galaxy HUD → "library" button** (new): shows global-only library; lets you edit `~/.agentyard/` tools without opening a ship.
+1. **Ship cockpit → Tools tab** (primary): shows all four scopes for the current ship; all lifecycle actions available.
+2. **Galaxy HUD → "library" button** (new): shows global `~/.agentyard/` + user catalog `~/.claude/` only; lets you manage global tools without a ship selected.
+
+### Freshness
+
+Both entry points call `GET /api/ships/:id/tools` (cockpit) or `GET /api/global-tools` (galaxy). Each call rescans the relevant scopes from disk — **no in-memory cache**. Cheap; filesystem reads are fast and libraries stay small. The current `skills.ts` in-memory cache pattern is dropped.
 
 ### List rendering
 
-Sectioned by type, each tool tagged with its scope and offered relevant actions:
+Sectioned by type, each tool tagged with its source and offered relevant actions:
 
 ```
-TOOLS                                              [+ create new]
+TOOLS                                                     [+ create new]
 
-▾ SKILLS (4)
-   • react-best-practices    [agentyard]  [edit] [delete] [↑ elevate]
-   • agentyard-style         [agentyard]  [edit] [delete] [↑ elevate]
-   • jira-master             [global]     [edit] [delete] [↓ fork]
-   • security-review         [.claude]    [adopt →]
+▾ SKILLS (5)
+   • react-best-practices    [agentyard]      [edit] [delete] [↑ elevate]
+   • agentyard-style         [agentyard]      [edit] [delete] [↑ elevate]
+   • jira-master             [global]         [edit] [delete] [↓ fork]
+   • security-review         [.claude project] [adopt → ship]
+   • code-style              [.claude user]    [adopt → global]
 
 ▾ AGENTS (2)
-   • developer               [global]     [edit] [delete] [↓ fork]
-   • reviewer                [.claude]    [adopt →]
+   • developer               [global]         [edit] [delete] [↓ fork]
+   • reviewer                [.claude project] [adopt → ship]
 
 ▾ MCPS / SCRIPTS (similar)
 ```
 
-Action semantics:
+Four badges:
+- `[agentyard]` — `<ship>/.agentyard/`, fully editable
+- `[global]` — `~/.agentyard/`, fully editable
+- `[.claude project]` — `<ship>/.claude/`, read-only catalog
+- `[.claude user]` — `~/.claude/`, read-only catalog
+
+### Adoption defaults
+
+Where an adopted file lands depends on the catalog source:
+
+| Catalog source | Default adoption target | User override? |
+|---|---|---|
+| `<ship>/.claude/X` | `<ship>/.agentyard/X` | yes, can target global instead |
+| `~/.claude/X` | `~/.agentyard/X` | yes, can target per-ship instead |
+
+### Lifecycle actions
 
 | From → To | Action | Effect |
 |---|---|---|
-| `.claude` → per-ship | Adopt | Copy file into `.agentyard/`; `.claude/` left untouched. |
-| per-ship → global | Elevate | Move file from `.agentyard/` to `~/.agentyard/`. Workflow refs (name-only) auto-resolve to global. |
-| global → per-ship | Fork to ship | Copy file into `.agentyard/` (per-ship now shadows global). Allows ship-specific divergence. |
+| `<ship>/.claude` → `<ship>/.agentyard` | Adopt → ship | Parse-transform-write into `.agentyard/`. `.claude/` original untouched. |
+| `~/.claude` → `~/.agentyard` | Adopt → global | Same, into global. |
+| `<ship>/.agentyard` → `~/.agentyard` | Elevate | Move file. Workflow refs (name-only) auto-resolve to global on next run. |
+| `~/.agentyard` → `<ship>/.agentyard` | Fork to ship | Copy. Per-ship now shadows global for this ship only. |
+
+Delete on `[agentyard]` or `[global]` removes the file (with confirm). If a `[.claude]` original existed and was shadowed, it reappears in the catalog.
 
 ### Edit / create form
 
-`[+ create new]` opens a type picker → scope picker (defaults: per-ship if in ship cockpit, global if in galaxy library view) → type-specific form.
+`[+ create new]` opens a type picker → scope picker (defaults: per-ship in cockpit, global in galaxy view) → type-specific form.
 
 | Type | Form fields |
 |---|---|
 | Skill | name, description, body (markdown textarea) |
-| MCP | name, description, transport radio, command+args+env *or* url+headers |
-| Script | name, description, cmd, optional `script.sh` body, args schema rows |
-| Agent | name, description, role, model dropdown, toolPreset radio, allowedTools multiselect (when claude_code), skills/mcps/scripts multiselects of this ship's library, system prompt textarea (body) |
+| MCP | name, description, transport radio, command+args+env *or* url+headers (`${env:VAR}` allowed in any string field) |
+| Script | name, description, cmd, optional `script.sh` body (separate file written next to manifest if non-empty), args schema rows |
+| Agent | name, description, role, model dropdown, toolPreset radio, allowedTools multiselect (when claude_code), skills/mcps/scripts multiselects of the ship's library, system prompt textarea (body) |
 
-Save writes to disk. Cancel returns to list. Delete confirms + removes the `.agentyard/` (or `~/.agentyard/`) file. Deleting a per-ship tool that shadows a global one un-shadows the global one (it becomes visible again).
+Save writes to disk. Cancel returns to list.
+
+### Secrets layering
+
+Two mechanisms work together:
+
+1. **`${env:VAR}` substitution** — any string field in any tool file. Resolved at runtime from `process.env`. Never persisted, never logged.
+2. **Optional `~/.agentyard/.secrets/secrets.env`** — simple `KEY=value` file (gitignored). AgentYard auto-loads it into `process.env` at server startup if it exists. Gives the user an AgentYard-specific home for secrets, decoupled from per-project ecosystems (.NET, Go, mobile, etc. don't use `.env`).
+
+Recommended workflow: put real tokens in `~/.agentyard/.secrets/secrets.env`, reference them via `${env:VAR}` in MCP configs. Per-ship MCP files can then live in the repo without containing secrets.
 
 ## Workflow editor changes
 
@@ -223,7 +281,7 @@ WorkflowNode {
 
   // type === 'ai'
   prompt?: string
-  agents?: string[]                  // names; resolver walks per-ship → global
+  agents?: string[]              // names; resolver walks per-ship → global
 
   // type === 'custom'
   customType?: 'script' /* | future */
@@ -232,7 +290,7 @@ WorkflowNode {
 }
 ```
 
-`kind` and `drones` and `skills` are gone. Everything previously expressed as a "develop node with drone slots + skills" becomes an "AI node with agents". Each agent self-contains its prompt addition, skills, MCPs, scripts.
+`kind`, `drones`, `skills` are removed. All capability attachment lives on agents now.
 
 ### Editor side panel
 
@@ -251,6 +309,8 @@ AGENTS (2)                                          [+]
   ☐ security-auditor [global]      ← available, click to connect
 ```
 
+Multiselect calls `GET /api/ships/:id/tools` for fresh data each time the panel opens; no cached options list.
+
 For a script node:
 
 ```
@@ -266,139 +326,199 @@ ARGS
 
 ### Palette
 
-Two columns:
-
 ```
 AI                       CUSTOM
   ⊕ AI node                ⊕ Script
                            (future: wait / http / parallel / …)
 ```
 
-Drag any to canvas → new node of that type. AI nodes have cyan border; script nodes have amber border. Future custom subtypes get their own colors.
+AI nodes cyan border; script nodes amber.
 
 ### Node lifecycle
 
-- **Add** — drag from palette or click "+ node" → new node at canvas center, opens for editing
+- **Add** — drag from palette or "+ node" button
 - **Rename** — edit `title` in side panel
-- **Delete** — button in side panel + confirm, cascades edge cleanup
-- **Edit edges** — drag handle → handle adds edge (already works); click edge + Delete key removes (polish needed)
+- **Delete** — button + confirm, cascades edge cleanup
+- **Edit edges** — drag handle → handle adds; click edge + Delete key removes
 
 ### Runtime — AI node execution
 
 1. Executor resolves each `node.agents[name]`:
-   - First try `<ship>/.agentyard/agents/<name>.md`
+   - First `<ship>/.agentyard/agents/<name>.md`
    - Then `~/.agentyard/agents/<name>.md`
    - Error if neither exists
 2. For each resolved agent: spawn drone session with the agent's
    - system prompt (body)
    - skills (loaded via `renderSkillContext`)
-   - mcps (registered as MCP servers in the SDK options)
-   - scripts (registered as MCP-style custom tools)
-   - allowedTools, model, toolPreset (passed through to the SDK)
-3. Spawn the leader with `assign_task` (closed over exactly these drones) + `mark_node_complete` + `request_clarification`
+   - mcps (registered as MCP servers in the SDK options; `${env:VAR}` resolved)
+   - scripts (registered as `mcp__ay_scripts__<name>` custom tools)
+   - allowedTools, model, toolPreset
+3. Spawn the leader with `mcp__ay_runtime__assign_task` (closed over exactly these drones), `mcp__ay_runtime__mark_node_complete`, `mcp__ay_runtime__request_clarification`
 4. Leader's system prompt = `node.prompt` rendered with `{task}` and `{upstream_outputs}`
-5. Leader does its thing; calling `assign_task("not-in-roster", ...)` returns an error tool_result.
+5. `assign_task("not-in-roster", ...)` returns an error tool_result.
 
 ### Runtime — Script node execution
 
 1. Executor resolves `node.scriptName` → script tool (per-ship → global)
 2. Render `args` map with `{task}` / `{upstream_outputs}` substitution
 3. Render `cmd` with `{argName}` substitution from rendered args
-4. Run via Bash inside the worktree (`spawn(...)` with `cwd: worktree.path`)
+4. Run via shell inside the worktree (cwd = worktree.path)
 5. Capture stdout; non-zero exit → node fails with stderr as the error message
-6. On success, mark node complete with stdout (truncated if huge) as summary
+6. On success, mark node complete with stdout (truncated if >32KB) as summary
 7. Custom nodes always follow ALL outgoing edges (no branching)
 
 ### Branching (AI nodes only)
 
-`mark_node_complete` tool gains an optional `next?: string[]` parameter:
+`mcp__ay_runtime__mark_node_complete` tool gains an optional `next?: string[]` parameter:
 
 ```ts
 mark_node_complete({
   summary: string,
   outputs?: Record<string, string>,
-  next?: string[]                    // ⟵ NEW
+  next?: string[]
 })
 ```
 
-- Omitted → executor follows all outgoing edges (current behavior; linear chains keep working)
+- Omitted → executor follows all outgoing edges (linear default)
 - Specified → executor follows only those listed
-- Constraint: each name in `next` must be a direct downstream node id; jumping upstream or to non-adjacent nodes is rejected with an error tool_result (prevents cycles)
+- Constraint: each name in `next` must be a direct downstream node id (in the current node's outgoing edges). Non-adjacent / upstream targets → rejected with an error tool_result.
 
-The AI leader's system prompt for branching nodes should instruct it on when to pass which `next` (e.g., "if the task mentions 'bug' / 'fix' / 'broken', call mark_node_complete with next=['debug']; otherwise next=['develop']").
+To enforce adjacency, the `createMarkNodeCompleteTool` factory now takes `{ nodeId, outgoingNodeIds }` so it can validate at call time.
+
+### Executor rewrite (per-run reachability)
+
+The current `core/executor.ts` Kahn topo sort walks ALL nodes linearly. Branching requires per-run reachability tracking:
+
+```ts
+function runWorkflow(workflow, opts) {
+  const order = topoSort(workflow.graph)
+  // Seed with all root nodes (those with no incoming edges).
+  const incoming = countIncomingPerNode(workflow.graph)
+  const reachable = new Set<string>(
+    order.filter((n) => incoming.get(n.id) === 0).map((n) => n.id),
+  )
+  for (const node of order) {
+    if (!reachable.has(node.id)) continue            // skipped by upstream branch choice
+    const result = await runNode(node, ...)
+    const chosen = (node.type === 'ai' && result.next)
+      ? result.next
+      : outgoingNodeIds(workflow.graph, node.id)     // custom nodes / unspecified: all
+    for (const n of chosen) reachable.add(n)
+  }
+}
+```
+
+This is the bulk of Phase B's executor work — adding `next` to the tool is the easy part.
 
 ## Migration plan
 
-1. **DB**: drop existing `workflows` and `node_skills` rows on next start (early dev, no precious data).
-2. **Default workflow reseed**: ship a 4-node default — `Analyze → Develop → Deploy` plus a starter `Classify`-style branching example, all AI nodes with proper agent connections. Skip the seed if the user already has a workflow.
-3. **Default agents seed**: write `~/.agentyard/agents/{planner,reviewer,developer,tester,deployer}.md` with sensible default prompts and reasonable toolPreset/allowedTools defaults, so the default workflow's agents resolve out of the box on first run.
-4. **Skills**: existing global skills at `~/.agentyard/skills/` stay where they are (their format matches the new schema; just continue to load them as global-scope skills).
-5. **Other existing tables**: `ships`, `features`, `messages`, `clarifications` unchanged.
+On next server start, after schema bump:
+
+1. **Drop tables** — DROP `skills`, DROP `node_skills` (both orphaned; library is filesystem-canonical now)
+2. **Wipe workflows** — DELETE FROM workflows. **No skip-if-exists branch.** Schema-shape change (kind→type, drones→agents, skill removal) makes any pre-migration row incompatible. Set `features.workflow_id = NULL` on the same transaction for the (small handful of) feature rows that referenced now-gone workflows.
+3. **Reseed default workflow** — insert the new default with `type: 'ai'` nodes named `Analyze` / `Develop` / `Deploy`, each referencing a default agent set.
+4. **Seed default agents (global)** — write `~/.agentyard/agents/{planner,reviewer,developer,tester,deployer}.md` if they don't already exist. Sensible default prompts, `toolPreset: claude_code` for the workers, `toolPreset: none` for the planner.
+5. **Skills** — existing `~/.agentyard/skills/` stays untouched (format unchanged; it just becomes the new "global skills" location).
 
 ## Phased implementation
 
-Three phases, each independently shippable:
+Three phases. Branching moved from C into B per review.
 
-### Phase A — Tool library foundation
-- Storage scan: per-ship `.agentyard/{skills,mcps,scripts,agents}/`, global `~/.agentyard/...`, catalog `.claude/...`
-- Resolution: per-ship → global → catalog
-- Lifecycle actions (Adopt, Elevate, Fork)
-- Tool library UI in ship cockpit Tools tab (browse + create + edit + delete + adopt/elevate/fork)
-- "Library" button in galaxy HUD opening global-only view
-- Forms for all four types
+### Phase A — Tool library foundation (~5 days)
+- `src/core/schema.ts`: ToolType, ToolScope, ToolRef, per-type metadata + body shapes
+- `src/server/tools/{paths,scanner,resolver,lifecycle,crud}.ts` — pure functions
+- `src/server/secrets.ts` — `${env:VAR}` substitution + `~/.agentyard/.secrets/secrets.env` autoload
+- REST endpoints: `GET /api/ships/:id/tools`, `GET /api/global-tools`, POST create, PUT edit, DELETE; POST adopt / elevate / fork
+- Drop old `/api/skills`* endpoints (subsumed)
+- Ship cockpit Tools tab UI rewrite (sectioned list, badges, actions)
+- Galaxy HUD library button + global-only view
+- Per-type editor forms (Skill, MCP, Script, Agent)
+- Phase A smoke: create per-ship skill → edit → elevate → fork-back → adopt-from-catalog → delete
 
-### Phase B — Agent attachment + workflow editor lifecycle
-- Schema migration: `kind` → `type`, drones → agents, drop node skills
-- Wipe & reseed workflow + agents
-- Node side panel: type selector, AI form (prompt + agents multiselect), Script form (script picker + args)
-- Palette with drag-to-canvas
-- Add / rename / delete nodes
-- Edit edges (click + Delete key)
-- Runtime: AI node spawn uses agent definitions for drone load-out; leader's roster constrained to node.agents
+### Phase B — Workflow editor + agent attachment + branching (~7 days)
+*Was 4 days; bumped to 7 to include branching (per review #3) and UI ripple (#11).*
 
-### Phase C — Custom node runtime + branching
-- Script node executor (Bash + arg substitution + stdout capture)
-- `mark_node_complete.next` parameter with adjacency validation
-- Default workflow includes a branching example
-- Editor visual hint when a node has multiple outgoing edges
+- Schema migration: drop tables, wipe workflows, reseed defaults, seed default agents
+- `WorkflowNode` schema change (kind→type, drones→agents, drop skills)
+- Touched UI files: `EditorView.tsx` (palette, type selector, AI form, script form, drone/skill badges removed), `ShipDetailsPanel.tsx`, `RunView.tsx`, `AgentChat.tsx` (label render), `GameCanvas.tsx` (galaxy library button)
+- Touched runtime files: `runWorkflowOnSessions.ts` (switch on type, materialize agents), `Session.ts` (per-agent skills/mcps/scripts in opts; MCP namespace split to `mcp__ay_runtime__*`), `requestClarification.ts` + `assignTask.ts` + `markNodeComplete.ts` (renamed mcp namespace; markNodeComplete factory takes `{ nodeId, outgoingNodeIds }` for adjacency check)
+- Touched core files: `executor.ts` (per-run reachability rewrite — bulk of the work), `schema.ts` (workflow shape)
+- Phase B smoke: build a branching workflow (Analyze → Classify → Develop|Debug → Deploy), run two features (one bug, one feature), verify each follows the correct branch and skipped nodes don't execute
 
-Estimated effort: A ~5 days, B ~4 days, C ~2 days. Total ~11 days for a focused single developer.
+### Phase C — Custom node runtime (~1 day)
+*Was 2 days; trimmed because branching moved out.*
 
-## Verification
+- `src/server/runtime/scriptRuntime.ts` — `cmd` substitution, shell execution in worktree, stdout/stderr capture
+- Editor: script node palette entry + side panel form
+- Default workflow gets a sample script node (e.g. "lint" before develop)
+- Phase C smoke: workflow with a script node runs the script, captures output, passes it downstream
 
-End-to-end:
-1. `npx agentyard` → open ship cockpit with no `.claude/` or `.agentyard/` directories present → Tools tab shows seeded global agents/skills only
-2. Create a per-ship skill → appears with `[agentyard]` badge → connects to an agent via the agent editor → save
-3. Create a per-ship agent referencing that skill → connect agent to a workflow node → save
-4. Run a feature → drone is spawned with the connected agent's prompt + skill body in its context (verifiable via the chat panel)
-5. Adopt a `.claude/` skill into a ship that has one → badge flips, original `.claude/` file unchanged on disk
-6. Elevate a per-ship skill → moves to `~/.agentyard/skills/<name>/`; appears in galaxy library; other ships can connect to it
-7. Add a script node to a workflow → runs without an LLM, stdout becomes node summary
-8. Build a branching workflow (classify → debug | develop → deploy) → run two features, one bug-shaped, one feature-shaped → each follows the correct branch
+Total ~13 days focused work (was ~11; net +2 from honesty about branching).
+
+## Verification (full)
+
+End-to-end after Phase C:
+1. Fresh install, no ship → register a ship pointing at any git repo → cockpit opens with Tools tab showing seeded global agents/skills
+2. Create a per-ship skill → it appears with `[agentyard]` badge; the global library on the galaxy HUD does NOT show it
+3. Elevate that skill → moves to `~/.agentyard/skills/`, appears with `[global]` badge, visible in galaxy HUD library
+4. Fork to ship → creates a per-ship copy that shadows the global; both visible with separate badges
+5. Create a project-level `.claude/agents/test.md` outside AgentYard → it shows up in the catalog as `[.claude project]` → adopt → lands in `<ship>/.agentyard/agents/test.md` with transformed frontmatter (`mcps`/`role`/`toolPreset`/`scripts` defaults added); original `.claude/` file unchanged
+6. Build a branching workflow: `Analyze → Classify → (Develop | Debug) → Deploy`. Run a feature with task "fix the login bug" → Classify routes to Debug; Develop is skipped; Deploy executes.
+7. Run a feature with task "add dark mode toggle" → Classify routes to Develop; Debug is skipped.
+8. Add a script node "run-tests" between Develop and Deploy → it runs `npm test`, captures output, passes to Deploy as upstream_outputs.
+9. Create an MCP referencing `${env:GITHUB_TOKEN}` → without the env var set: leader chat shows the MCP failed to initialize with a clear error. Set the var via `~/.agentyard/.secrets/secrets.env` → restart server → MCP works.
+10. Two scripts with the same name in different agents — verify both materialize as `mcp__ay_scripts__<name>` in their respective drone sessions without colliding (per-session MCP servers).
 
 Unit/integration:
-- Resolver tests (per-ship overrides global, .claude shadowed by either)
-- Adopt / Elevate / Fork tests (filesystem moves correctly, no stray copies)
-- Agent file round-trip (parse → edit → write → parse, no field loss)
+- Resolver tests (per-ship overrides global; catalog never resolves)
+- Adopt / Elevate / Fork (filesystem state correctness; Claude→AgentYard agent frontmatter transform)
+- `${env:VAR}` substitution (basic, nested, missing-var error)
 - Branching adjacency check (rejecting non-adjacent `next` ids)
+- Per-run reachability (skipped nodes don't execute; downstream of skipped also skipped unless reached by another path)
 
 ## Critical files
 
-New:
-- `src/server/tools/scanner.ts` — multi-scope multi-type scanner
-- `src/server/tools/resolver.ts` — per-ship → global → error
-- `src/server/tools/lifecycle.ts` — adopt / elevate / fork
-- `src/server/runtime/agentRuntime.ts` — replaces drone-slot logic in `runWorkflowOnSessions`; materializes agent definitions
-- `src/server/runtime/scriptRuntime.ts` — script node executor
+**New:**
+- `src/core/schema.ts` — additions (extending existing file)
+- `src/server/tools/paths.ts`
+- `src/server/tools/scanner.ts`
+- `src/server/tools/resolver.ts`
+- `src/server/tools/lifecycle.ts`
+- `src/server/tools/crud.ts`
+- `src/server/secrets.ts` — env var loader + substitution helper
+- `src/server/runtime/scriptRuntime.ts` — Phase C
 - `src/client/views/ToolEditor.tsx` — the tabbed form (skill/mcp/script/agent)
-- `src/core/schema.ts` — updated WorkflowNode schema with `type`/`agents`/`scriptName`/`args`
 
-Modified:
-- `src/server/skills.ts` — generalize into the new scanner (or replace)
-- `src/server/runtime/runWorkflowOnSessions.ts` — switch on `type`, call agent or script runtime
-- `src/server/runtime/tools/markNodeComplete.ts` — add `next` parameter
-- `src/server/runtime/Session.ts` — accept per-agent skills/mcps/scripts in opts
-- `src/client/canvas/GameCanvas.tsx` — galaxy-HUD library button
-- `src/client/components/ShipDetailsPanel.tsx` — new Tools tab implementation
-- `src/client/views/EditorView.tsx` — palette, side panel changes, type selector
-- `src/server/workflows.ts` + `db.ts` — schema migration, reseed
+**Modified:**
+- `src/server/skills.ts` — remove (subsumed by new scanner/resolver); leave a thin shim or delete entirely
+- `src/server/db.ts` — drop `skills` + `node_skills` table creation; migration to drop existing
+- `src/server/workflows.ts` — wipe-and-reseed migration; new default workflow shape
+- `src/server/server.ts` — remove old `/api/skills*` routes, add tool routes
+- `src/server/runtime/Session.ts` — accept per-agent skills/mcps/scripts; MCP namespace `mcp__ay_runtime__*` (rename of constant)
+- `src/server/runtime/runWorkflowOnSessions.ts` — switch on `node.type`; materialize agent definitions (not drone slots)
+- `src/server/runtime/tools/requestClarification.ts` — namespace rename to `ay_runtime`
+- `src/server/runtime/tools/assignTask.ts` — namespace rename to `ay_runtime`
+- `src/server/runtime/tools/markNodeComplete.ts` — namespace rename to `ay_runtime`; factory takes `{ nodeId, outgoingNodeIds }`; adds optional `next` schema field with adjacency validation
+- `src/core/executor.ts` — per-run reachability rewrite (the chunky part of Phase B)
+- `src/core/schema.ts` — `WorkflowNode` shape (`kind` → `type`, drones/skills removed, agents/scriptName/args added)
+- `src/client/canvas/GameCanvas.tsx` — galaxy-HUD library button + global library overlay
+- `src/client/components/ShipDetailsPanel.tsx` — new Tools tab content (calls new endpoints)
+- `src/client/views/EditorView.tsx` — type selector, palette, AI form (agents multiselect), script form, drone/skill badges removed
+- `src/client/views/RunView.tsx` — drone/skill label render updates if needed
+
+## Changelog vs. initial spec
+
+12-point review applied:
+
+1. **`<ship>` ambiguity** → resolved to `ship.projectPath`, sibling of `.git/`; noted "blowing away repo blows away tools".
+2. **Migration contradiction** → wipe & reseed unconditionally; `features.workflow_id` NULL on wipe.
+3. **Branching scope** → moved from Phase C to Phase B; honest 3-day add-on inside the executor rewrite. Phase B: 4d → 7d. Phase C: 2d → 1d.
+4. **MCP namespace collision** → split into `mcp__ay_runtime__*` (runtime tools) and `mcp__ay_scripts__*` (user scripts).
+5. **Agent format compatibility** → adoption is parse-transform-write, not copy. Field map (`mcpServers`→`mcps`) and defaults (`role`/`toolPreset`/`scripts`) spelled out.
+6. **`script.sh` execution** → implicit body dropped; `cmd:` is authoritative; non-trivial logic uses `cmd: "bash script.sh ..."` explicitly.
+7. **Secrets** → `${env:VAR}` substitution + optional `~/.agentyard/.secrets/secrets.env` autoload. Per-project ecosystem agnostic.
+8. **Orphaned SQLite tables** → drop `skills` + `node_skills` in the migration.
+9. **`.claude/` catalog scope** → project + user-level sources (matches Claude Code's actual conventions); adoption defaults per-source.
+10. **Library freshness** → explicit endpoint, no cache; current `skills.ts` cache pattern dropped.
+11. **UI ripple** → Phase B estimate honesty (4d → 7d) + explicit list of touched files.
+12. **`mark_node_complete.next` adjacency** → factory takes `{ nodeId, outgoingNodeIds }`; rejects non-adjacent targets.
