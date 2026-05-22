@@ -56,6 +56,16 @@ export function GameCanvas(props: Props) {
   const [featureName, setFeatureName] = useState('')
   const [featureTask, setFeatureTask] = useState('')
 
+  // Esc closes the library overlay.
+  useEffect(() => {
+    if (!libraryOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLibraryOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [libraryOpen])
+
   // Bounce back to galaxy if the selected ship was removed.
   useEffect(() => {
     if (selectedShipId !== null && !props.ships.find((s) => s.id === selectedShipId)) {
@@ -439,10 +449,16 @@ export function GameCanvas(props: Props) {
         />
       )}
 
-      {/* Galaxy global library overlay */}
+      {/* Galaxy global library overlay — Esc or backdrop click closes. */}
       {libraryOpen && selectedShipId === null && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-30">
-          <div className="bg-black border border-emerald-500/60 rounded w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col text-xs">
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-30"
+          onClick={() => setLibraryOpen(false)}
+        >
+          <div
+            className="bg-black border border-emerald-500/60 rounded w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="border-b border-emerald-500/40 px-4 py-2 flex items-center justify-between">
               <h2 className="text-emerald-300 tracking-widest">GLOBAL TOOL LIBRARY</h2>
               <button onClick={() => setLibraryOpen(false)} className="text-zinc-500 hover:text-zinc-300">
