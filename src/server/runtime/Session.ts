@@ -109,9 +109,25 @@ export class Session extends EventEmitter implements ClarificationGateway {
     return this._state
   }
 
-  start(): void {
-    if (this.q) throw new Error('Session already started')
-
+  /**
+   * Build the exact options object that would be passed to the SDK's
+   * `query()`. Pure — does NOT mutate Session state or start the query.
+   * Used both by `start()` and by smoke tests that want to verify the
+   * agent's catalog without burning API calls.
+   */
+  buildSdkOptions(): {
+    mcpServers: Record<string, McpServerConfig>
+    tools: string[] | { type: 'preset'; preset: 'claude_code' }
+    permissionMode: 'bypassPermissions'
+    allowDangerouslySkipPermissions: true
+    allowedTools?: string[]
+    persistSession: false
+    settingSources: never[]
+    cwd?: string
+    agents?: Record<string, { description: string; prompt: string; tools?: string[] }>
+    agent?: string
+    model?: string
+  } {
     // Always wire request_clarification under ay_runtime.
     const clarificationTool = createClarificationTool(this) as AnyTool
     const runtimeTools: AnyTool[] = [clarificationTool, ...(this.opts.runtimeTools ?? [])]
@@ -145,43 +161,67 @@ export class Session extends EventEmitter implements ClarificationGateway {
       ? ({ type: 'preset', preset: 'claude_code' } as const)
       : []
 
-    // Auto-allow every tool we registered. For the Claude Code preset we
-    // additionally bypass permissions (file edits / Bash run without prompts).
-    const autoAllowed: string[] = [
+    // MCP tools we always wire — agents must be able to call these regardless of
+    // the user's allowedTools list, otherwise drones can't request clarifications,
+    // call their attached scripts, or (for leaders) assign tasks / mark nodes complete.
+    const runtimeMcpToolNames: string[] = [
       CLARIFICATION_TOOL_NAME,
       ...runtimeTools.slice(1).map((t) => `mcp__${RUNTIME_NAMESPACE}__${t.name}`),
       ...(this.opts.scriptTools ?? []).map((t) => `mcp__${SCRIPTS_NAMESPACE}__${t.name}`),
     ]
-    const allowedTools = useClaudeCode ? this.opts.allowedTools : autoAllowed
-    const agentToolsForDef = useClaudeCode ? this.opts.allowedTools : autoAllowed
 
+    // AgentDefinition.tools is the agent's COMPLETE catalog (SDK contract: "If
+    // omitted, inherits all tools from parent"). So when the user narrows via
+    // allowedTools, we union with the runtime MCP names — otherwise the drone
+    // would lose request_clarification and its scripts.
+    let agentToolsForDef: string[] | undefined
+    if (useClaudeCode) {
+      agentToolsForDef = this.opts.allowedTools
+        ? [...this.opts.allowedTools, ...runtimeMcpToolNames]
+        : undefined // undefined = inherit full preset + all MCPs from parent
+    } else {
+      // No Claude Code preset → only MCP tools are available.
+      agentToolsForDef = runtimeMcpToolNames
+    }
+
+    // Top-level allowedTools is for auto-approval under the standard permission
+    // gate; with bypassPermissions + allowDangerouslySkipPermissions it's moot,
+    // but we still set it for clarity and to match the agent definition's catalog.
+    const allowedTools = agentToolsForDef
+
+    return {
+      mcpServers,
+      tools,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      ...(allowedTools ? { allowedTools } : {}),
+      persistSession: false,
+      settingSources: [],
+      ...(this.opts.cwd ? { cwd: this.opts.cwd } : {}),
+      ...(this.opts.systemPrompt
+        ? {
+            agents: {
+              'agentyard-agent': {
+                description: 'AgentYard runtime agent',
+                prompt: this.opts.systemPrompt,
+                ...(agentToolsForDef ? { tools: agentToolsForDef } : {}),
+              },
+            },
+            agent: 'agentyard-agent',
+          }
+        : {}),
+      ...(this.opts.model ? { model: this.opts.model } : {}),
+    }
+  }
+
+  start(): void {
+    if (this.q) throw new Error('Session already started')
     this.q = query({
       prompt: this.inputQueue,
-      options: {
-        mcpServers,
-        tools,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        ...(allowedTools ? { allowedTools } : {}),
-        persistSession: false,
-        settingSources: [],
-        ...(this.opts.cwd ? { cwd: this.opts.cwd } : {}),
-        ...(this.opts.systemPrompt
-          ? {
-              agents: {
-                'agentyard-agent': {
-                  description: 'AgentYard runtime agent',
-                  prompt: this.opts.systemPrompt,
-                  ...(agentToolsForDef ? { tools: agentToolsForDef } : {}),
-                },
-              },
-              agent: 'agentyard-agent',
-            }
-          : {}),
-        ...(this.opts.model ? { model: this.opts.model } : {}),
-      },
+      // The cast is necessary because buildSdkOptions returns a precise shape,
+      // while the SDK's Options type is broader.
+      options: this.buildSdkOptions() as never,
     })
-
     this.consumePromise = this.consume()
   }
 
