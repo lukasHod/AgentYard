@@ -362,7 +362,19 @@ export function App() {
         </div>
       </header>
 
-      {view === 'ships' && (
+      {/*
+        All three views stay mounted at all times; visibility toggles via the
+        `hidden` attribute. Unmounting the previous view + mounting the next on
+        every tab click left a paint frame where neither view's DOM was laid
+        out, which the browser fills with its default page color — visible as
+        a white flash. Keeping them mounted eliminates that gap entirely.
+        Trade-off: GameCanvas's PixiJS keeps running when hidden (minor CPU
+        cost; PixiJS resizes back to its container when shown again).
+      */}
+      <div
+        hidden={view !== 'ships'}
+        className={view === 'ships' ? 'flex-1 flex flex-col bg-black' : ''}
+      >
         <GameCanvas
           ships={ships}
           features={features}
@@ -378,8 +390,11 @@ export function App() {
           onOpenWorkflow={() => setView('editor')}
           onJumpToRun={() => setView('run')}
         />
-      )}
-      {view === 'run' && (
+      </div>
+      <div
+        hidden={view !== 'run'}
+        className={view === 'run' ? 'flex-1 flex flex-col bg-black' : ''}
+      >
         <RunView
           connected={connected}
           sessions={sessionList}
@@ -392,8 +407,11 @@ export function App() {
           onStartRun={startRun}
           onReset={resetRun}
         />
-      )}
-      {view === 'editor' && (
+      </div>
+      <div
+        hidden={view !== 'editor'}
+        className={view === 'editor' ? 'flex-1 flex flex-col bg-black' : ''}
+      >
         <EditorView
           workflow={workflow}
           tools={tools}
@@ -401,7 +419,7 @@ export function App() {
           onRefreshTools={refreshTools}
           onOpenTestRun={(req) => setTestRunRequest(req)}
         />
-      )}
+      </div>
       {testRunRequest && workflow && (
         <TestRunModal
           request={testRunRequest}
