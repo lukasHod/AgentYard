@@ -363,62 +363,71 @@ export function App() {
       </header>
 
       {/*
-        All three views stay mounted at all times; visibility toggles via the
-        `hidden` attribute. Unmounting the previous view + mounting the next on
-        every tab click left a paint frame where neither view's DOM was laid
-        out, which the browser fills with its default page color — visible as
-        a white flash. Keeping them mounted eliminates that gap entirely.
-        Trade-off: GameCanvas's PixiJS keeps running when hidden (minor CPU
-        cost; PixiJS resizes back to its container when shown again).
+        All three views stay mounted at all times and are stacked as absolute
+        layers; the active layer wins via `z-10`. We can't use `hidden` /
+        `display:none` on inactive layers because libraries that measure once
+        on mount (React Flow's `fitView`, PixiJS) would compute against zero
+        and never re-fit. We also can't use `visibility: hidden` on the
+        wrapper — React Flow sets `visibility: visible` on its nodes, breaking
+        inheritance, so the editor's nodes paint through onto whichever layer
+        is active. The opaque `bg-black` on the active layer covers everything
+        below it; `pointer-events-none` on inactive layers keeps clicks routed
+        to the active one. Trade-off: hidden views keep running (PixiJS RAF,
+        React Flow reconciliation) — minor CPU.
       */}
-      <div
-        hidden={view !== 'ships'}
-        className={view === 'ships' ? 'flex-1 flex flex-col bg-black' : ''}
-      >
-        <GameCanvas
-          ships={ships}
-          features={features}
-          sessions={sessionList}
-          transcripts={transcripts}
-          pendings={pendings}
-          connected={connected}
-          onCreateShip={createShip}
-          onDeleteShip={deleteShip}
-          onCreateFeature={createFeature}
-          onSend={sendMessage}
-          onClarificationReply={replyClarification}
-          onOpenWorkflow={() => setView('editor')}
-          onJumpToRun={() => setView('run')}
-        />
-      </div>
-      <div
-        hidden={view !== 'run'}
-        className={view === 'run' ? 'flex-1 flex flex-col bg-black' : ''}
-      >
-        <RunView
-          connected={connected}
-          sessions={sessionList}
-          transcripts={transcripts}
-          pendings={pendings}
-          activeRun={activeRun}
-          workflow={workflow}
-          onSend={sendMessage}
-          onClarificationReply={replyClarification}
-          onStartRun={startRun}
-          onReset={resetRun}
-        />
-      </div>
-      <div
-        hidden={view !== 'editor'}
-        className={view === 'editor' ? 'flex-1 flex flex-col bg-black' : ''}
-      >
-        <EditorView
-          workflow={workflow}
-          tools={tools}
-          onSave={saveWorkflow}
-          onRefreshTools={refreshTools}
-          onOpenTestRun={(req) => setTestRunRequest(req)}
-        />
+      <div className="flex-1 relative">
+        <div
+          className={`absolute inset-0 flex flex-col bg-black ${
+            view === 'ships' ? 'z-10' : 'z-0 pointer-events-none'
+          }`}
+        >
+          <GameCanvas
+            ships={ships}
+            features={features}
+            sessions={sessionList}
+            transcripts={transcripts}
+            pendings={pendings}
+            connected={connected}
+            onCreateShip={createShip}
+            onDeleteShip={deleteShip}
+            onCreateFeature={createFeature}
+            onSend={sendMessage}
+            onClarificationReply={replyClarification}
+            onOpenWorkflow={() => setView('editor')}
+            onJumpToRun={() => setView('run')}
+          />
+        </div>
+        <div
+          className={`absolute inset-0 flex flex-col bg-black ${
+            view === 'run' ? 'z-10' : 'z-0 pointer-events-none'
+          }`}
+        >
+          <RunView
+            connected={connected}
+            sessions={sessionList}
+            transcripts={transcripts}
+            pendings={pendings}
+            activeRun={activeRun}
+            workflow={workflow}
+            onSend={sendMessage}
+            onClarificationReply={replyClarification}
+            onStartRun={startRun}
+            onReset={resetRun}
+          />
+        </div>
+        <div
+          className={`absolute inset-0 flex flex-col bg-black ${
+            view === 'editor' ? 'z-10' : 'z-0 pointer-events-none'
+          }`}
+        >
+          <EditorView
+            workflow={workflow}
+            tools={tools}
+            onSave={saveWorkflow}
+            onRefreshTools={refreshTools}
+            onOpenTestRun={(req) => setTestRunRequest(req)}
+          />
+        </div>
       </div>
       {testRunRequest && workflow && (
         <TestRunModal
