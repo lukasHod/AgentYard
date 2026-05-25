@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import type { AgentTool, ToolSummary, ToolType } from '../../../../core/tools'
+import { useObjectState } from '../../../hooks/useObjectState'
+import { CapabilityMultiselect } from './CapabilityMultiselect'
 import {
   FormButtons,
   Label,
   inputCls,
   textareaCls,
 } from './formChrome'
-import { CapabilityMultiselect } from './CapabilityMultiselect'
 
 /** Library narrowing — only ship- or global-scoped items of the given type are usable. */
 function useAvailable(library: ToolSummary[], type: ToolType) {
@@ -31,41 +32,43 @@ export function AgentForm({
   onCancel: () => void
   saving: boolean
 }) {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [description, setDescription] = useState(initial?.description ?? '')
-  const [role, setRole] = useState(initial?.role ?? '')
-  const [model, setModel] = useState(initial?.model ?? '')
-  // Every agent uses the claude_code preset — the UI picker was removed;
-  // restrict the surface via the ALLOWED TOOLS list instead.
-  const [allowedToolsText, setAllowedToolsText] = useState((initial?.allowedTools ?? []).join(','))
-  const [skills, setSkills] = useState<string[]>(initial?.skills ?? [])
-  const [mcps, setMcps] = useState<string[]>(initial?.mcps ?? [])
-  const [scripts, setScripts] = useState<string[]>(initial?.scripts ?? [])
-  const [prompt, setPrompt] = useState(initial?.prompt ?? '')
+  const [form, set] = useObjectState({
+    name: initial?.name ?? '',
+    description: initial?.description ?? '',
+    role: initial?.role ?? '',
+    model: initial?.model ?? '',
+    // Every agent uses the claude_code preset — the UI picker was removed;
+    // restrict the surface via the ALLOWED TOOLS list instead.
+    allowedToolsText: (initial?.allowedTools ?? []).join(','),
+    skills: initial?.skills ?? [],
+    mcps: initial?.mcps ?? [],
+    scripts: initial?.scripts ?? [],
+    prompt: initial?.prompt ?? '',
+  })
 
   const availableSkills = useAvailable(library, 'skill')
   const availableMcps = useAvailable(library, 'mcp')
   const availableScripts = useAvailable(library, 'script')
 
   function submit() {
-    if (!name.trim()) return alert('name is required')
-    const allowedTools = allowedToolsText.trim()
-      ? allowedToolsText
+    if (!form.name.trim()) return alert('name is required')
+    const allowedTools = form.allowedToolsText.trim()
+      ? form.allowedToolsText
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined
     const data: AgentTool = {
-      name: name.trim(),
-      description: description.trim(),
-      role: role.trim() || name.trim(),
-      model: model.trim() || undefined,
+      name: form.name.trim(),
+      description: form.description.trim(),
+      role: form.role.trim() || form.name.trim(),
+      model: form.model.trim() || undefined,
       toolPreset: 'claude_code',
       allowedTools,
-      skills,
-      mcps,
-      scripts,
-      prompt,
+      skills: form.skills,
+      mcps: form.mcps,
+      scripts: form.scripts,
+      prompt: form.prompt,
     }
     onSubmit(data)
   }
@@ -76,8 +79,8 @@ export function AgentForm({
         <div>
           <Label>NAME</Label>
           <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={form.name}
+            onChange={(e) => set({ name: e.target.value })}
             disabled={disableName}
             className={inputCls}
           />
@@ -85,8 +88,8 @@ export function AgentForm({
         <div>
           <Label>ROLE</Label>
           <input
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
+            value={form.role}
+            onChange={(e) => set({ role: e.target.value })}
             placeholder="defaults to name"
             className={inputCls}
           />
@@ -94,8 +97,8 @@ export function AgentForm({
         <div>
           <Label>MODEL</Label>
           <input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
+            value={form.model}
+            onChange={(e) => set({ model: e.target.value })}
             placeholder="(SDK default)"
             className={inputCls}
           />
@@ -104,8 +107,8 @@ export function AgentForm({
       <div>
         <Label>DESCRIPTION</Label>
         <input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          value={form.description}
+          onChange={(e) => set({ description: e.target.value })}
           className={inputCls}
         />
       </div>
@@ -115,27 +118,37 @@ export function AgentForm({
           ALLOWED TOOLS
         </Label>
         <input
-          value={allowedToolsText}
-          onChange={(e) => setAllowedToolsText(e.target.value)}
+          value={form.allowedToolsText}
+          onChange={(e) => set({ allowedToolsText: e.target.value })}
           placeholder="Read,Edit,Write,Glob,Grep,Bash"
           className={inputCls}
         />
       </div>
 
-      <CapabilityMultiselect label="SKILLS" options={availableSkills} selected={skills} onChange={setSkills} />
-      <CapabilityMultiselect label="MCPS" options={availableMcps} selected={mcps} onChange={setMcps} />
+      <CapabilityMultiselect
+        label="SKILLS"
+        options={availableSkills}
+        selected={form.skills}
+        onChange={(skills) => set({ skills })}
+      />
+      <CapabilityMultiselect
+        label="MCPS"
+        options={availableMcps}
+        selected={form.mcps}
+        onChange={(mcps) => set({ mcps })}
+      />
       <CapabilityMultiselect
         label="SCRIPTS"
         options={availableScripts}
-        selected={scripts}
-        onChange={setScripts}
+        selected={form.scripts}
+        onChange={(scripts) => set({ scripts })}
       />
 
       <div>
         <Label hint="becomes the drone's system prompt">SYSTEM PROMPT</Label>
         <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          value={form.prompt}
+          onChange={(e) => set({ prompt: e.target.value })}
           rows={14}
           className={textareaCls}
         />

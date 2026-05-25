@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import type { SkillTool } from '../../../../core/tools'
+import { useObjectState } from '../../../hooks/useObjectState'
 import { FormButtons, Label, NameDescriptionFields, textareaCls } from './formChrome'
 
 export function SkillForm({
@@ -15,22 +15,28 @@ export function SkillForm({
   onCancel: () => void
   saving: boolean
 }) {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [description, setDescription] = useState(initial?.description ?? '')
-  const [body, setBody] = useState(initial?.body ?? '')
+  const [form, set] = useObjectState({
+    name: initial?.name ?? '',
+    description: initial?.description ?? '',
+    body: initial?.body ?? '',
+  })
 
   function submit() {
-    if (!name.trim()) return alert('name is required')
-    onSubmit({ name: name.trim(), description: description.trim(), body })
+    if (!form.name.trim()) return alert('name is required')
+    onSubmit({
+      name: form.name.trim(),
+      description: form.description.trim(),
+      body: form.body,
+    })
   }
 
   return (
     <div className="space-y-3">
       <NameDescriptionFields
-        name={name}
-        description={description}
-        onName={setName}
-        onDescription={setDescription}
+        name={form.name}
+        description={form.description}
+        onName={(v) => set({ name: v })}
+        onDescription={(v) => set({ description: v })}
         disableName={disableName}
       />
       <div>
@@ -38,8 +44,8 @@ export function SkillForm({
           BODY (markdown)
         </Label>
         <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
+          value={form.body}
+          onChange={(e) => set({ body: e.target.value })}
           rows={18}
           className={textareaCls}
         />

@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import type { ScriptArg, ScriptTool } from '../../../../core/tools'
+import { useObjectState } from '../../../hooks/useObjectState'
 import { EmptyMessage } from '../../ui/EmptyMessage'
 import { FormButtons, Label, NameDescriptionFields, inputCls, textareaCls } from './formChrome'
 
@@ -16,55 +16,57 @@ export function ScriptForm({
   onCancel: () => void
   saving: boolean
 }) {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [description, setDescription] = useState(initial?.description ?? '')
-  const [cmd, setCmd] = useState(initial?.cmd ?? '')
-  const [args, setArgs] = useState<ScriptArg[]>(initial?.args ?? [])
-  const [includeBody, setIncludeBody] = useState<boolean>(!!initial?.bodyFile)
-  const [bodyFile, setBodyFile] = useState<string>(initial?.bodyFile ?? 'script.sh')
-  const [body, setBody] = useState<string>(initial?.body ?? '')
+  const [form, set] = useObjectState({
+    name: initial?.name ?? '',
+    description: initial?.description ?? '',
+    cmd: initial?.cmd ?? '',
+    args: (initial?.args ?? []) as ScriptArg[],
+    includeBody: !!initial?.bodyFile,
+    bodyFile: initial?.bodyFile ?? 'script.sh',
+    body: initial?.body ?? '',
+  })
 
   function submit() {
-    if (!name.trim()) return alert('name is required')
-    if (!cmd.trim()) return alert('cmd is required')
+    if (!form.name.trim()) return alert('name is required')
+    if (!form.cmd.trim()) return alert('cmd is required')
     const data: ScriptTool = {
-      name: name.trim(),
-      description: description.trim(),
-      cmd: cmd.trim(),
-      args,
+      name: form.name.trim(),
+      description: form.description.trim(),
+      cmd: form.cmd.trim(),
+      args: form.args,
     }
-    if (includeBody) {
-      data.bodyFile = bodyFile.trim() || 'script.sh'
-      data.body = body
+    if (form.includeBody) {
+      data.bodyFile = form.bodyFile.trim() || 'script.sh'
+      data.body = form.body
     }
     onSubmit(data)
   }
 
   function addArg() {
-    setArgs((a) => [...a, { name: '', description: '', required: false }])
+    set({ args: [...form.args, { name: '', description: '', required: false }] })
   }
   function removeArg(i: number) {
-    setArgs((a) => a.filter((_, j) => j !== i))
+    set({ args: form.args.filter((_, j) => j !== i) })
   }
   function updateArg(i: number, patch: Partial<ScriptArg>) {
-    setArgs((a) => a.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+    set({ args: form.args.map((x, j) => (j === i ? { ...x, ...patch } : x)) })
   }
 
   return (
     <div className="space-y-3">
       <NameDescriptionFields
-        name={name}
-        description={description}
-        onName={setName}
-        onDescription={setDescription}
+        name={form.name}
+        description={form.description}
+        onName={(v) => set({ name: v })}
+        onDescription={(v) => set({ description: v })}
         disableName={disableName}
         layout="side-by-side"
       />
       <div>
         <Label hint="authoritative; supports {argName} substitution from this tool's args">CMD</Label>
         <input
-          value={cmd}
-          onChange={(e) => setCmd(e.target.value)}
+          value={form.cmd}
+          onChange={(e) => set({ cmd: e.target.value })}
           placeholder="npm test -- --reporter=json"
           className={inputCls}
         />
@@ -72,11 +74,11 @@ export function ScriptForm({
 
       <div>
         <Label>ARGS</Label>
-        {args.length === 0 ? (
+        {form.args.length === 0 ? (
           <EmptyMessage>no args declared</EmptyMessage>
         ) : (
           <div className="space-y-1">
-            {args.map((a, i) => (
+            {form.args.map((a, i) => (
               <div key={i} className="grid grid-cols-[1fr_2fr_auto_auto] gap-2 items-center">
                 <input
                   value={a.name}
@@ -121,27 +123,27 @@ export function ScriptForm({
         <label className="flex items-center gap-2 text-zinc-400 mb-1">
           <input
             type="checkbox"
-            checked={includeBody}
-            onChange={(e) => setIncludeBody(e.target.checked)}
+            checked={form.includeBody}
+            onChange={(e) => set({ includeBody: e.target.checked })}
             className="accent-cyan-500"
           />
           include script body file
         </label>
-        {includeBody && (
+        {form.includeBody && (
           <div className="space-y-2 mt-1">
             <div>
               <Label hint="reference explicitly from cmd, e.g. bash script.sh">BODY FILENAME</Label>
               <input
-                value={bodyFile}
-                onChange={(e) => setBodyFile(e.target.value)}
+                value={form.bodyFile}
+                onChange={(e) => set({ bodyFile: e.target.value })}
                 className={inputCls}
               />
             </div>
             <div>
               <Label>BODY</Label>
               <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
+                value={form.body}
+                onChange={(e) => set({ body: e.target.value })}
                 rows={12}
                 className={textareaCls}
               />
