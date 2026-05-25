@@ -1,5 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import type { ToolScope, ToolSummary, ToolType } from '../../core/tools'
+import { apiDelete, apiGet, apiPost, type ApiResult } from '../api'
+import { pushToast } from '../state/toastStore'
 import type { AnyToolData, EditorMode } from './tools/ToolEditorModal'
 
 const ToolEditorModal = lazy(() =>
@@ -48,24 +50,20 @@ export function ToolsTabContent({ shipId }: Props) {
   const [editor, setEditor] = useState<EditorMode | null>(null)
 
   const refetch = useCallback(async () => {
-    try {
-      const url = shipId === null ? '/api/global-tools' : `/api/ships/${shipId}/tools`
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`tools ${res.status}`)
-      setTools(await res.json())
+    const url = shipId === null ? '/api/global-tools' : `/api/ships/${shipId}/tools`
+    const res = await apiGet<ToolSummary[]>(url)
+    if (res.ok) {
+      setTools(res.data)
       setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+    } else {
+      setError(res.error)
     }
   }, [shipId])
 
   useEffect(() => {
     void refetch()
     if (clis === null) {
-      fetch('/api/clis')
-        .then((r) => r.json())
-        .then(setClis)
-        .catch(() => setClis([]))
+      void apiGet<CLIInfo[]>('/api/clis').then((r) => setClis(r.ok ? r.data : []))
     }
   }, [shipId, refetch, clis])
 
@@ -78,20 +76,12 @@ export function ToolsTabContent({ shipId }: Props) {
 
   const keyOf = (t: ToolSummary) => `${t.scope}/${t.type}/${t.name}`
 
-  async function runAction(label: string, fn: () => Promise<Response>) {
+  async function runAction(label: string, fn: () => Promise<ApiResult<unknown>>) {
     setBusy(label)
-    try {
-      const res = await fn()
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        alert(`Failed: ${j.error ?? res.status}`)
-      }
-      await refetch()
-    } catch (e) {
-      alert(`Network error: ${e}`)
-    } finally {
-      setBusy(null)
-    }
+    const res = await fn()
+    if (!res.ok) pushToast('error', `Failed: ${res.error}`)
+    await refetch()
+    setBusy(null)
   }
 
   function adopt(t: ToolSummary, target: 'ship' | 'global') {
@@ -99,16 +89,13 @@ export function ToolsTabContent({ shipId }: Props) {
     void runAction(keyOf(t), () => {
       // In galaxy library view: only claude-user → global is supported, via a different endpoint.
       if (shipId === null) {
-        return fetch(`/api/global-tools/adopt`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: t.type, name: t.name }),
-        })
+        return apiPost(`/api/global-tools/adopt`, { type: t.type, name: t.name })
       }
-      return fetch(`/api/ships/${shipId}/tools/adopt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceScope: t.scope, type: t.type, name: t.name, target }),
+      return apiPost(`/api/ships/${shipId}/tools/adopt`, {
+        sourceScope: t.scope,
+        type: t.type,
+        name: t.name,
+        target,
       })
     })
   }
@@ -116,14 +103,14 @@ export function ToolsTabContent({ shipId }: Props) {
   function elevate(t: ToolSummary) {
     if (shipId === null) return
     void runAction(keyOf(t), () =>
-      fetch(`/api/ships/${shipId}/tools/${t.type}/${t.name}/elevate`, { method: 'POST' }),
+      apiPost(`/api/ships/${shipId}/tools/${t.type}/${t.name}/elevate`),
     )
   }
 
   function fork(t: ToolSummary) {
     if (shipId === null) return
     void runAction(keyOf(t), () =>
-      fetch(`/api/ships/${shipId}/tools/${t.type}/${t.name}/fork-from-global`, { method: 'POST' }),
+      apiPost(`/api/ships/${shipId}/tools/${t.type}/${t.name}/fork-from-global`),
     )
   }
 
@@ -134,7 +121,7 @@ export function ToolsTabContent({ shipId }: Props) {
         t.scope === 'global'
           ? `/api/global-tools/${t.type}/${t.name}`
           : `/api/ships/${shipId}/tools/${t.type}/${t.name}`
-      return fetch(url, { method: 'DELETE' })
+      return apiDelete(url)
     })
   }
 
@@ -149,13 +136,12 @@ export function ToolsTabContent({ shipId }: Props) {
       t.scope === 'global'
         ? `/api/global-tools/${t.type}/${t.name}`
         : `/api/ships/${shipId}/tools/${t.scope}/${t.type}/${t.name}`
-    const res = await fetch(url)
+    const res = await apiGet<{ data: AnyToolData }>(url)
     if (!res.ok) {
-      alert(`Could not load ${t.name}`)
+      pushToast('error', `Could not load ${t.name}: ${res.error}`)
       return
     }
-    const entry = (await res.json()) as { data: AnyToolData }
-    setEditor({ kind: 'edit', type: t.type, scope: t.scope, initial: entry.data })
+    setEditor({ kind: 'edit', type: t.type, scope: t.scope, initial: res.data.data })
   }
 
   if (tools === null && error === null) {

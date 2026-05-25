@@ -8,6 +8,8 @@ import type {
   ToolType,
 } from '../../../core/tools'
 import { useDismissable } from '../../hooks/useDismissable'
+import { apiPost, apiPut, type ApiResult } from '../../api'
+import { pushToast } from '../../state/toastStore'
 import { SkillForm } from './forms/SkillForm'
 import { McpForm } from './forms/McpForm'
 import { ScriptForm } from './forms/ScriptForm'
@@ -45,20 +47,14 @@ export function ToolEditorModal({ mode, shipId, library, onClose, onSaved }: Pro
 
   async function save(data: AnyToolData) {
     setSaving(true)
-    try {
-      const res = await persist(mode, scope, shipId, data)
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        alert(`Save failed: ${j.error ?? res.status}`)
-        return
-      }
-      onSaved()
-      onClose()
-    } catch (e) {
-      alert(`Network error: ${e}`)
-    } finally {
-      setSaving(false)
+    const res = await persist(mode, scope, shipId, data)
+    setSaving(false)
+    if (!res.ok) {
+      pushToast('error', `Save failed: ${res.error}`)
+      return
     }
+    onSaved()
+    onClose()
   }
 
   function renderForm() {
@@ -162,29 +158,21 @@ async function persist(
   scope: EditorScope,
   shipId: number | null,
   data: AnyToolData,
-): Promise<Response> {
+): Promise<ApiResult<unknown>> {
   const inShip = scope === 'ship'
   if (inShip && shipId === null) {
-    throw new Error('Cannot save to ship scope without a shipId')
+    return { ok: false, error: 'Cannot save to ship scope without a shipId' }
   }
   if (mode.kind === 'create') {
     const url = inShip
       ? `/api/ships/${shipId}/tools/${mode.type}`
       : `/api/global-tools/${mode.type}`
-    return fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data }),
-    })
+    return apiPost(url, { data })
   }
   // edit
   const name = (data as { name: string }).name
   const url = inShip
     ? `/api/ships/${shipId}/tools/${mode.type}/${name}`
     : `/api/global-tools/${mode.type}/${name}`
-  return fetch(url, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data }),
-  })
+  return apiPut(url, { data })
 }

@@ -19,6 +19,8 @@ import type { Workflow, WorkflowGraph, WorkflowNode } from '../../core/schema'
 import type { ScriptTool, ToolSummary } from '../../core/tools'
 import type { TestRunRequest } from './TestRunModal'
 import type { EditorMode } from '../components/tools/ToolEditorModal'
+import { apiGet } from '../api'
+import { pushToast } from '../state/toastStore'
 
 const ToolEditorModal = lazy(() =>
   import('../components/tools/ToolEditorModal').then((m) => ({ default: m.ToolEditorModal })),
@@ -97,29 +99,26 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
   // are catalog entries that require adoption first.
   const openToolEditor = useCallback(async (t: ToolSummary) => {
     if (t.scope !== 'global') {
-      alert(
+      pushToast(
+        'error',
         `'${t.name}' has scope=${t.scope}, which can't be edited here — adopt or fork it first via the Tools tab.`,
       )
       return
     }
-    try {
-      const res = await fetch(`/api/global-tools/${t.type}/${encodeURIComponent(t.name)}`)
-      if (!res.ok) {
-        alert(`Could not load ${t.type} '${t.name}' (HTTP ${res.status})`)
-        return
-      }
-      const entry = (await res.json()) as { data: unknown }
-      // ToolEditorModal validates the shape via its EditorMode discriminator.
-      setToolEditor({
-        kind: 'edit',
-        type: t.type,
-        scope: 'global',
-        // The endpoint returns the full data including body/prompt.
-        initial: entry.data as never,
-      })
-    } catch (err) {
-      alert(`Could not load ${t.name}: ${err instanceof Error ? err.message : String(err)}`)
+    const res = await apiGet<{ data: unknown }>(
+      `/api/global-tools/${t.type}/${encodeURIComponent(t.name)}`,
+    )
+    if (!res.ok) {
+      pushToast('error', `Could not load ${t.type} '${t.name}': ${res.error}`)
+      return
     }
+    // ToolEditorModal validates the shape via its EditorMode discriminator.
+    setToolEditor({
+      kind: 'edit',
+      type: t.type,
+      scope: 'global',
+      initial: res.data.data as never,
+    })
   }, [])
 
   useEffect(() => {
@@ -581,17 +580,13 @@ function CustomNodeFields({
       setLoadingArgs(false)
       return
     }
-    fetch(`/api/global-tools/script/${encodeURIComponent(name)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled) return
-        const args = (data?.data?.args ?? []) as ScriptTool['args']
-        setScriptArgs(args)
-      })
-      .catch(() => {
-        if (!cancelled) setScriptArgs([])
-      })
-      .finally(() => !cancelled && setLoadingArgs(false))
+    void apiGet<{ data: ScriptTool }>(
+      `/api/global-tools/script/${encodeURIComponent(name)}`,
+    ).then((res) => {
+      if (cancelled) return
+      setScriptArgs(res.ok ? res.data.data.args ?? [] : [])
+      setLoadingArgs(false)
+    })
     return () => {
       cancelled = true
     }

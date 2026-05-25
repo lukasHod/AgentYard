@@ -19,6 +19,9 @@ import {
   replyClarification as emitReplyClarification,
   sendAgentMessage,
 } from './state/socketClient'
+import { apiDelete, apiGet, apiPost, apiPut } from './api'
+import { pushToast } from './state/toastStore'
+import { Toasts } from './components/Toasts'
 
 type ViewMode = 'ships' | 'run' | 'editor'
 
@@ -87,39 +90,30 @@ export function App() {
   }, [])
 
   const refreshTools = useCallback(async () => {
-    try {
-      const list = (await fetch('/api/global-tools').then((r) => r.json())) as ToolSummary[]
-      setTools(list)
-    } catch {
-      // ignore — editor will show empty palette
-    }
+    const res = await apiGet<ToolSummary[]>('/api/global-tools')
+    if (res.ok) setTools(res.data)
+    // Failure path is silent: editor falls back to an empty palette.
   }, [])
 
   // Load default workflow + global tools once for editor + run-with-default.
   useEffect(() => {
-    fetch('/api/workflows')
-      .then((r) => r.json())
-      .then((list: Workflow[]) => {
-        if (list[0]) setWorkflow(list[0])
-      })
-      .catch(() => {})
+    void (async () => {
+      const wf = await apiGet<Workflow[]>('/api/workflows')
+      if (wf.ok && wf.data[0]) setWorkflow(wf.data[0])
+
+      const shipsRes = await apiGet<ShipSummary[]>('/api/ships')
+      if (!shipsRes.ok) return
+      useSocketStore.getState().setShips(shipsRes.data)
+      const featureMap = new Map<number, FeatureSummary[]>()
+      await Promise.all(
+        shipsRes.data.map(async (s) => {
+          const fs = await apiGet<FeatureSummary[]>(`/api/ships/${s.id}/features`)
+          featureMap.set(s.id, fs.ok ? fs.data : [])
+        }),
+      )
+      useSocketStore.getState().setFeatures(featureMap)
+    })()
     void refreshTools()
-    fetch('/api/ships')
-      .then((r) => r.json())
-      .then(async (list: ShipSummary[]) => {
-        useSocketStore.getState().setShips(list)
-        const featureMap = new Map<number, FeatureSummary[]>()
-        await Promise.all(
-          list.map(async (s) => {
-            const fs = await fetch(`/api/ships/${s.id}/features`)
-              .then((r) => r.json())
-              .catch(() => [])
-            featureMap.set(s.id, fs)
-          }),
-        )
-        useSocketStore.getState().setFeatures(featureMap)
-      })
-      .catch(() => {})
   }, [refreshTools])
 
   const sendMessage = useCallback((agentRunId: string, content: string) => {
@@ -136,85 +130,67 @@ export function App() {
   const startRun = useCallback(
     async (task: string) => {
       if (!workflow) {
-        alert('No workflow loaded yet.')
+        pushToast('error', 'No workflow loaded yet.')
         return
       }
-      const res = await fetch('/api/runs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflowId: workflow.id, task }),
-      })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        alert(`Run failed: ${j.error ?? res.status}`)
-      }
+      const res = await apiPost('/api/runs', { workflowId: workflow.id, task })
+      if (!res.ok) pushToast('error', `Run failed: ${res.error}`)
     },
     [workflow],
   )
 
   const resetRun = useCallback(async () => {
-    await fetch('/api/runs/reset', { method: 'POST' }).catch(() => {})
+    await apiPost('/api/runs/reset')
     useSocketStore.getState().resetRun()
   }, [])
 
   const createShip = useCallback(async (name: string, projectPath: string) => {
-    const res = await fetch('/api/ships', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, projectPath }),
-    })
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}))
-      alert(`Create ship failed: ${j.error ?? res.status}`)
-    }
+    const res = await apiPost('/api/ships', { name, projectPath })
+    if (!res.ok) pushToast('error', `Create ship failed: ${res.error}`)
   }, [])
 
   const deleteShip = useCallback(async (id: number) => {
-    await fetch(`/api/ships/${id}`, { method: 'DELETE' }).catch(() => {})
+    await apiDelete(`/api/ships/${id}`)
   }, [])
 
   const createFeature = useCallback(
     async (shipId: number, name: string, task: string): Promise<FeatureSummary | null> => {
-      const res = await fetch(`/api/ships/${shipId}/features`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, task }),
-      })
+      const res = await apiPost<{ feature: FeatureSummary }>(
+        `/api/ships/${shipId}/features`,
+        { name, task },
+      )
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        const msg = typeof j.error === 'string' ? j.error : `HTTP ${res.status}`
+        const msg = res.error
+        // Path-missing / not-a-repo is a recoverable user-facing condition —
+        // offer to remove the now-orphaned ship.
         if (msg.includes('Ship path does not exist') || msg.includes('not a git repository')) {
           if (
             confirm(
               `Can't create a feature on this ship:\n\n${msg}\n\nThis usually means the project path has been moved or deleted on disk. Delete the ship from AgentYard now?`,
             )
           ) {
-            await fetch(`/api/ships/${shipId}`, { method: 'DELETE' }).catch(() => {})
+            await apiDelete(`/api/ships/${shipId}`)
           }
         } else {
-          alert(`Create feature failed: ${msg}`)
+          pushToast('error', `Create feature failed: ${msg}`)
         }
         return null
       }
-      const body = await res.json()
-      return body.feature as FeatureSummary
+      return res.data.feature
     },
     [],
   )
 
   const saveWorkflow = useCallback(async (updated: Workflow) => {
-    const res = await fetch(`/api/workflows/${updated.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: updated.name, graph: updated.graph }),
+    const res = await apiPut<Workflow>(`/api/workflows/${updated.id}`, {
+      name: updated.name,
+      graph: updated.graph,
     })
     if (!res.ok) {
-      const j = await res.json().catch(() => ({}))
-      alert(`Save failed: ${j.error ?? res.status}`)
+      pushToast('error', `Save failed: ${res.error}`)
       return
     }
-    const saved: Workflow = await res.json()
-    setWorkflow(saved)
+    setWorkflow(res.data)
   }, [])
 
   return (
@@ -359,6 +335,7 @@ export function App() {
           />
         </Suspense>
       )}
+      <Toasts />
     </main>
   )
 }
