@@ -30,20 +30,25 @@ interface FeatureRow {
   created_at: number
 }
 
-function ensureColumns(): void {
+/**
+ * Idempotently add columns introduced after the Phase 0 schema. Call once
+ * from startServer — must run BEFORE any feature reads/writes.
+ *
+ * (Previously this ran as a module-load side effect, which made importing
+ * this module open the SQLite handle behind callers' backs.)
+ */
+export function migrateFeaturesSchema(): void {
   const db = getDb()
   const cols = db
     .prepare('PRAGMA table_info(features)')
     .all() as Array<{ name: string }>
   const names = new Set(cols.map((c) => c.name))
-  // The Phase 0 schema didn't include task/workflow_id/final_summary/error.
-  // Add them idempotently.
   if (!names.has('task')) db.exec("ALTER TABLE features ADD COLUMN task TEXT NOT NULL DEFAULT ''")
-  if (!names.has('workflow_id')) db.exec('ALTER TABLE features ADD COLUMN workflow_id INTEGER NOT NULL DEFAULT 1')
+  if (!names.has('workflow_id'))
+    db.exec('ALTER TABLE features ADD COLUMN workflow_id INTEGER NOT NULL DEFAULT 1')
   if (!names.has('final_summary')) db.exec('ALTER TABLE features ADD COLUMN final_summary TEXT')
   if (!names.has('error')) db.exec('ALTER TABLE features ADD COLUMN error TEXT')
 }
-ensureColumns()
 
 function rowToFeature(row: FeatureRow): Feature {
   return {

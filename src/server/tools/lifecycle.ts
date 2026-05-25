@@ -116,5 +116,3 @@ function moveOrCopy(
   return { targetPath: dest }
 }
 
-// Re-export the helpers some callers might want.
-export { parseFrontmatter, serializeFrontmatter, writeFileSync, copyFileSync, cpSync }

@@ -19,7 +19,14 @@ import {
 } from './workflows.js'
 import { scanSkills } from './skills.js'
 import { createShip, deleteShip, getShip, listShips } from './ships.js'
-import { createFeature, getFeature, listFeatures, updateFeature, type Feature } from './features.js'
+import {
+  createFeature,
+  getFeature,
+  listFeatures,
+  migrateFeaturesSchema,
+  updateFeature,
+  type Feature,
+} from './features.js'
 import { createFeatureWorktree, removeFeatureWorktree } from './runtime/worktrees.js'
 import { TestRunRegistry } from './runtime/testRun.js'
 import { loadSecrets } from './secrets.js'
@@ -67,6 +74,7 @@ interface PendingClarification {
 
 export async function startServer(opts: ServerOptions) {
   getDb()
+  migrateFeaturesSchema()
   // Seed scripts before workflow so the default workflow's script node has a
   // resolvable target on first boot.
   const seededScripts = seedDefaultScriptsIfMissing()

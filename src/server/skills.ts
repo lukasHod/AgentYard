@@ -62,10 +62,10 @@ function ensureSkillsDir(): void {
   }
   // Seed the example skill so the UI library has at least one entry.
   const examplePath = path.join(SKILLS_DIR, EXAMPLE_SKILL_NAME)
-  const examplFile = path.join(examplePath, 'SKILL.md')
-  if (!existsSync(examplFile)) {
+  const exampleFile = path.join(examplePath, 'SKILL.md')
+  if (!existsSync(exampleFile)) {
     mkdirSync(examplePath, { recursive: true })
-    writeFileSync(examplFile, EXAMPLE_SKILL_CONTENT, 'utf8')
+    writeFileSync(exampleFile, EXAMPLE_SKILL_CONTENT, 'utf8')
   }
 }
 
