@@ -155,10 +155,18 @@ const LABEL_BY_ROLE = {
   system: { label: 'SYS', color: 'text-zinc-500' },
 } as const
 
+// `content-visibility: auto` lets the browser skip layout/paint for
+// off-screen messages — a meaningful win for long-running agents where
+// transcripts can grow into the hundreds.
+const ROW_VIRTUALIZATION_STYLE = {
+  contentVisibility: 'auto' as const,
+  containIntrinsicSize: '0 44px',
+}
+
 const MessageRow = memo(function MessageRow({ m }: { m: AgentChatMessage }) {
   const { label, color } = LABEL_BY_ROLE[m.role]
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3" style={ROW_VIRTUALIZATION_STYLE}>
       <span className={`${color} text-[10px] tracking-widest pt-0.5 w-12 shrink-0`}>{label}</span>
       <div className="flex-1">
         <p className="text-zinc-100 whitespace-pre-wrap">{m.content}</p>

@@ -74,20 +74,26 @@ export function ShipDetailsPanel(props: Props) {
   }, [ship.id])
 
   useEffect(() => {
-    if (tab === 'description' && description === null) {
-      fetch(`/api/ships/${ship.id}/description`)
-        .then((r) => r.json())
-        .then(setDescription)
-        .catch(() =>
-          setDescription({
-            readme: null,
-            readmePath: null,
-            git: {},
-            projectPath: ship.projectPath,
-            pathExists: false,
-          }),
-        )
-    }
+    if (tab !== 'description' || description !== null) return
+    // Abort in-flight fetches when the user clicks between ships quickly so
+    // a stale response can't overwrite a newer one.
+    const controller = new AbortController()
+    fetch(`/api/ships/${ship.id}/description`, { signal: controller.signal })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!controller.signal.aborted) setDescription(data)
+      })
+      .catch((err) => {
+        if (controller.signal.aborted || err?.name === 'AbortError') return
+        setDescription({
+          readme: null,
+          readmePath: null,
+          git: {},
+          projectPath: ship.projectPath,
+          pathExists: false,
+        })
+      })
+    return () => controller.abort()
     // Tools tab self-fetches (see ToolsTabContent); no work here.
   }, [tab, description, ship.id, ship.projectPath])
 

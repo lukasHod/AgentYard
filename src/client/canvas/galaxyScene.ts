@@ -95,6 +95,10 @@ export class GalaxyScene {
 
   destroy() {
     this.app.ticker.remove(this.tickerFn)
+    // The wheel listener is bound to the canvas DOM node, not the Pixi
+    // root — destroying the root won't detach it, so without this each
+    // GalaxyScene rebuild would leak a handler.
+    this.app.canvas.removeEventListener('wheel', this.onWheel)
     this.root.destroy({ children: true })
   }
 
