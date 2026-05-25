@@ -5,7 +5,6 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { closeDb, getDb } from './db.js'
-import { migrateFeaturesSchema } from './features.js'
 import { SessionManager } from './runtime/SessionManager.js'
 import type { SessionEvent } from './runtime/Session.js'
 import type { SessionDescriptor } from './runtime/SessionManager.js'
@@ -35,7 +34,6 @@ export interface ServerOptions {
 
 export async function startServer(opts: ServerOptions) {
   getDb()
-  migrateFeaturesSchema()
   // Seed scripts before workflow so the default workflow's script node has a
   // resolvable target on first boot.
   const seededScripts = seedDefaultScriptsIfMissing()

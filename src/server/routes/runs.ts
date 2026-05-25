@@ -27,7 +27,7 @@ export function registerRunRoutes(ctx: AppContext): void {
         workflow: wf,
         task,
         manager,
-        ctx: { shipProjectPath: null }, // ship-less run (legacy /api/runs path)
+        ctx: { shipProjectPath: null }, // no ship context — global tools only
         signal: controller.signal,
         emit: (ev) => runState.emit(ev),
       }).catch((err) => {
