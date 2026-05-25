@@ -363,7 +363,17 @@ export class Session extends EventEmitter implements ClarificationGateway {
     this.q?.close()
     this.inputQueue.close()
     this.rejectAsk(new Error('Session closed'))
-    await this.consumePromise?.catch(() => {})
+    await this.consumePromise?.catch((err) => {
+      // consume() already catches SDK iteration errors and emits a system
+      // message + 'failed' state, so reaching this branch means an
+      // unexpected throw — surface it instead of swallowing.
+      const text = err instanceof Error ? err.message : String(err)
+      this.emitEvent({
+        type: 'message',
+        agentRunId: this.id,
+        message: { role: 'system', text: `[close error] ${text}`, timestamp: Date.now() },
+      })
+    })
   }
 
   private setState(state: AgentState): void {

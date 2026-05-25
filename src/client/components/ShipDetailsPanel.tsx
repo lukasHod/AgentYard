@@ -4,6 +4,7 @@ import type {
   SessionDescriptor,
   ShipSummary,
 } from '../../core/types'
+import { apiGet } from '../api'
 import { AgentChat, type AgentChatMessage, type AgentChatPending } from './AgentChat'
 import { ToolsTabContent } from './ToolsTabContent'
 
@@ -78,13 +79,13 @@ export function ShipDetailsPanel(props: Props) {
     // Abort in-flight fetches when the user clicks between ships quickly so
     // a stale response can't overwrite a newer one.
     const controller = new AbortController()
-    fetch(`/api/ships/${ship.id}/description`, { signal: controller.signal })
-      .then((r) => r.json())
-      .then((data) => {
-        if (!controller.signal.aborted) setDescription(data)
-      })
-      .catch((err) => {
-        if (controller.signal.aborted || err?.name === 'AbortError') return
+    void apiGet<ShipDescriptionData>(`/api/ships/${ship.id}/description`, {
+      signal: controller.signal,
+    }).then((res) => {
+      if (controller.signal.aborted) return
+      if (res.ok) {
+        setDescription(res.data)
+      } else if (!res.aborted) {
         setDescription({
           readme: null,
           readmePath: null,
@@ -92,7 +93,8 @@ export function ShipDetailsPanel(props: Props) {
           projectPath: ship.projectPath,
           pathExists: false,
         })
-      })
+      }
+    })
     return () => controller.abort()
     // Tools tab self-fetches (see ToolsTabContent); no work here.
   }, [tab, description, ship.id, ship.projectPath])

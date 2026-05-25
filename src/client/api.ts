@@ -6,11 +6,16 @@
 
 export type ApiResult<T> =
   | { ok: true; data: T }
-  | { ok: false; error: string; status?: number }
+  | { ok: false; error: string; status?: number; aborted?: boolean }
 
-async function send<T>(url: string, init: RequestInit): Promise<ApiResult<T>> {
+export interface ApiOptions {
+  /** Forwarded to fetch — caller controls cancellation. */
+  signal?: AbortSignal
+}
+
+async function send<T>(url: string, init: RequestInit, opts?: ApiOptions): Promise<ApiResult<T>> {
   try {
-    const res = await fetch(url, init)
+    const res = await fetch(url, { ...init, signal: opts?.signal })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       const error =
@@ -25,30 +30,45 @@ async function send<T>(url: string, init: RequestInit): Promise<ApiResult<T>> {
     if (text.length === 0) return { ok: true, data: undefined as unknown as T }
     return { ok: true, data: JSON.parse(text) as T }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    const aborted =
+      (err instanceof DOMException && err.name === 'AbortError') ||
+      opts?.signal?.aborted === true
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      ...(aborted ? { aborted: true } : {}),
+    }
   }
 }
 
-export function apiGet<T>(url: string): Promise<ApiResult<T>> {
-  return send<T>(url, { method: 'GET' })
+export function apiGet<T>(url: string, opts?: ApiOptions): Promise<ApiResult<T>> {
+  return send<T>(url, { method: 'GET' }, opts)
 }
 
-export function apiPost<T>(url: string, body?: unknown): Promise<ApiResult<T>> {
-  return send<T>(url, {
-    method: 'POST',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+export function apiPost<T>(url: string, body?: unknown, opts?: ApiOptions): Promise<ApiResult<T>> {
+  return send<T>(
+    url,
+    {
+      method: 'POST',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+    opts,
+  )
 }
 
-export function apiPut<T>(url: string, body?: unknown): Promise<ApiResult<T>> {
-  return send<T>(url, {
-    method: 'PUT',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+export function apiPut<T>(url: string, body?: unknown, opts?: ApiOptions): Promise<ApiResult<T>> {
+  return send<T>(
+    url,
+    {
+      method: 'PUT',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+    opts,
+  )
 }
 
-export function apiDelete<T>(url: string): Promise<ApiResult<T>> {
-  return send<T>(url, { method: 'DELETE' })
+export function apiDelete<T>(url: string, opts?: ApiOptions): Promise<ApiResult<T>> {
+  return send<T>(url, { method: 'DELETE' }, opts)
 }

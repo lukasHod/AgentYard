@@ -20,31 +20,7 @@ export type ShipState =
 
 export type AgentRole = 'leader' | 'drone' | 'free'
 
-export interface DroneSlot {
-  role: string
-  requiredSkills: string[]
-  required: boolean
-}
-
-export interface WorkflowNode {
-  id: string
-  kind: 'analyze' | 'develop' | 'deploy' | 'custom'
-  prompt: string
-  skills: string[]
-  drones: DroneSlot[]
-  inputs: string[]
-  outputs: string[]
-}
-
-export interface WorkflowEdge {
-  from: string
-  to: string
-}
-
-export interface WorkflowGraph {
-  nodes: WorkflowNode[]
-  edges: WorkflowEdge[]
-}
+// Workflow shapes live in core/schema.ts (Zod-derived). Don't redefine here.
 
 export interface Ship {
   id: number

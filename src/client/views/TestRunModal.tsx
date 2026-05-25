@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Socket } from 'socket.io-client'
 import type { ShipSummary } from '../../core/types'
 import type { Workflow, WorkflowNode } from '../../core/schema'
+import { apiPost } from '../api'
 import { useDismissable } from '../hooks/useDismissable'
 import { TestRunForm } from './testRun/TestRunForm'
 import { TestRunLive } from './testRun/TestRunLive'
@@ -76,39 +77,28 @@ export function TestRunModal({ request, workflow, ships, socket, onClose }: Prop
     }
     setSubmitError(null)
     setSubmitting(true)
-    try {
-      const res = await fetch('/api/test-runs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          shipId,
-          workflowId: workflow.id,
-          task,
-          scope: request.scope,
-          nodeId: request.nodeId,
-          upstreamOutputs: request.scope === 'node' ? upstreamOutputs : undefined,
-        }),
-      })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setSubmitError(typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`)
-        setSubmitting(false)
-        return
-      }
-      setTestRunId(body.testRunId)
-      setStage('running')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setSubmitError(msg)
-    } finally {
-      setSubmitting(false)
+    const res = await apiPost<{ testRunId: string }>('/api/test-runs', {
+      shipId,
+      workflowId: workflow.id,
+      task,
+      scope: request.scope,
+      nodeId: request.nodeId,
+      upstreamOutputs: request.scope === 'node' ? upstreamOutputs : undefined,
+    })
+    setSubmitting(false)
+    if (!res.ok) {
+      setSubmitError(res.error)
+      return
     }
+    setTestRunId(res.data.testRunId)
+    setStage('running')
   }
 
   async function abort() {
     if (!testRunId) return
     setStage('aborted')
-    await fetch(`/api/test-runs/${testRunId}/abort`, { method: 'POST' }).catch(() => {})
+    // Errors here are intentionally ignored — the user already chose to bail.
+    await apiPost(`/api/test-runs/${testRunId}/abort`)
   }
 
   function sendBarge() {
