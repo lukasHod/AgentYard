@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io, Socket } from 'socket.io-client'
 import type {
   FeatureSummary,
@@ -9,10 +9,33 @@ import type {
 } from '../core/types'
 import type { Workflow } from '../core/schema'
 import type { ToolSummary } from '../core/tools'
-import { RunView, type ChatMessage, type PendingClarification } from './views/RunView'
-import { EditorView } from './views/EditorView'
-import { TestRunModal, type TestRunRequest } from './views/TestRunModal'
-import { GameCanvas } from './canvas/GameCanvas'
+import type { ChatMessage, PendingClarification } from './views/RunView'
+import type { TestRunRequest } from './views/TestRunModal'
+
+// Lazy loaders are exposed so tab hovers can preload the bundle before click.
+const loadGameCanvas = () => import('./canvas/GameCanvas')
+const loadRunView = () => import('./views/RunView')
+const loadEditorView = () => import('./views/EditorView')
+const loadTestRunModal = () => import('./views/TestRunModal')
+
+const GameCanvas = lazy(() => loadGameCanvas().then((m) => ({ default: m.GameCanvas })))
+const RunView = lazy(() => loadRunView().then((m) => ({ default: m.RunView })))
+const EditorView = lazy(() => loadEditorView().then((m) => ({ default: m.EditorView })))
+const TestRunModal = lazy(() => loadTestRunModal().then((m) => ({ default: m.TestRunModal })))
+
+const PRELOADERS: Record<ViewMode, () => Promise<unknown>> = {
+  ships: loadGameCanvas,
+  run: loadRunView,
+  editor: loadEditorView,
+}
+
+function LoadingPanel({ label }: { label: string }) {
+  return (
+    <div className="flex-1 flex items-center justify-center text-cyan-500/60 text-xs tracking-[0.3em]">
+      ◌ loading {label}…
+    </div>
+  )
+}
 
 let messageIdCounter = 0
 const nextMessageId = () => `m${++messageIdCounter}`
@@ -21,6 +44,18 @@ type ViewMode = 'ships' | 'run' | 'editor'
 
 export function App() {
   const [view, setView] = useState<ViewMode>('ships')
+  // Track which views the user has actually visited so we don't pay their JS
+  // download cost at boot. Once visited, a view stays mounted (the z-index
+  // layering described below requires this so xyflow / Pixi don't lose their
+  // measurements).
+  const [visited, setVisited] = useState<Set<ViewMode>>(() => new Set(['ships']))
+  const navigate = useCallback((next: ViewMode) => {
+    setView(next)
+    setVisited((prev) => (prev.has(next) ? prev : new Set(prev).add(next)))
+  }, [])
+  const preload = useCallback((target: ViewMode) => {
+    void PRELOADERS[target]()
+  }, [])
   const [connected, setConnected] = useState(false)
   const [sessions, setSessions] = useState<Map<string, SessionDescriptor>>(new Map())
   const [transcripts, setTranscripts] = useState<Map<string, ChatMessage[]>>(new Map())
@@ -326,7 +361,9 @@ export function App() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <button
-            onClick={() => setView('ships')}
+            onClick={() => navigate('ships')}
+            onMouseEnter={() => preload('ships')}
+            onFocus={() => preload('ships')}
             className={`px-3 py-1 border tracking-wide ${
               view === 'ships'
                 ? 'border-cyan-500 text-cyan-300 bg-cyan-500/10'
@@ -336,7 +373,9 @@ export function App() {
             ships
           </button>
           <button
-            onClick={() => setView('run')}
+            onClick={() => navigate('run')}
+            onMouseEnter={() => preload('run')}
+            onFocus={() => preload('run')}
             className={`px-3 py-1 border tracking-wide ${
               view === 'run'
                 ? 'border-cyan-500 text-cyan-300 bg-cyan-500/10'
@@ -346,7 +385,9 @@ export function App() {
             run
           </button>
           <button
-            onClick={() => setView('editor')}
+            onClick={() => navigate('editor')}
+            onMouseEnter={() => preload('editor')}
+            onFocus={() => preload('editor')}
             className={`px-3 py-1 border tracking-wide ${
               view === 'editor'
                 ? 'border-cyan-500 text-cyan-300 bg-cyan-500/10'
@@ -381,62 +422,76 @@ export function App() {
             view === 'ships' ? 'z-10' : 'z-0 pointer-events-none'
           }`}
         >
-          <GameCanvas
-            ships={ships}
-            features={features}
-            sessions={sessionList}
-            transcripts={transcripts}
-            pendings={pendings}
-            connected={connected}
-            onCreateShip={createShip}
-            onDeleteShip={deleteShip}
-            onCreateFeature={createFeature}
-            onSend={sendMessage}
-            onClarificationReply={replyClarification}
-            onOpenWorkflow={() => setView('editor')}
-            onJumpToRun={() => setView('run')}
-          />
+          {visited.has('ships') && (
+            <Suspense fallback={<LoadingPanel label="shipyard" />}>
+              <GameCanvas
+                ships={ships}
+                features={features}
+                sessions={sessionList}
+                transcripts={transcripts}
+                pendings={pendings}
+                connected={connected}
+                onCreateShip={createShip}
+                onDeleteShip={deleteShip}
+                onCreateFeature={createFeature}
+                onSend={sendMessage}
+                onClarificationReply={replyClarification}
+                onOpenWorkflow={() => navigate('editor')}
+                onJumpToRun={() => navigate('run')}
+              />
+            </Suspense>
+          )}
         </div>
         <div
           className={`absolute inset-0 flex flex-col bg-black ${
             view === 'run' ? 'z-10' : 'z-0 pointer-events-none'
           }`}
         >
-          <RunView
-            connected={connected}
-            sessions={sessionList}
-            transcripts={transcripts}
-            pendings={pendings}
-            activeRun={activeRun}
-            workflow={workflow}
-            onSend={sendMessage}
-            onClarificationReply={replyClarification}
-            onStartRun={startRun}
-            onReset={resetRun}
-          />
+          {visited.has('run') && (
+            <Suspense fallback={<LoadingPanel label="run console" />}>
+              <RunView
+                connected={connected}
+                sessions={sessionList}
+                transcripts={transcripts}
+                pendings={pendings}
+                activeRun={activeRun}
+                workflow={workflow}
+                onSend={sendMessage}
+                onClarificationReply={replyClarification}
+                onStartRun={startRun}
+                onReset={resetRun}
+              />
+            </Suspense>
+          )}
         </div>
         <div
           className={`absolute inset-0 flex flex-col bg-black ${
             view === 'editor' ? 'z-10' : 'z-0 pointer-events-none'
           }`}
         >
-          <EditorView
-            workflow={workflow}
-            tools={tools}
-            onSave={saveWorkflow}
-            onRefreshTools={refreshTools}
-            onOpenTestRun={(req) => setTestRunRequest(req)}
-          />
+          {visited.has('editor') && (
+            <Suspense fallback={<LoadingPanel label="editor" />}>
+              <EditorView
+                workflow={workflow}
+                tools={tools}
+                onSave={saveWorkflow}
+                onRefreshTools={refreshTools}
+                onOpenTestRun={(req) => setTestRunRequest(req)}
+              />
+            </Suspense>
+          )}
         </div>
       </div>
       {testRunRequest && workflow && (
-        <TestRunModal
-          request={testRunRequest}
-          workflow={workflow}
-          ships={ships}
-          socket={socketRef.current}
-          onClose={() => setTestRunRequest(null)}
-        />
+        <Suspense fallback={null}>
+          <TestRunModal
+            request={testRunRequest}
+            workflow={workflow}
+            ships={ships}
+            socket={socketRef.current}
+            onClose={() => setTestRunRequest(null)}
+          />
+        </Suspense>
       )}
     </main>
   )

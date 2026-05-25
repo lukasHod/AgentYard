@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import type { ToolScope, ToolSummary, ToolType } from '../../core/tools'
-import { ToolEditorModal, type AnyToolData, type EditorMode } from './tools/ToolEditorModal'
+import type { AnyToolData, EditorMode } from './tools/ToolEditorModal'
+
+const ToolEditorModal = lazy(() =>
+  import('./tools/ToolEditorModal').then((m) => ({ default: m.ToolEditorModal })),
+)
 
 interface Props {
   /** Null when used in the galaxy library view — list endpoint switches to /api/global-tools. */
@@ -275,13 +279,15 @@ export function ToolsTabContent({ shipId }: Props) {
       </section>
 
       {editor && (
-        <ToolEditorModal
-          mode={editor}
-          shipId={shipId}
-          library={tools ?? []}
-          onClose={() => setEditor(null)}
-          onSaved={() => void refetch()}
-        />
+        <Suspense fallback={null}>
+          <ToolEditorModal
+            mode={editor}
+            shipId={shipId}
+            library={tools ?? []}
+            onClose={() => setEditor(null)}
+            onSaved={() => void refetch()}
+          />
+        </Suspense>
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -18,7 +18,11 @@ import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowGraph, WorkflowNode } from '../../core/schema'
 import type { ScriptTool, ToolSummary } from '../../core/tools'
 import type { TestRunRequest } from './TestRunModal'
-import { ToolEditorModal, type EditorMode } from '../components/tools/ToolEditorModal'
+import type { EditorMode } from '../components/tools/ToolEditorModal'
+
+const ToolEditorModal = lazy(() =>
+  import('../components/tools/ToolEditorModal').then((m) => ({ default: m.ToolEditorModal })),
+)
 
 interface Props {
   workflow: Workflow | null
@@ -339,16 +343,18 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
         )}
       </aside>
       {toolEditor && (
-        <ToolEditorModal
-          mode={toolEditor}
-          shipId={null}
-          library={tools}
-          onClose={() => setToolEditor(null)}
-          onSaved={() => {
-            setToolEditor(null)
-            onRefreshTools()
-          }}
-        />
+        <Suspense fallback={null}>
+          <ToolEditorModal
+            mode={toolEditor}
+            shipId={null}
+            library={tools}
+            onClose={() => setToolEditor(null)}
+            onSaved={() => {
+              setToolEditor(null)
+              onRefreshTools()
+            }}
+          />
+        </Suspense>
       )}
     </div>
   )
