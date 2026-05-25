@@ -107,6 +107,12 @@ export function GameCanvas(props: Props) {
   }, [])
 
   // ---- 2. Switch scenes when selectedShipId changes. ----
+  // `hud` is intentionally not in the deps — useGameHud() returns a new
+  // object every render, which would re-run this effect on every render
+  // and tear down the scene. We only read `hud.setOpenedDroneId` (a stable
+  // setState setter), so capturing the current setter via this local is
+  // enough.
+  const setOpenedDroneId = hud.setOpenedDroneId
   useEffect(() => {
     if (!ready || !appRef.current) return
     const app = appRef.current
@@ -134,7 +140,7 @@ export function GameCanvas(props: Props) {
       const dock = new DockScene(app, {
         onBack: () => setSelectedShipId(null),
         onShipHullClick: () => setPanelTab('chat'),
-        onDroneClick: (_role, agentRunId) => hud.setOpenedDroneId(agentRunId),
+        onDroneClick: (_role, agentRunId) => setOpenedDroneId(agentRunId),
       })
       dock.setPanelWidth(COCKPIT_PANEL_WIDTH)
       app.stage.addChild(dock.root)
@@ -142,7 +148,7 @@ export function GameCanvas(props: Props) {
       // Default to "features" tab whenever we enter a ship.
       setPanelTab('features')
     }
-  }, [ready, selectedShipId, hud])
+  }, [ready, selectedShipId, setOpenedDroneId])
 
   // ---- 3. Push ships into the galaxy scene whenever they change. ----
   // `ready` is in the deps because effect 2 (which creates the GalaxyScene) only
