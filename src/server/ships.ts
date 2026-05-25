@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { simpleGit } from 'simple-git'
-import { getDb } from './db.js'
+import { createRepo } from './repository.js'
 
 export interface Ship {
   id: number
@@ -34,16 +34,14 @@ function rowToShip(row: ShipRow): Ship {
   }
 }
 
+const ships = createRepo<ShipRow, Ship>(rowToShip)
+
 export function listShips(): Ship[] {
-  const db = getDb()
-  const rows = db.prepare('SELECT * FROM ships ORDER BY created_at DESC').all() as ShipRow[]
-  return rows.map(rowToShip)
+  return ships.all('SELECT * FROM ships ORDER BY created_at DESC')
 }
 
 export function getShip(id: number): Ship | undefined {
-  const db = getDb()
-  const row = db.prepare('SELECT * FROM ships WHERE id = ?').get(id) as ShipRow | undefined
-  return row ? rowToShip(row) : undefined
+  return ships.one('SELECT * FROM ships WHERE id = ?', id)
 }
 
 export async function createShip(opts: {
@@ -62,8 +60,8 @@ export async function createShip(opts: {
     throw new Error(`Project path is not a git repository: ${opts.projectPath}`)
   }
 
-  const db = getDb()
-  const info = db
+  const info = ships
+    .db()
     .prepare(
       'INSERT INTO ships (name, project_path, workflow_id, state, created_at) VALUES (?, ?, ?, ?, ?)',
     )
@@ -72,11 +70,11 @@ export async function createShip(opts: {
 }
 
 export function deleteShip(id: number): void {
-  const db = getDb()
+  const db = ships.db()
   db.prepare('DELETE FROM features WHERE ship_id = ?').run(id)
   db.prepare('DELETE FROM ships WHERE id = ?').run(id)
 }
 
 export function setShipState(id: number, state: string): void {
-  getDb().prepare('UPDATE ships SET state = ? WHERE id = ?').run(state, id)
+  ships.db().prepare('UPDATE ships SET state = ? WHERE id = ?').run(state, id)
 }

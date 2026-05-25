@@ -1,4 +1,4 @@
-import { getDb } from './db.js'
+import { createRepo } from './repository.js'
 
 export type FeatureStatus = 'pending' | 'running' | 'complete' | 'failed'
 
@@ -46,18 +46,17 @@ function rowToFeature(row: FeatureRow): Feature {
   }
 }
 
+const features = createRepo<FeatureRow, Feature>(rowToFeature)
+
 export function listFeatures(shipId: number): Feature[] {
-  const db = getDb()
-  const rows = db
-    .prepare('SELECT * FROM features WHERE ship_id = ? ORDER BY created_at DESC')
-    .all(shipId) as FeatureRow[]
-  return rows.map(rowToFeature)
+  return features.all(
+    'SELECT * FROM features WHERE ship_id = ? ORDER BY created_at DESC',
+    shipId,
+  )
 }
 
 export function getFeature(id: number): Feature | undefined {
-  const db = getDb()
-  const row = db.prepare('SELECT * FROM features WHERE id = ?').get(id) as FeatureRow | undefined
-  return row ? rowToFeature(row) : undefined
+  return features.one('SELECT * FROM features WHERE id = ?', id)
 }
 
 export function createFeature(opts: {
@@ -66,8 +65,8 @@ export function createFeature(opts: {
   task: string
   workflowId: number
 }): Feature {
-  const db = getDb()
-  const info = db
+  const info = features
+    .db()
     .prepare(
       'INSERT INTO features (ship_id, name, task, status, created_at, workflow_id) VALUES (?, ?, ?, ?, ?, ?)',
     )
@@ -85,7 +84,6 @@ export function updateFeature(
     error: string | null
   }>,
 ): Feature | undefined {
-  const db = getDb()
   const sets: string[] = []
   const vals: unknown[] = []
   if ('branch' in patch) {
@@ -110,6 +108,6 @@ export function updateFeature(
   }
   if (sets.length === 0) return getFeature(id)
   vals.push(id)
-  db.prepare(`UPDATE features SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
+  features.db().prepare(`UPDATE features SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
   return getFeature(id)
 }
