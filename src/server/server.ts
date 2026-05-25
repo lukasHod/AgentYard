@@ -74,6 +74,12 @@ export async function startServer(opts: ServerOptions) {
     // eslint-disable-next-line no-console
     console.log(`seeded default scripts: ${seededScripts.wrote.join(', ')}`)
   }
+  if (seededScripts.migrated.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `migrated legacy default scripts to argv-safe form: ${seededScripts.migrated.join(', ')}`,
+    )
+  }
   ensureDefaultWorkflow()
   scanSkills()
   const seeded = seedDefaultAgentsIfMissing()
@@ -98,6 +104,26 @@ export async function startServer(opts: ServerOptions) {
 
   app.get('/api/health', async () => ({ ok: true, version: '0.0.1' }))
 
+  /**
+   * Send a sanitized error response. The full error (with stack + internal
+   * paths) goes to the server log; the client only sees `publicMessage`.
+   * Use this in every catch that builds a reply — never echo `err.message`
+   * directly to the client.
+   */
+  function apiError(
+    reply: import('fastify').FastifyReply,
+    code: number,
+    publicMessage: string,
+    err?: unknown,
+  ) {
+    if (err !== undefined) {
+      app.log.error({ err, status: code, publicMessage }, 'api error')
+    } else {
+      app.log.warn({ status: code, publicMessage }, 'api error')
+    }
+    return reply.code(code).send({ error: publicMessage })
+  }
+
   const manager = new SessionManager()
 
   // Per-session bookkeeping for UI catch-up on connect.
@@ -117,7 +143,10 @@ export async function startServer(opts: ServerOptions) {
   } | null = null
 
   const io = new IOServer(app.server, {
-    cors: opts.dev ? { origin: 'http://localhost:5173' } : undefined,
+    // In dev the UI is served by Vite on a different origin and needs CORS allow.
+    // In prod the UI is served from the same Fastify origin, so refuse cross-origin
+    // sockets — closes DNS-rebinding / cross-site Socket.IO connection vectors.
+    cors: opts.dev ? { origin: 'http://localhost:5173' } : { origin: false },
   })
 
   manager.on('session:added', (desc: SessionDescriptor) => {
@@ -499,7 +528,7 @@ export async function startServer(opts: ServerOptions) {
       const { targetPath } = adoptTool({ source, target, ctx })
       return { ok: true, target, path: targetPath }
     } catch (e) {
-      return reply.code(500).send({ error: e instanceof Error ? e.message : String(e) })
+      return apiError(reply, 500, 'failed to adopt tool', e)
     }
   })
 
@@ -515,7 +544,7 @@ export async function startServer(opts: ServerOptions) {
       const { targetPath } = adoptTool({ source, target: 'global', ctx })
       return { ok: true, target: 'global', path: targetPath }
     } catch (e) {
-      return reply.code(500).send({ error: e instanceof Error ? e.message : String(e) })
+      return apiError(reply, 500, 'failed to adopt tool', e)
     }
   })
 
@@ -533,7 +562,7 @@ export async function startServer(opts: ServerOptions) {
         const { targetPath } = elevateTool(source, ctx)
         return { ok: true, path: targetPath }
       } catch (e) {
-        return reply.code(500).send({ error: e instanceof Error ? e.message : String(e) })
+        return apiError(reply, 500, 'failed to elevate tool', e)
       }
     },
   )
@@ -552,7 +581,7 @@ export async function startServer(opts: ServerOptions) {
         const { targetPath } = forkTool(source, ctx)
         return { ok: true, path: targetPath }
       } catch (e) {
-        return reply.code(500).send({ error: e instanceof Error ? e.message : String(e) })
+        return apiError(reply, 500, 'failed to fork tool', e)
       }
     },
   )
@@ -680,8 +709,7 @@ export async function startServer(opts: ServerOptions) {
       })
       return { ok: true, testRunId }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return reply.code(500).send({ error: msg })
+      return apiError(reply, 500, 'failed to start test run', err)
     }
   })
 
@@ -713,7 +741,10 @@ export async function startServer(opts: ServerOptions) {
         io.emit('ship:created', ship)
         return ship
       } catch (e) {
-        return reply.code(400).send({ error: e instanceof Error ? e.message : String(e) })
+        // createShip throws validation errors with messages intended for the user
+        // (e.g. "Project path does not exist: ..."). Pass them through but still log.
+        const publicMessage = e instanceof Error ? e.message : 'invalid ship config'
+        return apiError(reply, 400, publicMessage, e)
       }
     },
   )
@@ -879,10 +910,12 @@ export async function startServer(opts: ServerOptions) {
       })!
       io.emit('feature:updated', feature)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      feature = updateFeature(feature.id, { status: 'failed', error: msg })!
+      // Persist the raw error onto the feature row so the UI can display it;
+      // the HTTP response stays generic since it may contain internal paths.
+      const internalMsg = e instanceof Error ? e.message : String(e)
+      feature = updateFeature(feature.id, { status: 'failed', error: internalMsg })!
       io.emit('feature:updated', feature)
-      return reply.code(500).send({ error: `worktree creation failed: ${msg}` })
+      return apiError(reply, 500, 'worktree creation failed', e)
     }
 
     activeRun = {

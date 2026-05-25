@@ -1,6 +1,42 @@
 import { z } from 'zod/v4'
 
 // ============================================================
+// Tool name validation
+// ============================================================
+
+/**
+ * Tool names map directly to on-disk filenames (agents/mcps) or folder names
+ * (skills/scripts). Anything that could break out of the configured scope root
+ * — path separators, parent-dir refs, leading dots — is rejected here so we
+ * never have to trust the name at write/delete time.
+ *
+ * Allowed: ASCII letters, digits, `.`, `_`, `-`. Length 1-64.
+ * Rejected: path separators, `..`, names starting with `.`, anything else.
+ */
+const TOOL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+export function isValidToolName(s: string): boolean {
+  if (!TOOL_NAME_RE.test(s)) return false
+  if (s.includes('..')) return false
+  return true
+}
+
+export function assertValidToolName(s: string): void {
+  if (!isValidToolName(s)) {
+    throw new Error(`Invalid tool name: ${JSON.stringify(s)}`)
+  }
+}
+
+export const ToolNameSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isValidToolName, {
+    message:
+      'Tool name must be 1-64 chars of letters/digits/._- (no path separators, no leading dot, no "..")',
+  })
+
+// ============================================================
 // Tool types + scopes
 // ============================================================
 
@@ -44,7 +80,7 @@ export function defaultAdoptionTarget(source: ToolScope): 'ship' | 'global' {
 
 /** A SKILL — markdown text + frontmatter; loaded into a drone's system prompt. */
 export const SkillToolSchema = z.object({
-  name: z.string().min(1),
+  name: ToolNameSchema,
   description: z.string().default(''),
   body: z.string().default(''),
 })
@@ -61,7 +97,7 @@ export type McpTransport = z.infer<typeof McpTransportSchema>
  * file is never mutated.
  */
 export const McpToolSchema = z.object({
-  name: z.string().min(1),
+  name: ToolNameSchema,
   description: z.string().default(''),
   transport: McpTransportSchema,
   // transport === 'stdio'
@@ -89,7 +125,7 @@ export type ScriptArg = z.infer<typeof ScriptArgSchema>
  * `cmd: "bash script.sh {filter}"`.
  */
 export const ScriptToolSchema = z.object({
-  name: z.string().min(1),
+  name: ToolNameSchema,
   description: z.string().default(''),
   cmd: z.string().min(1),
   args: z.array(ScriptArgSchema).default([]),
@@ -117,7 +153,7 @@ export type AgentToolPreset = z.infer<typeof AgentToolPresetSchema>
  * transform (renames, supplies defaults), never a raw copy.
  */
 export const AgentToolSchema = z.object({
-  name: z.string().min(1),
+  name: ToolNameSchema,
   description: z.string().default(''),
   role: z.string().default(''),
   model: z.string().optional(),

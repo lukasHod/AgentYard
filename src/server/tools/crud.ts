@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import path from 'node:path'
 import yaml from 'js-yaml'
 import {
+  assertValidToolName,
   isEditableScope,
   type AgentTool,
   type McpTool,
@@ -33,6 +34,9 @@ export function writeTool(
   ctx: PathContext,
 ): string {
   ensureEditable(scope)
+  // Defense in depth: ToolNameSchema already gates name at API parse time, but
+  // writeTool is also called from in-process lifecycle helpers — re-check here.
+  assertValidToolName(data.name)
   const target = toolOnDiskPath(scope, type, data.name, ctx)
   if (!target) {
     throw new Error(`writeTool: cannot resolve target path for ${scope}/${type}/${data.name}`)
@@ -141,6 +145,7 @@ export function deleteTool(
   ctx: PathContext,
 ): void {
   ensureEditable(scope)
+  assertValidToolName(name)
   const target = toolOnDiskPath(scope, type, name, ctx)
   if (!target) {
     throw new Error(`deleteTool: cannot resolve target path for ${scope}/${type}/${name}`)
