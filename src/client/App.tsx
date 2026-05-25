@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, startTransition, useCallback, useEffect, useState } from 'react'
 import type { FeatureSummary, ShipSummary } from '../core/types'
 import type { Workflow } from '../core/schema'
 import type { ToolSummary } from '../core/tools'
@@ -55,8 +55,13 @@ export function App() {
   // measurements).
   const [visited, setVisited] = useState<Set<ViewMode>>(() => new Set(['ships']))
   const navigate = useCallback((next: ViewMode) => {
-    setView(next)
-    setVisited((prev) => (prev.has(next) ? prev : new Set(prev).add(next)))
+    // First-time mounts of EditorView (xyflow) and GameCanvas (Pixi) can
+    // block paint for tens of ms. Marking the swap as a transition lets
+    // React keep the current view responsive while the new one mounts.
+    startTransition(() => {
+      setView(next)
+      setVisited((prev) => (prev.has(next) ? prev : new Set(prev).add(next)))
+    })
   }, [])
   const preload = useCallback((target: ViewMode) => {
     void PRELOADERS[target]()
