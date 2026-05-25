@@ -11,6 +11,7 @@ import { DockScene, type DockDroneSpec } from './dockScene'
 import { type AgentChatMessage, type AgentChatPending } from '../components/AgentChat'
 import { ShipDetailsPanel, type ShipPanelTab } from '../components/ShipDetailsPanel'
 import { ToolsTabContent } from '../components/ToolsTabContent'
+import { EmptyMessage } from '../components/ui/EmptyMessage'
 import { isAudioMuted, playClarificationChime, setAudioMuted } from './chime'
 import { useGameHud } from './useGameHud'
 import { Modal } from './Modal'
@@ -319,7 +320,7 @@ export function GameCanvas(props: Props) {
             </button>
           </div>
           {props.pendings.size === 0 ? (
-            <p className="px-3 py-3 text-zinc-600 italic">// no pending transmissions.</p>
+            <EmptyMessage className="px-3 py-3">no pending transmissions.</EmptyMessage>
           ) : (
             <ul>
               {Array.from(props.pendings.entries()).map(([agentRunId, p]) => {

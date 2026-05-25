@@ -90,6 +90,7 @@ export interface ServerEvents {
   'run:started':      { runId: string; task: string; nodeIds: string[] }
   'node:started':     { runId: string; nodeId: string; title: string }
   'node:complete':    { runId: string; nodeId: string; title: string; summary: string; outputs?: Record<string, string> }
+  'node:skipped':     { runId: string; nodeId: string; title: string }
   'run:complete':     { runId: string; finalSummary: string }
   'run:failed':       { runId: string; nodeId?: string; error: string }
   'ship:created':     ShipSummary

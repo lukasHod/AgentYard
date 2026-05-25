@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from 'react'
 import type { AgentRole, AgentState, SessionDescriptor } from '../../../core/types'
 import type { WorkflowNode } from '../../../core/schema'
+import { EmptyMessage } from '../../components/ui/EmptyMessage'
 import { SYSTEM_TAB_ID } from './types'
 import type {
   ChatMessage,
@@ -235,9 +236,7 @@ function SystemPane({
       <div className="text-zinc-500 text-[10px] tracking-widest uppercase">
         run progress · stage: {stage}
       </div>
-      {nodeProgress.length === 0 && (
-        <p className="text-zinc-600 italic">// waiting for first node…</p>
-      )}
+      {nodeProgress.length === 0 && <EmptyMessage>waiting for first node…</EmptyMessage>}
       {nodeProgress.map((e, i) => (
         <div key={i} className="flex items-baseline gap-2">
           <span className="text-zinc-600 text-[10px]">
@@ -297,7 +296,7 @@ function ScriptPane({
         script node · {node?.scriptName ?? '(no script)'}
       </div>
       {output.length === 0 ? (
-        <p className="text-zinc-600 italic">// running…</p>
+        <EmptyMessage>running…</EmptyMessage>
       ) : (
         <pre className="text-zinc-100 whitespace-pre-wrap font-mono text-xs">{output}</pre>
       )}
@@ -313,7 +312,7 @@ function AgentPane({
   pending: PendingClarification | null
 }) {
   if (transcript.length === 0 && !pending) {
-    return <p className="text-zinc-600 italic">// no messages yet</p>
+    return <EmptyMessage>no messages yet</EmptyMessage>
   }
   return (
     <div className="space-y-2">

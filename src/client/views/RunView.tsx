@@ -7,6 +7,7 @@ import type {
   SessionDescriptor,
 } from '../../core/types'
 import type { Workflow } from '../../core/schema'
+import { EmptyMessage } from '../components/ui/EmptyMessage'
 import { useDismissable } from '../hooks/useDismissable'
 
 export interface ChatMessage {
@@ -220,12 +221,12 @@ export function RunView(props: Props) {
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-3 text-sm">
             {selectedSession && (
-              <p className="text-zinc-600 italic text-xs">
-                // viewing {selectedSession.role} &quot;{selectedSession.label ?? selectedSession.id}&quot;
-              </p>
+              <EmptyMessage className="text-xs">
+                viewing {selectedSession.role} &quot;{selectedSession.label ?? selectedSession.id}&quot;
+              </EmptyMessage>
             )}
             {selectedTranscript.length === 0 && (
-              <p className="text-zinc-600 italic">// no transmissions yet.</p>
+              <EmptyMessage>no transmissions yet.</EmptyMessage>
             )}
             {selectedTranscript.map((m) => (
               <MessageRow key={m.id} m={m} />

@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import type { Server as IOServer } from 'socket.io'
 import { SessionManager } from './SessionManager.js'
+import type { SessionDescriptor } from './SessionManager.js'
 import type { SessionEvent } from './Session.js'
 import { runWorkflowOnSessions } from './runWorkflowOnSessions.js'
 import { createTestWorktree, removeTestWorktree } from './worktrees.js'
 import type { Workflow, WorkflowNode } from '../../core/schema.js'
 import type { Ship } from '../ships.js'
+import type { TypedIOServer } from '../socketTypes.js'
 
 export interface TestRunStartOptions {
   ship: Ship
@@ -44,7 +45,7 @@ interface TestRunState {
 export class TestRunRegistry {
   private runs = new Map<string, TestRunState>()
 
-  constructor(private io: IOServer) {}
+  constructor(private io: TypedIOServer) {}
 
   /** Kick off a new test run. Returns the testRunId immediately; the run executes async. */
   async start(opts: TestRunStartOptions): Promise<string> {
@@ -197,8 +198,8 @@ export class TestRunRegistry {
   }
 
   private wireManagerToSocket(manager: SessionManager, testRunId: string): () => void {
-    const onSessionAdded = (desc: unknown) => {
-      this.io.emit('test-run:session:added', { testRunId, descriptor: desc as never })
+    const onSessionAdded = (desc: SessionDescriptor) => {
+      this.io.emit('test-run:session:added', { testRunId, descriptor: desc })
     }
     const onSessionRemoved = (ev: { id: string }) => {
       this.io.emit('test-run:session:removed', { testRunId, id: ev.id })

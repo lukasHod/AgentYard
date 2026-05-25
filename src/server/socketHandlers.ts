@@ -1,14 +1,14 @@
-import type { Socket } from 'socket.io'
 import type { FastifyInstance } from 'fastify'
-import type { Server as IOServer } from 'socket.io'
+import type { ClientEvents } from '../core/types.js'
 import type { SessionManager } from './runtime/SessionManager.js'
 import type { TestRunRegistry } from './runtime/testRun.js'
 import type { RunRegistry } from './runState.js'
 import type { TranscriptStore } from './transcriptStore.js'
+import type { TypedIOServer, TypedSocket } from './socketTypes.js'
 
 export interface WireSocketDeps {
   app: FastifyInstance
-  io: IOServer
+  io: TypedIOServer
   manager: SessionManager
   testRuns: TestRunRegistry
   runState: RunRegistry
@@ -25,7 +25,10 @@ export interface WireSocketDeps {
 export function wireSocketHandlers(deps: WireSocketDeps): void {
   const { app, io, manager, testRuns, runState, transcripts } = deps
 
-  io.on('connection', (socket: Socket) => {
+  // socket.io's typed-event generics give us static event names / payload
+  // shapes (see socketTypes.ts), but the wire is still untrusted at runtime
+  // — keep the typeof guards so a malformed client can't crash a handler.
+  io.on('connection', (socket: TypedSocket) => {
     app.log.info(`socket connected: ${socket.id}`)
 
     socket.emit('session:list', manager.describeAll())
@@ -33,37 +36,31 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     const snapshot = runState.snapshot()
     if (snapshot) socket.emit('run:snapshot', snapshot)
 
-    socket.on('agent:send', (payload: { agentRunId: string; content: string }) => {
+    socket.on('agent:send', (payload: ClientEvents['agent:send']) => {
       if (typeof payload?.agentRunId !== 'string' || typeof payload?.content !== 'string') return
       if (payload.content.length === 0) return
       manager.get(payload.agentRunId)?.sendUserMessage(payload.content)
     })
 
-    socket.on(
-      'clarification:reply',
-      (payload: { agentRunId: string; toolUseId: string; answer: string }) => {
-        if (!payload?.agentRunId || !payload?.toolUseId || typeof payload.answer !== 'string') return
-        manager.get(payload.agentRunId)?.resolveClarification(payload.toolUseId, payload.answer)
-      },
-    )
+    socket.on('clarification:reply', (payload: ClientEvents['clarification:reply']) => {
+      if (!payload?.agentRunId || !payload?.toolUseId || typeof payload.answer !== 'string') return
+      manager.get(payload.agentRunId)?.resolveClarification(payload.toolUseId, payload.answer)
+    })
 
-    socket.on(
-      'test-run:agent:send',
-      (payload: { testRunId: string; agentRunId: string; content: string }) => {
-        if (
-          typeof payload?.testRunId !== 'string' ||
-          typeof payload?.agentRunId !== 'string' ||
-          typeof payload?.content !== 'string'
-        )
-          return
-        if (payload.content.length === 0) return
-        testRuns.sendToAgent(payload.testRunId, payload.agentRunId, payload.content)
-      },
-    )
+    socket.on('test-run:agent:send', (payload: ClientEvents['test-run:agent:send']) => {
+      if (
+        typeof payload?.testRunId !== 'string' ||
+        typeof payload?.agentRunId !== 'string' ||
+        typeof payload?.content !== 'string'
+      )
+        return
+      if (payload.content.length === 0) return
+      testRuns.sendToAgent(payload.testRunId, payload.agentRunId, payload.content)
+    })
 
     socket.on(
       'test-run:clarification:reply',
-      (payload: { testRunId: string; agentRunId: string; toolUseId: string; answer: string }) => {
+      (payload: ClientEvents['test-run:clarification:reply']) => {
         if (
           !payload?.testRunId ||
           !payload?.agentRunId ||

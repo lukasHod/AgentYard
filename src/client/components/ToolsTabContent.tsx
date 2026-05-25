@@ -3,6 +3,7 @@ import type { ToolScope, ToolSummary, ToolType } from '../../core/tools'
 import { apiDelete, apiGet, apiPost, type ApiResult } from '../api'
 import { pushToast } from '../state/toastStore'
 import type { AnyToolData, EditorMode } from './tools/ToolEditorModal'
+import { EmptyMessage } from './ui/EmptyMessage'
 
 const ToolEditorModal = lazy(() =>
   import('./tools/ToolEditorModal').then((m) => ({ default: m.ToolEditorModal })),
@@ -145,7 +146,7 @@ export function ToolsTabContent({ shipId }: Props) {
   }
 
   if (tools === null && error === null) {
-    return <p className="text-zinc-600 italic">// loading library…</p>
+    return <EmptyMessage>loading library…</EmptyMessage>
   }
   if (error) {
     return <p className="text-rose-300">// error: {error}</p>
@@ -179,7 +180,7 @@ export function ToolsTabContent({ shipId }: Props) {
               </button>
             </div>
             {list.length === 0 ? (
-              <p className="text-zinc-600 italic">// none</p>
+              <EmptyMessage>none</EmptyMessage>
             ) : (
               <ul className="space-y-1">
                 {list.map((t) => {
@@ -243,7 +244,7 @@ export function ToolsTabContent({ shipId }: Props) {
       <section>
         <h3 className="text-[10px] tracking-widest text-zinc-500 mb-2">DETECTED CLIs</h3>
         {clis === null ? (
-          <p className="text-zinc-600 italic">// probing…</p>
+          <EmptyMessage>probing…</EmptyMessage>
         ) : (
           <ul className="space-y-1">
             {clis.map((c) => (

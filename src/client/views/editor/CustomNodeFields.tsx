@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { WorkflowNode } from '../../../core/schema'
 import type { ScriptTool, ToolSummary } from '../../../core/tools'
 import { apiGet } from '../../api'
+import { EmptyMessage } from '../../components/ui/EmptyMessage'
 
 export function CustomNodeFields({
   node,
@@ -95,9 +96,9 @@ export function CustomNodeFields({
             ARGS (values support {'{task}'} and {'{upstream_outputs}'})
           </label>
           {loadingArgs ? (
-            <p className="text-[10px] text-zinc-600 italic">// loading arg schema…</p>
+            <EmptyMessage className="text-[10px]">loading arg schema…</EmptyMessage>
           ) : scriptArgs.length === 0 ? (
-            <p className="text-[10px] text-zinc-600 italic">// this script takes no args</p>
+            <EmptyMessage className="text-[10px]">this script takes no args</EmptyMessage>
           ) : (
             <div className="space-y-2">
               {scriptArgs.map((arg) => (

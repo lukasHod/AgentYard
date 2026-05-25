@@ -1,4 +1,5 @@
 import type { ToolSummary } from '../../../../core/tools'
+import { EmptyMessage } from '../../ui/EmptyMessage'
 import { Label } from './formChrome'
 
 export function CapabilityMultiselect({
@@ -18,7 +19,7 @@ export function CapabilityMultiselect({
     <div>
       <Label hint={`from this ship's library — ${options.length} available`}>{label}</Label>
       {options.length === 0 && stale.length === 0 ? (
-        <p className="text-zinc-600 italic">// none in library</p>
+        <EmptyMessage>none in library</EmptyMessage>
       ) : (
         <div className="space-y-1 max-h-40 overflow-y-auto pr-1 border border-cyan-500/20 rounded p-1">
           {options.map((o) => {

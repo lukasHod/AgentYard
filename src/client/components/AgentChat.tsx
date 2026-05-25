@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import type { AgentState } from '../../core/types'
+import { EmptyMessage } from './ui/EmptyMessage'
 
 export interface AgentChatMessage {
   id: string
@@ -94,9 +95,7 @@ export function AgentChat({
         className="flex-1 overflow-y-auto px-3 py-3 space-y-2 text-xs"
         style={scrollHeight ? { maxHeight: scrollHeight } : undefined}
       >
-        {transcript.length === 0 && !pending && (
-          <p className="text-zinc-600 italic">// no transmissions yet.</p>
-        )}
+        {transcript.length === 0 && !pending && <EmptyMessage>no transmissions yet.</EmptyMessage>}
         {transcript.map((m) => (
           <MessageRow key={m.id} m={m} />
         ))}

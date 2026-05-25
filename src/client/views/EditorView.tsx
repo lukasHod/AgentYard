@@ -18,6 +18,7 @@ import type { ToolSummary } from '../../core/tools'
 import type { TestRunRequest } from './TestRunModal'
 import type { EditorMode } from '../components/tools/ToolEditorModal'
 import { apiGet } from '../api'
+import { EmptyMessage } from '../components/ui/EmptyMessage'
 import { pushToast } from '../state/toastStore'
 import { NodeEditor } from './editor/NodeEditor'
 import { WorkflowNodeView } from './editor/WorkflowNodeView'
@@ -311,9 +312,7 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
             onOpenToolEditor={openToolEditor}
           />
         ) : (
-          <p className="text-zinc-600 italic">
-            // click a node to edit it, or use the palette to add one
-          </p>
+          <EmptyMessage>click a node to edit it, or use the palette to add one</EmptyMessage>
         )}
       </aside>
       {toolEditor && (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FeatureSummary, ShipSummary } from '../../core/types'
+import { EmptyMessage } from '../components/ui/EmptyMessage'
 import { useDismissable } from '../hooks/useDismissable'
 
 interface Props {
@@ -83,7 +84,7 @@ export function ShipsView({
           </button>
         </div>
         {ships.length === 0 ? (
-          <p className="text-zinc-600 italic text-xs">// no ships yet</p>
+          <EmptyMessage className="text-xs">no ships yet</EmptyMessage>
         ) : (
           <ul className="space-y-1">
             {ships.map((s) => {
@@ -136,7 +137,7 @@ export function ShipsView({
             </div>
 
             {shipFeatures.length === 0 ? (
-              <p className="text-zinc-600 italic">// no features yet. click <span className="text-fuchsia-300">new feature</span> to start one.</p>
+              <EmptyMessage>no features yet. click <span className="text-fuchsia-300">new feature</span> to start one.</EmptyMessage>
             ) : (
               <ul className="space-y-2">
                 {shipFeatures.map((f) => (
@@ -179,7 +180,7 @@ export function ShipsView({
             )}
           </>
         ) : (
-          <p className="text-zinc-600 italic">// select a ship to view features</p>
+          <EmptyMessage>select a ship to view features</EmptyMessage>
         )}
       </main>
 

@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import type { Server as IOServer } from 'socket.io'
 import type { SessionManager } from '../runtime/SessionManager.js'
 import type { TestRunRegistry } from '../runtime/testRun.js'
 import type { RunRegistry } from '../runState.js'
 import type { TranscriptStore } from '../transcriptStore.js'
+import type { TypedIOServer } from '../socketTypes.js'
 
 /**
  * The shared dependency bag handed to every route-registration function.
@@ -12,7 +12,7 @@ import type { TranscriptStore } from '../transcriptStore.js'
  */
 export interface AppContext {
   app: FastifyInstance
-  io: IOServer
+  io: TypedIOServer
   manager: SessionManager
   testRuns: TestRunRegistry
   runState: RunRegistry

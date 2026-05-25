@@ -16,6 +16,7 @@ import { ensureDefaultWorkflow } from './workflows.js'
 import { RunRegistry } from './runState.js'
 import { TranscriptStore } from './transcriptStore.js'
 import { wireSocketHandlers } from './socketHandlers.js'
+import type { TypedIOServer } from './socketTypes.js'
 import { registerFeatureRoutes } from './routes/features.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerRunRoutes } from './routes/runs.js'
@@ -78,7 +79,7 @@ export async function startServer(opts: ServerOptions) {
   }
 
   const manager = new SessionManager()
-  const io = new IOServer(app.server, {
+  const io: TypedIOServer = new IOServer(app.server, {
     // In dev the UI is served by Vite on a different origin and needs CORS allow.
     // In prod the UI is served from the same Fastify origin, so refuse cross-origin
     // sockets — closes DNS-rebinding / cross-site Socket.IO connection vectors.

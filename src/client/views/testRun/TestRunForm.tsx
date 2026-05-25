@@ -1,5 +1,6 @@
 import type { ShipSummary } from '../../../core/types'
 import type { Workflow, WorkflowNode } from '../../../core/schema'
+import { EmptyMessage } from '../../components/ui/EmptyMessage'
 import type { TestRunRequest } from './types'
 
 export function TestRunForm(props: {
@@ -64,9 +65,7 @@ export function TestRunForm(props: {
           from this ship's library too.
         </p>
         {ships.length === 0 ? (
-          <p className="text-zinc-600 italic">
-            // no ships registered. create one from the galaxy view first.
-          </p>
+          <EmptyMessage>no ships registered. create one from the galaxy view first.</EmptyMessage>
         ) : (
           <select
             value={shipId ?? ''}

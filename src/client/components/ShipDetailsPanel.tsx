@@ -7,6 +7,7 @@ import type {
 import { apiGet } from '../api'
 import { AgentChat, type AgentChatMessage, type AgentChatPending } from './AgentChat'
 import { ToolsTabContent } from './ToolsTabContent'
+import { EmptyMessage } from './ui/EmptyMessage'
 
 export type ShipPanelTab = 'features' | 'tools' | 'plans' | 'description' | 'chat'
 
@@ -197,8 +198,8 @@ export function ShipDetailsPanel(props: Props) {
                 onReply={(t, a) => onClarificationReply(leader.id, t, a)}
               />
             ) : (
-              <div className="h-full flex items-center justify-center text-zinc-600 italic p-4 text-center">
-                // no active leader for this ship. start a new feature to bring one online.
+              <div className="h-full flex items-center justify-center p-4 text-center">
+                <EmptyMessage>no active leader for this ship. start a new feature to bring one online.</EmptyMessage>
               </div>
             )}
           </div>
@@ -234,7 +235,7 @@ function FeaturesTab({
         </button>
       </div>
       {features.length === 0 ? (
-        <p className="text-zinc-600 italic">// no features yet</p>
+        <EmptyMessage>no features yet</EmptyMessage>
       ) : (
         <ul className="space-y-2">
           {features.map((f) => (
@@ -270,9 +271,7 @@ function FeaturesTab({
 function PlansTab({ features }: { features: FeatureSummary[] }) {
   if (features.length === 0) {
     return (
-      <p className="text-zinc-600 italic">
-        // no plans recorded yet. each feature run records its task + summary here.
-      </p>
+      <EmptyMessage>no plans recorded yet. each feature run records its task + summary here.</EmptyMessage>
     )
   }
   return (
@@ -304,7 +303,7 @@ function PlansTab({ features }: { features: FeatureSummary[] }) {
 }
 
 function DescriptionTab({ data }: { data: ShipDescriptionData | null }) {
-  if (data === null) return <p className="text-zinc-600 italic">// loading...</p>
+  if (data === null) return <EmptyMessage>loading...</EmptyMessage>
   return (
     <div className="space-y-3">
       {!data.pathExists && (
@@ -335,7 +334,7 @@ function DescriptionTab({ data }: { data: ShipDescriptionData | null }) {
             )}
           </>
         ) : (
-          <p className="text-zinc-600 italic">// no git info</p>
+          <EmptyMessage>no git info</EmptyMessage>
         )}
       </section>
       <section className="space-y-1">
@@ -343,7 +342,7 @@ function DescriptionTab({ data }: { data: ShipDescriptionData | null }) {
           README {data.readmePath && <span className="text-zinc-400">({data.readmePath})</span>}
         </h3>
         {data.readme === null ? (
-          <p className="text-zinc-600 italic">// no README found at repo root</p>
+          <EmptyMessage>no README found at repo root</EmptyMessage>
         ) : (
           <pre className="text-zinc-200 whitespace-pre-wrap font-mono text-[11px] leading-relaxed bg-zinc-950 border border-cyan-500/15 rounded p-2 overflow-x-auto max-h-96 overflow-y-auto">
             {data.readme}

@@ -1,5 +1,5 @@
-import type { Server as IOServer } from 'socket.io'
 import type { RunEvent } from '../core/executor.js'
+import type { TypedIOServer } from './socketTypes.js'
 
 export type NodeRunStatus = 'pending' | 'running' | 'complete' | 'failed'
 
@@ -28,7 +28,7 @@ export class RunRegistry {
   private promise: Promise<unknown> | null = null
   private featureId: number | null = null
 
-  constructor(private io: IOServer) {}
+  constructor(private io: TypedIOServer) {}
 
   /** True iff a run is in flight (started, not yet completed or failed). */
   isInFlight(): boolean {
@@ -77,27 +77,37 @@ export class RunRegistry {
   emit(ev: RunEvent): void {
     if (!this.active) return
     this.active.runId = ev.runId
+    // The switch handles bookkeeping AND the typed io.emit dispatch — the
+    // typed-events generics can't narrow a union event name to its payload
+    // shape without a per-case branch, so we fan it out by hand.
     switch (ev.type) {
       case 'run:started':
         this.active.nodeIds = ev.nodeIds
         for (const id of ev.nodeIds) this.active.nodeStates[id] = 'pending'
+        this.io.emit('run:started', ev)
         break
       case 'node:started':
         this.active.nodeStates[ev.nodeId] = 'running'
+        this.io.emit('node:started', ev)
         break
       case 'node:complete':
         this.active.nodeStates[ev.nodeId] = 'complete'
         this.active.nodeSummaries[ev.nodeId] = ev.summary
+        this.io.emit('node:complete', ev)
+        break
+      case 'node:skipped':
+        this.io.emit('node:skipped', ev)
         break
       case 'run:complete':
         this.active.finalSummary = ev.finalSummary
+        this.io.emit('run:complete', ev)
         break
       case 'run:failed':
         if (ev.nodeId) this.active.nodeStates[ev.nodeId] = 'failed'
         this.active.error = ev.error
+        this.io.emit('run:failed', ev)
         break
     }
-    this.io.emit(ev.type, ev)
   }
 
   /** Set the run-level error from a background catch handler. */

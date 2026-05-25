@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ScriptArg, ScriptTool } from '../../../../core/tools'
+import { EmptyMessage } from '../../ui/EmptyMessage'
 import { FormButtons, Label, NameDescriptionFields, inputCls, textareaCls } from './formChrome'
 
 export function ScriptForm({
@@ -72,7 +73,7 @@ export function ScriptForm({
       <div>
         <Label>ARGS</Label>
         {args.length === 0 ? (
-          <p className="text-zinc-600 italic">// no args declared</p>
+          <EmptyMessage>no args declared</EmptyMessage>
         ) : (
           <div className="space-y-1">
             {args.map((a, i) => (

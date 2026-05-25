@@ -1,7 +1,7 @@
-import type { Server as IOServer, Socket } from 'socket.io'
 import type { AgentState } from '../core/types.js'
 import type { SessionEvent } from './runtime/Session.js'
 import type { SessionDescriptor } from './runtime/SessionManager.js'
+import type { TypedIOServer, TypedSocket } from './socketTypes.js'
 
 interface TranscriptEntry {
   role: 'assistant' | 'user' | 'system'
@@ -25,7 +25,7 @@ export class TranscriptStore {
   private pending = new Map<string, Map<string, PendingClarification>>()
   private states = new Map<string, AgentState>()
 
-  constructor(private io: IOServer) {}
+  constructor(private io: TypedIOServer) {}
 
   onSessionAdded(desc: SessionDescriptor): void {
     this.states.set(desc.id, desc.state)
@@ -78,7 +78,7 @@ export class TranscriptStore {
   }
 
   /** Replay everything we have to a freshly-connected client. */
-  catchUp(socket: Socket): void {
+  catchUp(socket: TypedSocket): void {
     for (const [id, transcript] of this.transcripts) {
       for (const entry of transcript) {
         socket.emit('agent:message', { agentRunId: id, ...entry })
