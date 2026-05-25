@@ -7,13 +7,24 @@ export interface PathContext {
   shipProjectPath: string | null
 }
 
+/**
+ * Resolve the user's `.agentyard` root. Defaults to `<homedir>/.agentyard`.
+ *
+ * If the `AGENTYARD_HOME` env var is set, it's used verbatim — useful for
+ * portable installs and required by the test suite (which can't safely
+ * monkey-patch `os.homedir()` cross-platform).
+ */
+export function agentyardHome(): string {
+  return process.env.AGENTYARD_HOME ?? path.join(homedir(), '.agentyard')
+}
+
 /** Root directory for a (scope, ctx) tuple. Returns null if the scope is N/A for the context. */
 export function scopeRoot(scope: ToolScope, ctx: PathContext): string | null {
   switch (scope) {
     case 'ship':
       return ctx.shipProjectPath ? path.join(ctx.shipProjectPath, '.agentyard') : null
     case 'global':
-      return path.join(homedir(), '.agentyard')
+      return agentyardHome()
     case 'claude-project':
       return ctx.shipProjectPath ? path.join(ctx.shipProjectPath, '.claude') : null
     case 'claude-user':
@@ -90,7 +101,7 @@ export function catalogMcpFileCandidates(scope: ToolScope, ctx: PathContext): st
   return []
 }
 
-/** Where AgentYard's optional secrets file lives. */
+/** Where AgentYard's optional secrets file lives (respects `AGENTYARD_HOME`). */
 export function secretsFile(): string {
-  return path.join(homedir(), '.agentyard', '.secrets', 'secrets.env')
+  return path.join(agentyardHome(), '.secrets', 'secrets.env')
 }
