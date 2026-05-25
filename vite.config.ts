@@ -22,7 +22,10 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     proxy: {
-      '/api': 'http://localhost:4242',
+      // Regex-anchored so it matches only /api/<rest> and not e.g.
+      // /api.ts (which would collide with src/client/api.ts at the
+      // Vite dev root).
+      '^/api/': 'http://localhost:4242',
       '/socket.io': {
         target: 'ws://localhost:4242',
         ws: true,
