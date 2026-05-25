@@ -8,10 +8,13 @@ import type {
 } from '../../core/types'
 import { GalaxyScene, type ShipMood } from './galaxyScene'
 import { DockScene, type DockDroneSpec } from './dockScene'
-import { AgentChat, type AgentChatMessage, type AgentChatPending } from '../components/AgentChat'
+import { type AgentChatMessage, type AgentChatPending } from '../components/AgentChat'
 import { ShipDetailsPanel, type ShipPanelTab } from '../components/ShipDetailsPanel'
 import { ToolsTabContent } from '../components/ToolsTabContent'
 import { isAudioMuted, playClarificationChime, setAudioMuted } from './chime'
+import { useGameHud } from './useGameHud'
+import { Modal } from './Modal'
+import { ChatModal } from './ChatModal'
 
 const COCKPIT_PANEL_WIDTH = 480
 
@@ -45,20 +48,13 @@ export function GameCanvas(props: Props) {
   const [ready, setReady] = useState(false)
   const [selectedShipId, setSelectedShipId] = useState<number | null>(null)
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
-  const [newShipOpen, setNewShipOpen] = useState(false)
-  const [newFeatureOpen, setNewFeatureOpen] = useState(false)
-  const [openedDroneId, setOpenedDroneId] = useState<string | null>(null)
   const [panelTab, setPanelTab] = useState<ShipPanelTab>('features')
-  const [inboxOpen, setInboxOpen] = useState(false)
-  const [libraryOpen, setLibraryOpen] = useState(false)
   const [muted, setMuted] = useState<boolean>(isAudioMuted())
-  const [shipName, setShipName] = useState('')
-  const [shipPath, setShipPath] = useState('')
-  const [featureName, setFeatureName] = useState('')
-  const [featureTask, setFeatureTask] = useState('')
 
-  const closeLibrary = useCallback(() => setLibraryOpen(false), [])
-  useDismissable(libraryOpen, closeLibrary)
+  const hud = useGameHud()
+
+  const closeLibrary = useCallback(() => hud.setLibraryOpen(false), [hud])
+  useDismissable(hud.libraryOpen, closeLibrary)
 
   // Bounce back to galaxy if the selected ship was removed.
   useEffect(() => {
@@ -138,7 +134,7 @@ export function GameCanvas(props: Props) {
       const dock = new DockScene(app, {
         onBack: () => setSelectedShipId(null),
         onShipHullClick: () => setPanelTab('chat'),
-        onDroneClick: (_role, agentRunId) => setOpenedDroneId(agentRunId),
+        onDroneClick: (_role, agentRunId) => hud.setOpenedDroneId(agentRunId),
       })
       dock.setPanelWidth(COCKPIT_PANEL_WIDTH)
       app.stage.addChild(dock.root)
@@ -146,7 +142,7 @@ export function GameCanvas(props: Props) {
       // Default to "features" tab whenever we enter a ship.
       setPanelTab('features')
     }
-  }, [ready, selectedShipId])
+  }, [ready, selectedShipId, hud])
 
   // ---- 3. Push ships into the galaxy scene whenever they change. ----
   // `ready` is in the deps because effect 2 (which creates the GalaxyScene) only
@@ -193,27 +189,23 @@ export function GameCanvas(props: Props) {
 
   // ---- HUD actions ----
   const submitNewShip = useCallback(async () => {
-    if (!shipName.trim() || !shipPath.trim()) return
-    await props.onCreateShip(shipName.trim(), shipPath.trim())
-    setNewShipOpen(false)
-    setShipName('')
-    setShipPath('')
-  }, [props, shipName, shipPath])
+    if (!hud.shipName.trim() || !hud.shipPath.trim()) return
+    await props.onCreateShip(hud.shipName.trim(), hud.shipPath.trim())
+    hud.closeNewShip()
+  }, [props, hud])
 
   const submitNewFeature = useCallback(async () => {
-    if (!selectedShipId || !featureTask.trim()) return
+    if (!selectedShipId || !hud.featureTask.trim()) return
     const f = await props.onCreateFeature(
       selectedShipId,
-      featureName.trim() || `feature-${Date.now()}`,
-      featureTask.trim(),
+      hud.featureName.trim() || `feature-${Date.now()}`,
+      hud.featureTask.trim(),
     )
     if (f) {
-      setNewFeatureOpen(false)
-      setFeatureName('')
-      setFeatureTask('')
+      hud.closeNewFeature()
       props.onJumpToRun?.()
     }
-  }, [props, selectedShipId, featureName, featureTask])
+  }, [props, selectedShipId, hud])
 
   // ---- Derived view bits for HUD ----
   const selectedShip = useMemo(
@@ -256,7 +248,7 @@ export function GameCanvas(props: Props) {
           ) : (
             <>
               <button
-                onClick={() => setNewShipOpen(true)}
+                onClick={() => hud.setNewShipOpen(true)}
                 className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide bg-black/70"
               >
                 + new ship
@@ -269,7 +261,7 @@ export function GameCanvas(props: Props) {
                 ⛶ fit
               </button>
               <button
-                onClick={() => setLibraryOpen(true)}
+                onClick={() => hud.setLibraryOpen(true)}
                 className="px-3 py-1 border border-emerald-500 text-emerald-300 hover:bg-emerald-500 hover:text-black tracking-wide bg-black/70"
                 title="global tool library"
               >
@@ -286,7 +278,7 @@ export function GameCanvas(props: Props) {
             </span>
             <span className="text-zinc-700">·</span>
             <button
-              onClick={() => setInboxOpen((v) => !v)}
+              onClick={() => hud.setInboxOpen(!hud.inboxOpen)}
               className={`${
                 totalPendingClarifications > 0 ? 'text-amber-300' : 'text-zinc-500'
               } hover:text-amber-200 ${totalPendingClarifications > 0 ? 'animate-pulse' : ''}`}
@@ -309,14 +301,14 @@ export function GameCanvas(props: Props) {
       </div>
 
       {/* Notifications inbox popover */}
-      {inboxOpen && (
+      {hud.inboxOpen && (
         <div
           className="absolute right-3 top-12 w-80 bg-black/95 border border-amber-400/40 z-10 pointer-events-auto text-xs"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="border-b border-amber-400/30 px-3 py-2 flex items-center justify-between">
             <span className="text-amber-300 tracking-widest text-[10px]">INBOX</span>
-            <button onClick={() => setInboxOpen(false)} className="text-zinc-500 hover:text-zinc-300">
+            <button onClick={() => hud.setInboxOpen(false)} className="text-zinc-500 hover:text-zinc-300">
               ×
             </button>
           </div>
@@ -331,14 +323,14 @@ export function GameCanvas(props: Props) {
                     key={agentRunId}
                     className="px-3 py-2 border-b border-amber-400/10 hover:bg-amber-500/5 cursor-pointer"
                     onClick={() => {
-                      setInboxOpen(false)
+                      hud.setInboxOpen(false)
                       // Make sure the parent ship is open in dock view.
                       // Heuristic: if a drone is awaiting input, the ship is the one with a running feature.
                       const runningShip = props.ships.find(
                         (s) => (props.features.get(s.id) ?? []).some((f) => f.status === 'running'),
                       )
                       if (runningShip) setSelectedShipId(runningShip.id)
-                      setOpenedDroneId(agentRunId)
+                      hud.setOpenedDroneId(agentRunId)
                     }}
                   >
                     <div className="text-cyan-300">{session?.label ?? agentRunId.slice(0, 8)}</div>
@@ -368,7 +360,7 @@ export function GameCanvas(props: Props) {
             onTabChange={setPanelTab}
             onSend={props.onSend}
             onClarificationReply={props.onClarificationReply}
-            onNewFeature={() => setNewFeatureOpen(true)}
+            onNewFeature={() => hud.setNewFeatureOpen(true)}
             onOpenWorkflow={() => props.onOpenWorkflow?.()}
             onDeleteShip={() => {
               if (selectedShipId !== null) {
@@ -393,7 +385,13 @@ export function GameCanvas(props: Props) {
             top: Math.min(tooltip.y + 16, window.innerHeight - 100),
           }}
         >
-          <div className={hoveredShip.pathExists ? 'text-cyan-300 tracking-widest' : 'text-rose-300 tracking-widest'}>
+          <div
+            className={
+              hoveredShip.pathExists
+                ? 'text-cyan-300 tracking-widest'
+                : 'text-rose-300 tracking-widest'
+            }
+          >
             {hoveredShip.name.toUpperCase()}
           </div>
           <div className="text-zinc-400 font-mono text-[10px] mt-0.5 max-w-[220px] truncate">
@@ -413,19 +411,19 @@ export function GameCanvas(props: Props) {
       )}
 
       {/* Modals */}
-      {newShipOpen && (
-        <Modal title="NEW SHIP" onClose={() => setNewShipOpen(false)} onSubmit={submitNewShip}>
+      {hud.newShipOpen && (
+        <Modal title="NEW SHIP" onClose={hud.closeNewShip} onSubmit={submitNewShip}>
           <label className="text-[10px] tracking-widest text-zinc-500">SHIP NAME</label>
           <input
-            value={shipName}
-            onChange={(e) => setShipName(e.target.value)}
+            value={hud.shipName}
+            onChange={(e) => hud.setShipName(e.target.value)}
             autoFocus
             className="w-full mt-1 mb-3 bg-black border border-cyan-500/40 rounded px-2 py-1"
           />
           <label className="text-[10px] tracking-widest text-zinc-500">PROJECT PATH</label>
           <input
-            value={shipPath}
-            onChange={(e) => setShipPath(e.target.value)}
+            value={hud.shipPath}
+            onChange={(e) => hud.setShipPath(e.target.value)}
             placeholder="C:/code/my-repo (must be a git repository)"
             className="w-full mt-1 bg-black border border-cyan-500/40 rounded px-2 py-1 font-mono text-xs"
           />
@@ -433,25 +431,27 @@ export function GameCanvas(props: Props) {
       )}
 
       {/* DroneModal — click a drone → chat with it */}
-      {openedDroneId && (
+      {hud.openedDroneId && (
         <ChatModal
-          title={`DRONE / ${props.sessions.find((s) => s.id === openedDroneId)?.label ?? openedDroneId.slice(0, 8)}`}
-          agentRunId={openedDroneId}
-          session={props.sessions.find((s) => s.id === openedDroneId) ?? null}
-          transcript={props.transcripts.get(openedDroneId) ?? []}
-          pending={props.pendings.get(openedDroneId) ?? null}
+          title={`DRONE / ${props.sessions.find((s) => s.id === hud.openedDroneId)?.label ?? hud.openedDroneId.slice(0, 8)}`}
+          agentRunId={hud.openedDroneId}
+          session={props.sessions.find((s) => s.id === hud.openedDroneId) ?? null}
+          transcript={props.transcripts.get(hud.openedDroneId) ?? []}
+          pending={props.pendings.get(hud.openedDroneId) ?? null}
           connected={props.connected}
-          onSend={(content) => props.onSend(openedDroneId, content)}
-          onReply={(toolUseId, answer) => props.onClarificationReply(openedDroneId, toolUseId, answer)}
-          onClose={() => setOpenedDroneId(null)}
+          onSend={(content) => props.onSend(hud.openedDroneId!, content)}
+          onReply={(toolUseId, answer) =>
+            props.onClarificationReply(hud.openedDroneId!, toolUseId, answer)
+          }
+          onClose={() => hud.setOpenedDroneId(null)}
         />
       )}
 
       {/* Galaxy global library overlay — Esc or backdrop click closes. */}
-      {libraryOpen && selectedShipId === null && (
+      {hud.libraryOpen && selectedShipId === null && (
         <div
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-30"
-          onClick={() => setLibraryOpen(false)}
+          onClick={() => hud.setLibraryOpen(false)}
         >
           <div
             className="bg-black border border-emerald-500/60 rounded w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col text-xs"
@@ -459,7 +459,10 @@ export function GameCanvas(props: Props) {
           >
             <div className="border-b border-emerald-500/40 px-4 py-2 flex items-center justify-between">
               <h2 className="text-emerald-300 tracking-widest">GLOBAL TOOL LIBRARY</h2>
-              <button onClick={() => setLibraryOpen(false)} className="text-zinc-500 hover:text-zinc-300">
+              <button
+                onClick={() => hud.setLibraryOpen(false)}
+                className="text-zinc-500 hover:text-zinc-300"
+              >
                 ×
               </button>
             </div>
@@ -476,10 +479,11 @@ export function GameCanvas(props: Props) {
           <div className="bg-black/80 border border-cyan-500/40 px-8 py-6 text-center pointer-events-auto max-w-md">
             <div className="text-cyan-300 tracking-[0.3em] text-xs mb-3">WELCOME, CAPTAIN</div>
             <p className="text-zinc-300 mb-4">
-              The shipyard is quiet. Register your first ship to begin — point it at a git repo on your machine and the drones will report for duty.
+              The shipyard is quiet. Register your first ship to begin — point it at a git repo on
+              your machine and the drones will report for duty.
             </p>
             <button
-              onClick={() => setNewShipOpen(true)}
+              onClick={() => hud.setNewShipOpen(true)}
               className="px-4 py-2 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide text-xs"
             >
               + register first ship
@@ -488,23 +492,23 @@ export function GameCanvas(props: Props) {
         </div>
       )}
 
-      {newFeatureOpen && selectedShip && (
+      {hud.newFeatureOpen && selectedShip && (
         <Modal
           title={`NEW FEATURE — ${selectedShip.name}`}
-          onClose={() => setNewFeatureOpen(false)}
+          onClose={hud.closeNewFeature}
           onSubmit={submitNewFeature}
         >
           <label className="text-[10px] tracking-widest text-zinc-500">FEATURE NAME (optional)</label>
           <input
-            value={featureName}
-            onChange={(e) => setFeatureName(e.target.value)}
+            value={hud.featureName}
+            onChange={(e) => hud.setFeatureName(e.target.value)}
             placeholder="auto-generated if blank"
             className="w-full mt-1 mb-3 bg-black border border-cyan-500/40 rounded px-2 py-1"
           />
           <label className="text-[10px] tracking-widest text-zinc-500">TASK</label>
           <textarea
-            value={featureTask}
-            onChange={(e) => setFeatureTask(e.target.value)}
+            value={hud.featureTask}
+            onChange={(e) => hud.setFeatureTask(e.target.value)}
             autoFocus
             rows={6}
             placeholder="What should the workflow accomplish?"
@@ -512,107 +516,11 @@ export function GameCanvas(props: Props) {
           />
           <p className="text-[10px] text-zinc-500 mt-2">
             A worktree will be created under{' '}
-            <code className="text-cyan-300">.agentyard/worktrees/</code> on a fresh branch off the current HEAD.
+            <code className="text-cyan-300">.agentyard/worktrees/</code> on a fresh branch off the
+            current HEAD.
           </p>
         </Modal>
       )}
-    </div>
-  )
-}
-
-function Modal({
-  title,
-  children,
-  onClose,
-  onSubmit,
-}: {
-  title: string
-  children: React.ReactNode
-  onClose: () => void
-  onSubmit: () => void
-}) {
-  useDismissable(true, onClose)
-  return (
-    <div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-20"
-      onClick={onClose}
-    >
-      <div
-        className="bg-black border border-cyan-500/60 rounded p-6 max-w-xl w-full text-sm"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-cyan-300 tracking-widest text-sm mb-4">{title}</h2>
-        {children}
-        <div className="flex gap-2 mt-4 justify-end">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 border border-zinc-500 text-zinc-400 hover:bg-zinc-700 text-xs tracking-wide"
-          >
-            cancel
-          </button>
-          <button
-            onClick={onSubmit}
-            className="px-4 py-1 border border-fuchsia-500 text-fuchsia-300 hover:bg-fuchsia-500 hover:text-black text-xs tracking-wide"
-          >
-            launch
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ChatModal({
-  title,
-  agentRunId,
-  session,
-  transcript,
-  pending,
-  connected,
-  onSend,
-  onReply,
-  onClose,
-}: {
-  title: string
-  agentRunId: string
-  session: SessionDescriptor | null
-  transcript: AgentChatMessage[]
-  pending: AgentChatPending | null
-  connected: boolean
-  onSend: (content: string) => void
-  onReply: (toolUseId: string, answer: string) => void
-  onClose: () => void
-}) {
-  useDismissable(true, onClose)
-  return (
-    <div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-20"
-      onClick={onClose}
-    >
-      <div
-        className="bg-black border border-cyan-500/60 rounded w-full max-w-2xl h-[70vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="border-b border-cyan-500/40 px-4 py-2 flex items-center justify-between">
-          <h2 className="text-cyan-300 tracking-widest text-xs">{title}</h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-xs">
-            ×
-          </button>
-        </div>
-        <div className="flex-1 min-h-0">
-          <AgentChat
-            agentRunId={agentRunId}
-            label={session?.label}
-            role={session?.role}
-            state={session?.state}
-            transcript={transcript}
-            pending={pending}
-            connected={connected}
-            onSend={onSend}
-            onReply={onReply}
-          />
-        </div>
-      </div>
     </div>
   )
 }
