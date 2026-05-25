@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import yaml from 'js-yaml'
 import {
@@ -12,54 +12,67 @@ import {
 } from '../../core/tools.js'
 import { parseFrontmatter } from './frontmatter.js'
 import { catalogMcpFileCandidates, toolTypeDir, type PathContext } from './paths.js'
+import { getCached, setCached } from './scanCache.js'
 
 export type ScanContext = PathContext
 
 const ALL_SCOPES: ToolScope[] = ['ship', 'global', 'claude-project', 'claude-user']
 const ALL_TYPES: ToolType[] = ['skill', 'mcp', 'script', 'agent']
 
-/** Find all tools of all types across all applicable scopes. No cache. */
-export function scanAllTools(ctx: ScanContext): ToolEntry[] {
-  const out: ToolEntry[] = []
-  for (const scope of ALL_SCOPES) {
-    for (const type of ALL_TYPES) {
-      out.push(...scanScopeType(scope, type, ctx))
-    }
-  }
-  return out
+/** Find all tools of all types across all applicable scopes. Cached per scope+type+ship. */
+export async function scanAllTools(ctx: ScanContext): Promise<ToolEntry[]> {
+  const buckets = await Promise.all(
+    ALL_SCOPES.flatMap((scope) => ALL_TYPES.map((type) => scanScopeType(scope, type, ctx))),
+  )
+  return buckets.flat()
 }
 
-/** Find tools of a specific type within a specific scope. */
-export function scanScopeType(scope: ToolScope, type: ToolType, ctx: ScanContext): ToolEntry[] {
+/** Find tools of a specific type within a specific scope. Cached. */
+export async function scanScopeType(
+  scope: ToolScope,
+  type: ToolType,
+  ctx: ScanContext,
+): Promise<ToolEntry[]> {
+  const cached = getCached(scope, type, ctx)
+  if (cached) return cached
+
+  const fresh = await scanScopeTypeUncached(scope, type, ctx)
+  setCached(scope, type, ctx, fresh)
+  return fresh
+}
+
+async function scanScopeTypeUncached(
+  scope: ToolScope,
+  type: ToolType,
+  ctx: ScanContext,
+): Promise<ToolEntry[]> {
   if (type === 'mcp' && (scope === 'claude-project' || scope === 'claude-user')) {
     return scanCatalogMcps(scope, ctx)
   }
   const dir = toolTypeDir(scope, type, ctx)
-  if (!dir || !existsSync(dir)) return []
-  const out: ToolEntry[] = []
+  if (!dir) return []
   let entries: string[]
   try {
-    entries = readdirSync(dir)
+    entries = await readdir(dir)
   } catch {
+    // ENOENT or other read error — scope dir doesn't exist yet, treat as empty.
     return []
   }
-  for (const entry of entries) {
-    const full = path.join(dir, entry)
-    const parsed = parseToolAt(scope, type, entry, full)
-    if (parsed) out.push(parsed)
-  }
-  return out
+  const parsed = await Promise.all(
+    entries.map((entry) => parseToolAt(scope, type, entry, path.join(dir, entry))),
+  )
+  return parsed.filter((e): e is ToolEntry => e !== null)
 }
 
-function parseToolAt(
+async function parseToolAt(
   scope: ToolScope,
   type: ToolType,
   entry: string,
   fullPath: string,
-): ToolEntry | null {
+): Promise<ToolEntry | null> {
   let st
   try {
-    st = statSync(fullPath)
+    st = await stat(fullPath)
   } catch {
     return null
   }
@@ -75,12 +88,15 @@ function parseToolAt(
   }
 }
 
-function parseSkillFolder(scope: ToolScope, name: string, folder: string): ToolEntry | null {
+async function parseSkillFolder(
+  scope: ToolScope,
+  name: string,
+  folder: string,
+): Promise<ToolEntry | null> {
   const skillFile = path.join(folder, 'SKILL.md')
-  if (!existsSync(skillFile)) return null
   let raw: string
   try {
-    raw = readFileSync(skillFile, 'utf8')
+    raw = await readFile(skillFile, 'utf8')
   } catch {
     return null
   }
@@ -93,10 +109,14 @@ function parseSkillFolder(scope: ToolScope, name: string, folder: string): ToolE
   return { type: 'skill', scope, path: folder, data }
 }
 
-function parseAgentFile(scope: ToolScope, fileName: string, file: string): ToolEntry | null {
+async function parseAgentFile(
+  scope: ToolScope,
+  fileName: string,
+  file: string,
+): Promise<ToolEntry | null> {
   let raw: string
   try {
-    raw = readFileSync(file, 'utf8')
+    raw = await readFile(file, 'utf8')
   } catch {
     return null
   }
@@ -104,7 +124,11 @@ function parseAgentFile(scope: ToolScope, fileName: string, file: string): ToolE
   const baseName = path.basename(fileName, '.md')
   // Normalize Claude format ↔ AgentYard format at parse time.
   const mcps =
-    (Array.isArray(meta.mcps) ? meta.mcps : Array.isArray(meta.mcpServers) ? meta.mcpServers : []) as string[]
+    (Array.isArray(meta.mcps)
+      ? meta.mcps
+      : Array.isArray(meta.mcpServers)
+        ? meta.mcpServers
+        : []) as string[]
   const allowedTools =
     (Array.isArray(meta.allowedTools)
       ? meta.allowedTools
@@ -116,7 +140,7 @@ function parseAgentFile(scope: ToolScope, fileName: string, file: string): ToolE
     description: (meta.description as string) || '',
     role: (meta.role as string) || baseName,
     model: (meta.model as string) || undefined,
-    toolPreset: ((meta.toolPreset as 'none' | 'claude_code') || 'claude_code'),
+    toolPreset: (meta.toolPreset as 'none' | 'claude_code') || 'claude_code',
     allowedTools,
     skills: Array.isArray(meta.skills) ? (meta.skills as string[]) : [],
     mcps,
@@ -126,10 +150,14 @@ function parseAgentFile(scope: ToolScope, fileName: string, file: string): ToolE
   return { type: 'agent', scope, path: file, data }
 }
 
-function parseMcpFile(scope: ToolScope, fileName: string, file: string): ToolEntry | null {
+async function parseMcpFile(
+  scope: ToolScope,
+  fileName: string,
+  file: string,
+): Promise<ToolEntry | null> {
   let raw: string
   try {
-    raw = readFileSync(file, 'utf8')
+    raw = await readFile(file, 'utf8')
   } catch {
     return null
   }
@@ -155,12 +183,15 @@ function parseMcpFile(scope: ToolScope, fileName: string, file: string): ToolEnt
   return { type: 'mcp', scope, path: file, data }
 }
 
-function parseScriptFolder(scope: ToolScope, name: string, folder: string): ToolEntry | null {
+async function parseScriptFolder(
+  scope: ToolScope,
+  name: string,
+  folder: string,
+): Promise<ToolEntry | null> {
   const manifestPath = path.join(folder, 'manifest.yaml')
-  if (!existsSync(manifestPath)) return null
   let raw: string
   try {
-    raw = readFileSync(manifestPath, 'utf8')
+    raw = await readFile(manifestPath, 'utf8')
   } catch {
     return null
   }
@@ -176,9 +207,12 @@ function parseScriptFolder(scope: ToolScope, name: string, folder: string): Tool
   // Look for an optional body file next to the manifest.
   let bodyFile: string | undefined
   for (const candidate of ['script.sh', 'script.ps1', 'script.py', 'script.js', 'script.ts']) {
-    if (existsSync(path.join(folder, candidate))) {
+    try {
+      await stat(path.join(folder, candidate))
       bodyFile = candidate
       break
+    } catch {
+      // not present
     }
   }
 
@@ -199,22 +233,23 @@ function parseScriptFolder(scope: ToolScope, name: string, folder: string): Tool
 }
 
 /** Claude catalog stores all MCPs in a single shared file — split into virtual catalog entries. */
-function scanCatalogMcps(scope: 'claude-project' | 'claude-user', ctx: ScanContext): ToolEntry[] {
+async function scanCatalogMcps(
+  scope: 'claude-project' | 'claude-user',
+  ctx: ScanContext,
+): Promise<ToolEntry[]> {
   const candidates = catalogMcpFileCandidates(scope, ctx)
   let foundFile: string | null = null
+  let raw: string | null = null
   for (const c of candidates) {
-    if (existsSync(c)) {
+    try {
+      raw = await readFile(c, 'utf8')
       foundFile = c
       break
+    } catch {
+      // try next candidate
     }
   }
-  if (!foundFile) return []
-  let raw: string
-  try {
-    raw = readFileSync(foundFile, 'utf8')
-  } catch {
-    return []
-  }
+  if (!foundFile || raw === null) return []
   let json: unknown
   try {
     json = JSON.parse(raw)
@@ -223,8 +258,9 @@ function scanCatalogMcps(scope: 'claude-project' | 'claude-user', ctx: ScanConte
   }
   if (!json || typeof json !== 'object') return []
   const j = json as Record<string, unknown>
-  // Claude format wraps servers in { mcpServers: { name: { ... } } }; sometimes top-level map is used.
-  const map = (j.mcpServers && typeof j.mcpServers === 'object' ? j.mcpServers : j) as Record<string, unknown>
+  const map = (j.mcpServers && typeof j.mcpServers === 'object'
+    ? j.mcpServers
+    : j) as Record<string, unknown>
   const out: ToolEntry[] = []
   for (const [name, cfg] of Object.entries(map)) {
     if (!cfg || typeof cfg !== 'object') continue

@@ -13,6 +13,7 @@ import {
 } from '../../core/tools.js'
 import { serializeFrontmatter } from './frontmatter.js'
 import { toolOnDiskPath, type PathContext } from './paths.js'
+import { invalidate as invalidateScanCache } from './scanCache.js'
 
 type AnyToolData = SkillTool | McpTool | ScriptTool | AgentTool
 type EditableScope = 'ship' | 'global'
@@ -56,6 +57,10 @@ export function writeTool(
       writeScript(target, data as ScriptTool)
       break
   }
+  // Drop any cached scan that could now be stale. We also drop the matching
+  // ship-context cache when writing global (since resolver walks ship→global
+  // and a global write could shadow no ship entry — affects find results).
+  invalidateScanCache(scope, type, ctx)
   return target
 }
 
@@ -153,4 +158,5 @@ export function deleteTool(
   if (!existsSync(target)) return
   const st = statSync(target)
   rmSync(target, { recursive: st.isDirectory(), force: true })
+  invalidateScanCache(scope, type, ctx)
 }

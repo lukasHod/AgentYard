@@ -63,16 +63,24 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
     throw new Error(`AI node ${node.id} has no agents connected`)
   }
 
-  // Resolve each agent name from the library (ship → global → error).
+  // Resolve each agent name from the library (ship → global → error), then
+  // spawn drones in parallel (each drone resolves its own attached tools).
+  const resolvedAgents = await Promise.all(
+    agentNames.map(async (name) => {
+      const r = await resolveTool('agent', name, ctx)
+      if (!r || r.type !== 'agent') {
+        throw new Error(`Agent "${name}" not found in ship or global tool library`)
+      }
+      return r.data
+    }),
+  )
+  const drones = await Promise.all(
+    resolvedAgents.map((agent) => spawnAgentDrone(manager, ctx, node.id, agent, input.cwd)),
+  )
   const droneByRole = new Map<string, Session>()
-  for (const name of agentNames) {
-    const resolved = resolveTool('agent', name, ctx)
-    if (!resolved || resolved.type !== 'agent') {
-      throw new Error(`Agent "${name}" not found in ship or global tool library`)
-    }
-    const agent = resolved.data
-    const drone = spawnAgentDrone(manager, ctx, node.id, agent, input.cwd)
-    droneByRole.set(agent.role || agent.name, drone)
+  for (let i = 0; i < resolvedAgents.length; i++) {
+    const agent = resolvedAgents[i]!
+    droneByRole.set(agent.role || agent.name, drones[i]!)
   }
 
   // The gate decouples the mark_node_complete callback from session lifetime:
@@ -120,33 +128,32 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
 }
 
 /** Spawn a single drone Session for a given agent definition. */
-function spawnAgentDrone(
+async function spawnAgentDrone(
   manager: SessionManager,
   ctx: ScanContext,
   nodeId: string,
   agent: AgentTool,
   cwd: string | undefined,
-): Session {
-  // Resolve attached capabilities from the library.
-  const skills: SkillTool[] = []
-  for (const name of agent.skills) {
-    const r = resolveTool('skill', name, ctx)
-    if (r && r.type === 'skill') skills.push(r.data)
-    // missing skills are silently skipped — surfaced as a "missing reference" badge in the UI
-  }
-
-  const scripts: ScriptTool[] = []
-  for (const name of agent.scripts) {
-    const r = resolveTool('script', name, ctx)
-    if (r && r.type === 'script') scripts.push(r.data)
-  }
-
+): Promise<Session> {
+  // Resolve all attached capabilities in parallel. Missing references are
+  // silently dropped — they surface as "missing reference" badges in the UI.
+  const [skillResults, scriptResults, mcpResults] = await Promise.all([
+    Promise.all(agent.skills.map((n) => resolveTool('skill', n, ctx))),
+    Promise.all(agent.scripts.map((n) => resolveTool('script', n, ctx))),
+    Promise.all(agent.mcps.map((n) => resolveTool('mcp', n, ctx))),
+  ])
+  const skills: SkillTool[] = skillResults
+    .filter((r): r is NonNullable<typeof r> => r !== null && r.type === 'skill')
+    .map((r) => r.data as SkillTool)
+  const scripts: ScriptTool[] = scriptResults
+    .filter((r): r is NonNullable<typeof r> => r !== null && r.type === 'script')
+    .map((r) => r.data as ScriptTool)
   const mcpServerConfigs: Record<string, McpServerConfig> = {}
-  for (const name of agent.mcps) {
-    const r = resolveTool('mcp', name, ctx)
+  for (let i = 0; i < agent.mcps.length; i++) {
+    const r = mcpResults[i]
     if (r && r.type === 'mcp') {
       const cfg = mcpToolToServerConfig(r.data)
-      if (cfg) mcpServerConfigs[name] = cfg
+      if (cfg) mcpServerConfigs[agent.mcps[i]!] = cfg
     }
   }
 

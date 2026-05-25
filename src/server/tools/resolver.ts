@@ -6,9 +6,13 @@ import { scanScopeType, type ScanContext } from './scanner.js'
  * or null if not found. Catalog scopes (`claude-*`) are NOT consulted — those entries
  * must be adopted into an editable scope first.
  */
-export function resolveTool(type: ToolType, name: string, ctx: ScanContext): ToolEntry | null {
+export async function resolveTool(
+  type: ToolType,
+  name: string,
+  ctx: ScanContext,
+): Promise<ToolEntry | null> {
   for (const scope of ['ship', 'global'] as const) {
-    const entries = scanScopeType(scope, type, ctx)
+    const entries = await scanScopeType(scope, type, ctx)
     const match = entries.find((e) => e.data.name === name)
     if (match) return match
   }
@@ -16,16 +20,18 @@ export function resolveTool(type: ToolType, name: string, ctx: ScanContext): Too
 }
 
 /** Resolve many at once — convenience for materializing a workflow node's agent list. */
-export function resolveToolMany(type: ToolType, names: string[], ctx: ScanContext): {
-  resolved: ToolEntry[]
-  missing: string[]
-} {
+export async function resolveToolMany(
+  type: ToolType,
+  names: string[],
+  ctx: ScanContext,
+): Promise<{ resolved: ToolEntry[]; missing: string[] }> {
+  const results = await Promise.all(names.map((name) => resolveTool(type, name, ctx)))
   const resolved: ToolEntry[] = []
   const missing: string[] = []
-  for (const name of names) {
-    const r = resolveTool(type, name, ctx)
+  for (let i = 0; i < names.length; i++) {
+    const r = results[i]
     if (r) resolved.push(r)
-    else missing.push(name)
+    else missing.push(names[i]!)
   }
   return { resolved, missing }
 }

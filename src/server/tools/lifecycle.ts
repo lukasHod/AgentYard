@@ -11,6 +11,7 @@ import { type ToolEntry } from '../../core/tools.js'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter.js'
 import { toolOnDiskPath, type PathContext } from './paths.js'
 import { writeTool } from './crud.js'
+import { invalidate as invalidateScanCache } from './scanCache.js'
 
 type EditableTarget = 'ship' | 'global'
 
@@ -46,6 +47,9 @@ function adoptSkill(source: ToolEntry, target: EditableTarget, ctx: PathContext)
   if (!dest) throw new Error('adoptSkill: cannot resolve target')
   mkdirSync(path.dirname(dest), { recursive: true })
   cpSync(source.path, dest, { recursive: true, force: true })
+  // adoptSkill is the only adopt path that bypasses writeTool (folder copy),
+  // so we explicitly invalidate the target's scan cache here.
+  invalidateScanCache(target, 'skill', ctx)
   return { targetPath: dest }
 }
 
@@ -106,6 +110,9 @@ function moveOrCopy(
   } else {
     copyFileSync(source.path, dest)
   }
+  // Both source and target scopes can have stale scans now.
+  if (mode === 'move') invalidateScanCache(source.scope, source.type, ctx)
+  invalidateScanCache(target, source.type, ctx)
   return { targetPath: dest }
 }
 

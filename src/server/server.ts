@@ -373,22 +373,21 @@ export async function startServer(opts: ServerOptions) {
     const ship = getShip(Number(req.params.id))
     if (!ship) return reply.code(404).send({ error: 'ship not found' })
     const ctx: PathContext = { shipProjectPath: ship.projectPath }
-    const entries = scanAllTools(ctx)
+    const entries = await scanAllTools(ctx)
     return entries.map(toolEntryToSummary) as ToolSummary[]
   })
 
   app.get('/api/global-tools', async () => {
     const ctx: PathContext = { shipProjectPath: null }
     // Global-only view: include global (~/.agentyard) + user catalog (~/.claude). Skip ship + claude-project.
-    const summaries: ToolSummary[] = []
-    for (const scope of ['global', 'claude-user'] as const) {
-      for (const type of ['skill', 'mcp', 'script', 'agent'] as const) {
-        for (const e of scanScopeType(scope, type, ctx)) {
-          summaries.push(toolEntryToSummary(e))
-        }
-      }
-    }
-    return summaries
+    const buckets = await Promise.all(
+      (['global', 'claude-user'] as const).flatMap((scope) =>
+        (['skill', 'mcp', 'script', 'agent'] as const).map((type) =>
+          scanScopeType(scope, type, ctx),
+        ),
+      ),
+    )
+    return buckets.flat().map(toolEntryToSummary) as ToolSummary[]
   })
 
   // --- Detail (with full data) ---
@@ -401,7 +400,9 @@ export async function startServer(opts: ServerOptions) {
       const type = parseToolType(req.params.type, reply)
       if (!scope || !type) return
       const ctx: PathContext = { shipProjectPath: ship.projectPath }
-      const entry = scanScopeType(scope, type, ctx).find((e) => e.data.name === req.params.name)
+      const entry = (await scanScopeType(scope, type, ctx)).find(
+        (e) => e.data.name === req.params.name,
+      )
       if (!entry) return reply.code(404).send({ error: 'not found' })
       const result = entry as ToolEntry & { data: { body?: string } }
       // Lazy-load script body if requested.
@@ -422,7 +423,9 @@ export async function startServer(opts: ServerOptions) {
       const type = parseToolType(req.params.type, reply)
       if (!type) return
       const ctx: PathContext = { shipProjectPath: null }
-      const entry = scanScopeType('global', type, ctx).find((e) => e.data.name === req.params.name)
+      const entry = (await scanScopeType('global', type, ctx)).find(
+        (e) => e.data.name === req.params.name,
+      )
       if (!entry) return reply.code(404).send({ error: 'not found' })
       if (entry.type === 'script' && entry.data.bodyFile) {
         const body = readToolBody(entry.path, 'script')
@@ -534,7 +537,7 @@ export async function startServer(opts: ServerOptions) {
     }
     const target = body.target === 'global' ? 'global' : 'ship'
     const ctx: PathContext = { shipProjectPath: ship.projectPath }
-    const entries = scanScopeType(sourceScope, type, ctx)
+    const entries = await scanScopeType(sourceScope, type, ctx)
     const source = entries.find((e) => e.data.name === body.name)
     if (!source) return reply.code(404).send({ error: 'source tool not found in catalog' })
     try {
@@ -550,7 +553,7 @@ export async function startServer(opts: ServerOptions) {
     const type = parseToolType(body.type, reply)
     if (!type) return
     const ctx: PathContext = { shipProjectPath: null }
-    const entries = scanScopeType('claude-user', type, ctx)
+    const entries = await scanScopeType('claude-user', type, ctx)
     const source = entries.find((e) => e.data.name === body.name)
     if (!source) return reply.code(404).send({ error: 'source not found in user catalog' })
     try {
@@ -569,7 +572,9 @@ export async function startServer(opts: ServerOptions) {
       const type = parseToolType(req.params.type, reply)
       if (!type) return
       const ctx: PathContext = { shipProjectPath: ship.projectPath }
-      const source = scanScopeType('ship', type, ctx).find((e) => e.data.name === req.params.name)
+      const source = (await scanScopeType('ship', type, ctx)).find(
+        (e) => e.data.name === req.params.name,
+      )
       if (!source) return reply.code(404).send({ error: 'tool not found in per-ship scope' })
       try {
         const { targetPath } = elevateTool(source, ctx)
@@ -588,7 +593,9 @@ export async function startServer(opts: ServerOptions) {
       const type = parseToolType(req.params.type, reply)
       if (!type) return
       const ctx: PathContext = { shipProjectPath: ship.projectPath }
-      const source = scanScopeType('global', type, ctx).find((e) => e.data.name === req.params.name)
+      const source = (await scanScopeType('global', type, ctx)).find(
+        (e) => e.data.name === req.params.name,
+      )
       if (!source) return reply.code(404).send({ error: 'tool not found in global scope' })
       try {
         const { targetPath } = forkTool(source, ctx)

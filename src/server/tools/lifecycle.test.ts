@@ -6,6 +6,7 @@ import path from 'node:path'
 import { adoptTool, elevateTool, forkTool } from './lifecycle.js'
 import { resolveTool } from './resolver.js'
 import { scanScopeType } from './scanner.js'
+import { clear as clearScanCache } from './scanCache.js'
 import type { ToolEntry } from '../../core/tools.js'
 
 function makeEnv() {
@@ -13,6 +14,7 @@ function makeEnv() {
   const ship = mkdtempSync(path.join(os.tmpdir(), 'ay-lc-ship-'))
   const prevHome = process.env.AGENTYARD_HOME
   process.env.AGENTYARD_HOME = homeRoot
+  clearScanCache()
   return {
     ctx: { shipProjectPath: ship },
     homeRoot,
@@ -21,6 +23,7 @@ function makeEnv() {
     cleanup: () => {
       if (prevHome === undefined) delete process.env.AGENTYARD_HOME
       else process.env.AGENTYARD_HOME = prevHome
+      clearScanCache()
       rmSync(homeRoot, { recursive: true, force: true })
       rmSync(ship, { recursive: true, force: true })
     },
@@ -34,14 +37,14 @@ function writeFile(p: string, content: string): void {
 
 // ── elevate (ship → global) ──
 
-test('elevateTool: moves a per-ship agent file to global; ship copy disappears', () => {
+test('elevateTool: moves a per-ship agent file to global; ship copy disappears', async () => {
   const env = makeEnv()
   try {
     writeFile(
       path.join(env.shipRoot, 'agents', 'mover.md'),
       '---\nname: mover\ndescription: original\nrole: mover\ntoolPreset: claude_code\n---\n\nbody\n',
     )
-    const source = scanScopeType('ship', 'agent', env.ctx).find(
+    const source = (await scanScopeType('ship', 'agent', env.ctx)).find(
       (e) => e.data.name === 'mover',
     )
     assert.ok(source, 'precondition: scanner finds ship-scoped agent')
@@ -59,21 +62,21 @@ test('elevateTool: moves a per-ship agent file to global; ship copy disappears',
     )
 
     // After elevation, resolveTool sees the global one.
-    const resolved = resolveTool('agent', 'mover', env.ctx)
+    const resolved = await resolveTool('agent', 'mover', env.ctx)
     assert.ok(resolved && resolved.scope === 'global')
   } finally {
     env.cleanup()
   }
 })
 
-test('elevateTool: rejects a source that is not in ship scope', () => {
+test('elevateTool: rejects a source that is not in ship scope', async () => {
   const env = makeEnv()
   try {
     writeFile(
       path.join(env.homeRoot, 'agents', 'wrong.md'),
       '---\nname: wrong\ndescription: \nrole: wrong\ntoolPreset: claude_code\n---\n\nbody\n',
     )
-    const source = scanScopeType('global', 'agent', env.ctx).find(
+    const source = (await scanScopeType('global', 'agent', env.ctx)).find(
       (e) => e.data.name === 'wrong',
     )
     assert.ok(source)
@@ -85,14 +88,14 @@ test('elevateTool: rejects a source that is not in ship scope', () => {
 
 // ── fork (global → ship copy) ──
 
-test('forkTool: copies a global agent to ship; both files exist; ship wins on resolve', () => {
+test('forkTool: copies a global agent to ship; both files exist; ship wins on resolve', async () => {
   const env = makeEnv()
   try {
     writeFile(
       path.join(env.homeRoot, 'agents', 'forky.md'),
       '---\nname: forky\ndescription: gd\nrole: forky\ntoolPreset: claude_code\n---\n\nglobal body\n',
     )
-    const source = scanScopeType('global', 'agent', env.ctx).find(
+    const source = (await scanScopeType('global', 'agent', env.ctx)).find(
       (e) => e.data.name === 'forky',
     )
     assert.ok(source)
@@ -107,14 +110,14 @@ test('forkTool: copies a global agent to ship; both files exist; ship wins on re
     )
 
     // Resolver now returns ship scope (closer wins).
-    const resolved = resolveTool('agent', 'forky', env.ctx)
+    const resolved = await resolveTool('agent', 'forky', env.ctx)
     assert.ok(resolved && resolved.scope === 'ship')
   } finally {
     env.cleanup()
   }
 })
 
-test('forkTool: copies a global SKILL folder recursively to ship', () => {
+test('forkTool: copies a global SKILL folder recursively to ship', async () => {
   const env = makeEnv()
   try {
     const srcDir = path.join(env.homeRoot, 'skills', 'forky-skill')
@@ -124,7 +127,7 @@ test('forkTool: copies a global SKILL folder recursively to ship', () => {
     )
     writeFile(path.join(srcDir, 'extra.txt'), 'sidecar')
 
-    const source = scanScopeType('global', 'skill', env.ctx).find(
+    const source = (await scanScopeType('global', 'skill', env.ctx)).find(
       (e) => e.data.name === 'forky-skill',
     )
     assert.ok(source)
@@ -138,14 +141,14 @@ test('forkTool: copies a global SKILL folder recursively to ship', () => {
   }
 })
 
-test('forkTool: rejects a source that is not in global scope', () => {
+test('forkTool: rejects a source that is not in global scope', async () => {
   const env = makeEnv()
   try {
     writeFile(
       path.join(env.shipRoot, 'agents', 'shippy.md'),
       '---\nname: shippy\ndescription: \nrole: shippy\ntoolPreset: claude_code\n---\n\nbody\n',
     )
-    const source = scanScopeType('ship', 'agent', env.ctx).find(
+    const source = (await scanScopeType('ship', 'agent', env.ctx)).find(
       (e) => e.data.name === 'shippy',
     )
     assert.ok(source)
@@ -157,7 +160,7 @@ test('forkTool: rejects a source that is not in global scope', () => {
 
 // ── adopt (catalog → editable) ──
 
-test('adoptTool: rewrites a Claude-format agent into AgentYard format', () => {
+test('adoptTool: rewrites a Claude-format agent into AgentYard format', async () => {
   const env = makeEnv()
   try {
     // Claude format uses `mcpServers` / `tools` (we rename → `mcps` / `allowedTools`).
@@ -178,7 +181,7 @@ test('adoptTool: rewrites a Claude-format agent into AgentYard format', () => {
         '',
       ].join('\n'),
     )
-    const source = scanScopeType('claude-project', 'agent', env.ctx).find(
+    const source = (await scanScopeType('claude-project', 'agent', env.ctx)).find(
       (e) => e.data.name === 'imported',
     )
     assert.ok(source, 'scanner finds the catalog entry')
@@ -200,14 +203,14 @@ test('adoptTool: rewrites a Claude-format agent into AgentYard format', () => {
   }
 })
 
-test('adoptTool: rejects a source from a non-catalog scope', () => {
+test('adoptTool: rejects a source from a non-catalog scope', async () => {
   const env = makeEnv()
   try {
     writeFile(
       path.join(env.shipRoot, 'agents', 'shippy.md'),
       '---\nname: shippy\ndescription: \nrole: shippy\ntoolPreset: claude_code\n---\n\nbody\n',
     )
-    const source = scanScopeType('ship', 'agent', env.ctx).find(
+    const source = (await scanScopeType('ship', 'agent', env.ctx)).find(
       (e) => e.data.name === 'shippy',
     )
     assert.ok(source)
@@ -225,7 +228,7 @@ test('adoptTool: rejects a source from a non-catalog scope', () => {
   }
 })
 
-test('adoptTool: copies a SKILL folder out of the catalog into the editable scope', () => {
+test('adoptTool: copies a SKILL folder out of the catalog into the editable scope', async () => {
   const env = makeEnv()
   try {
     const src = path.join(env.catalogProjectRoot, 'skills', 'adopted')
@@ -233,7 +236,7 @@ test('adoptTool: copies a SKILL folder out of the catalog into the editable scop
       path.join(src, 'SKILL.md'),
       '---\nname: adopted\ndescription: from claude\n---\n\nadopted body\n',
     )
-    const source = scanScopeType('claude-project', 'skill', env.ctx).find(
+    const source = (await scanScopeType('claude-project', 'skill', env.ctx)).find(
       (e) => e.data.name === 'adopted',
     )
     assert.ok(source)

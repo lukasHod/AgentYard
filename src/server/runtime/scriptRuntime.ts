@@ -28,7 +28,7 @@ export async function runScriptNode(
   if (!node.scriptName) {
     throw new Error(`runScriptNode: node ${node.id} has no scriptName`)
   }
-  const resolved = resolveTool('script', node.scriptName, ctx)
+  const resolved = await resolveTool('script', node.scriptName, ctx)
   if (!resolved || resolved.type !== 'script') {
     throw new Error(`runScriptNode: script "${node.scriptName}" not found in ship or global library`)
   }
