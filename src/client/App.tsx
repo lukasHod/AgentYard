@@ -1,16 +1,26 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { io, Socket } from 'socket.io-client'
-import type {
-  FeatureSummary,
-  RunSnapshot,
-  ServerEvents,
-  SessionDescriptor,
-  ShipSummary,
-} from '../core/types'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import type { FeatureSummary, ShipSummary } from '../core/types'
 import type { Workflow } from '../core/schema'
 import type { ToolSummary } from '../core/tools'
-import type { ChatMessage, PendingClarification } from './views/RunView'
 import type { TestRunRequest } from './views/TestRunModal'
+import {
+  useActiveRun,
+  useConnected,
+  useFeaturesMap,
+  usePendingsMap,
+  useSessionList,
+  useShips,
+  useSocketStore,
+  useTranscriptsMap,
+} from './state/socketStore'
+import {
+  getSocket,
+  initSocketClient,
+  replyClarification as emitReplyClarification,
+  sendAgentMessage,
+} from './state/socketClient'
+
+type ViewMode = 'ships' | 'run' | 'editor'
 
 // Lazy loaders are exposed so tab hovers can preload the bundle before click.
 const loadGameCanvas = () => import('./canvas/GameCanvas')
@@ -37,11 +47,6 @@ function LoadingPanel({ label }: { label: string }) {
   )
 }
 
-let messageIdCounter = 0
-const nextMessageId = () => `m${++messageIdCounter}`
-
-type ViewMode = 'ships' | 'run' | 'editor'
-
 export function App() {
   const [view, setView] = useState<ViewMode>('ships')
   // Track which views the user has actually visited so we don't pay their JS
@@ -56,164 +61,25 @@ export function App() {
   const preload = useCallback((target: ViewMode) => {
     void PRELOADERS[target]()
   }, [])
-  const [connected, setConnected] = useState(false)
-  const [sessions, setSessions] = useState<Map<string, SessionDescriptor>>(new Map())
-  const [transcripts, setTranscripts] = useState<Map<string, ChatMessage[]>>(new Map())
-  const [pendings, setPendings] = useState<Map<string, PendingClarification>>(new Map())
-  const [activeRun, setActiveRun] = useState<RunSnapshot | null>(null)
+
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
   const [tools, setTools] = useState<ToolSummary[]>([])
-  const [ships, setShips] = useState<ShipSummary[]>([])
   const [testRunRequest, setTestRunRequest] = useState<TestRunRequest | null>(null)
-  const [features, setFeatures] = useState<Map<number, FeatureSummary[]>>(new Map())
-  const socketRef = useRef<Socket | null>(null)
 
-  const pushMessage = useCallback((agentRunId: string, m: Omit<ChatMessage, 'id'>) => {
-    setTranscripts((prev) => {
-      const next = new Map(prev)
-      const cur = next.get(agentRunId) ?? []
-      next.set(agentRunId, [...cur, { ...m, id: nextMessageId() }])
-      return next
-    })
-  }, [])
+  // Socket-driven state lives in the Zustand store. Each view reads only what
+  // it needs so an unrelated event no longer cascades through the whole tree.
+  const connected = useConnected()
+  const sessionList = useSessionList()
+  const transcripts = useTranscriptsMap()
+  const pendings = usePendingsMap()
+  const activeRun = useActiveRun()
+  const ships = useShips()
+  const features = useFeaturesMap()
 
+  // Wire the socket up once on mount; the client module is idempotent.
   useEffect(() => {
-    const socket: Socket = io({ transports: ['websocket', 'polling'] })
-    socketRef.current = socket
-
-    socket.on('connect', () => setConnected(true))
-    socket.on('disconnect', () => setConnected(false))
-
-    socket.on('session:list', (list: ServerEvents['session:list']) => {
-      setSessions(new Map(list.map((s) => [s.id, s])))
-    })
-
-    socket.on('session:added', (s: ServerEvents['session:added']) => {
-      setSessions((prev) => new Map(prev).set(s.id, s))
-    })
-
-    socket.on('session:removed', (ev: ServerEvents['session:removed']) => {
-      setSessions((prev) => {
-        const next = new Map(prev)
-        next.delete(ev.id)
-        return next
-      })
-    })
-
-    socket.on('agent:message', (m: ServerEvents['agent:message']) => {
-      pushMessage(m.agentRunId, {
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp,
-      })
-    })
-
-    socket.on('agent:state', (s: ServerEvents['agent:state']) => {
-      setSessions((prev) => {
-        const cur = prev.get(s.agentRunId)
-        if (!cur) return prev
-        const next = new Map(prev)
-        next.set(s.agentRunId, { ...cur, state: s.state })
-        return next
-      })
-    })
-
-    socket.on('clarification:requested', (c: ServerEvents['clarification:requested']) => {
-      setPendings((prev) =>
-        new Map(prev).set(c.agentRunId, { toolUseId: c.toolUseId, question: c.question }),
-      )
-    })
-
-    socket.on('clarification:resolved', (c: ServerEvents['clarification:resolved']) => {
-      setPendings((prev) => {
-        const next = new Map(prev)
-        const cur = next.get(c.agentRunId)
-        if (cur && cur.toolUseId === c.toolUseId) next.delete(c.agentRunId)
-        return next
-      })
-    })
-
-    socket.on('run:snapshot', (snap: RunSnapshot) => setActiveRun(snap))
-
-    socket.on('run:started', (ev: ServerEvents['run:started']) => {
-      setActiveRun({
-        runId: ev.runId,
-        task: ev.task,
-        nodeIds: ev.nodeIds,
-        nodeStates: Object.fromEntries(ev.nodeIds.map((id) => [id, 'pending' as const])),
-        nodeSummaries: {},
-      })
-    })
-
-    socket.on('node:started', (ev: ServerEvents['node:started']) => {
-      setActiveRun((prev) =>
-        prev
-          ? { ...prev, nodeStates: { ...prev.nodeStates, [ev.nodeId]: 'running' } }
-          : prev,
-      )
-    })
-
-    socket.on('node:complete', (ev: ServerEvents['node:complete']) => {
-      setActiveRun((prev) =>
-        prev
-          ? {
-              ...prev,
-              nodeStates: { ...prev.nodeStates, [ev.nodeId]: 'complete' },
-              nodeSummaries: { ...prev.nodeSummaries, [ev.nodeId]: ev.summary },
-            }
-          : prev,
-      )
-    })
-
-    socket.on('run:complete', (ev: ServerEvents['run:complete']) => {
-      setActiveRun((prev) => (prev ? { ...prev, finalSummary: ev.finalSummary } : prev))
-    })
-
-    socket.on('run:failed', (ev: ServerEvents['run:failed']) => {
-      setActiveRun((prev) =>
-        prev
-          ? {
-              ...prev,
-              error: ev.error,
-              nodeStates: ev.nodeId
-                ? { ...prev.nodeStates, [ev.nodeId]: 'failed' }
-                : prev.nodeStates,
-            }
-          : prev,
-      )
-    })
-
-    socket.on('ship:created', (s: ServerEvents['ship:created']) => {
-      setShips((prev) => [s, ...prev])
-    })
-    socket.on('ship:deleted', (ev: ServerEvents['ship:deleted']) => {
-      setShips((prev) => prev.filter((s) => s.id !== ev.id))
-      setFeatures((prev) => {
-        const next = new Map(prev)
-        next.delete(ev.id)
-        return next
-      })
-    })
-    socket.on('feature:created', (f: ServerEvents['feature:created']) => {
-      setFeatures((prev) => {
-        const next = new Map(prev)
-        next.set(f.shipId, [f, ...(next.get(f.shipId) ?? [])])
-        return next
-      })
-    })
-    socket.on('feature:updated', (f: ServerEvents['feature:updated']) => {
-      setFeatures((prev) => {
-        const next = new Map(prev)
-        const list = (next.get(f.shipId) ?? []).map((x) => (x.id === f.id ? f : x))
-        next.set(f.shipId, list)
-        return next
-      })
-    })
-
-    return () => {
-      socket.close()
-    }
-  }, [pushMessage])
+    initSocketClient()
+  }, [])
 
   const refreshTools = useCallback(async () => {
     try {
@@ -236,7 +102,7 @@ export function App() {
     fetch('/api/ships')
       .then((r) => r.json())
       .then(async (list: ShipSummary[]) => {
-        setShips(list)
+        useSocketStore.getState().setShips(list)
         const featureMap = new Map<number, FeatureSummary[]>()
         await Promise.all(
           list.map(async (s) => {
@@ -246,20 +112,18 @@ export function App() {
             featureMap.set(s.id, fs)
           }),
         )
-        setFeatures(featureMap)
+        useSocketStore.getState().setFeatures(featureMap)
       })
       .catch(() => {})
   }, [refreshTools])
 
-  const sessionList = useMemo(() => Array.from(sessions.values()), [sessions])
-
   const sendMessage = useCallback((agentRunId: string, content: string) => {
-    socketRef.current?.emit('agent:send', { agentRunId, content })
+    sendAgentMessage(agentRunId, content)
   }, [])
 
   const replyClarification = useCallback(
     (agentRunId: string, toolUseId: string, answer: string) => {
-      socketRef.current?.emit('clarification:reply', { agentRunId, toolUseId, answer })
+      emitReplyClarification(agentRunId, toolUseId, answer)
     },
     [],
   )
@@ -285,10 +149,7 @@ export function App() {
 
   const resetRun = useCallback(async () => {
     await fetch('/api/runs/reset', { method: 'POST' }).catch(() => {})
-    setSessions(new Map())
-    setTranscripts(new Map())
-    setPendings(new Map())
-    setActiveRun(null)
+    useSocketStore.getState().resetRun()
   }, [])
 
   const createShip = useCallback(async (name: string, projectPath: string) => {
@@ -488,7 +349,7 @@ export function App() {
             request={testRunRequest}
             workflow={workflow}
             ships={ships}
-            socket={socketRef.current}
+            socket={getSocket()}
             onClose={() => setTestRunRequest(null)}
           />
         </Suspense>

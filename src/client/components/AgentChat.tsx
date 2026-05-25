@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { AgentState } from '../../core/types'
 
 export interface AgentChatMessage {
@@ -149,13 +149,14 @@ export function AgentChat({
   )
 }
 
-function MessageRow({ m }: { m: AgentChatMessage }) {
-  const labelByRole = {
-    user: { label: 'YOU', color: 'text-emerald-300' },
-    assistant: { label: 'AGENT', color: 'text-cyan-300' },
-    system: { label: 'SYS', color: 'text-zinc-500' },
-  } as const
-  const { label, color } = labelByRole[m.role]
+const LABEL_BY_ROLE = {
+  user: { label: 'YOU', color: 'text-emerald-300' },
+  assistant: { label: 'AGENT', color: 'text-cyan-300' },
+  system: { label: 'SYS', color: 'text-zinc-500' },
+} as const
+
+const MessageRow = memo(function MessageRow({ m }: { m: AgentChatMessage }) {
+  const { label, color } = LABEL_BY_ROLE[m.role]
   return (
     <div className="flex gap-3">
       <span className={`${color} text-[10px] tracking-widest pt-0.5 w-12 shrink-0`}>{label}</span>
@@ -167,4 +168,4 @@ function MessageRow({ m }: { m: AgentChatMessage }) {
       </div>
     </div>
   )
-}
+})
