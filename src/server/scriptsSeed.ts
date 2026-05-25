@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import yaml from 'js-yaml'
@@ -32,55 +32,26 @@ const SEED_SCRIPTS: ScriptTool[] = [
 ]
 
 /**
- * Detect the pre-PR1 seed (shell-string `cmd: echo {message}`) on disk so we
- * can auto-migrate it to the new argv-safe form. Anything else — including
- * user customizations — is left alone.
- */
-function looksLikeLegacyPrintTask(manifest: unknown): boolean {
-  if (!manifest || typeof manifest !== 'object') return false
-  const m = manifest as Record<string, unknown>
-  return m.name === 'print-task' && m.cmd === 'echo {message}'
-}
-
-function writeManifest(manifestPath: string, s: ScriptTool): void {
-  const manifest: Record<string, unknown> = {
-    name: s.name,
-    description: s.description,
-    cmd: s.cmd,
-    args: s.args,
-  }
-  writeFileSync(manifestPath, yaml.dump(manifest, { lineWidth: 0 }), 'utf8')
-}
-
-/**
  * Write seed scripts to ~/.agentyard/scripts/<name>/manifest.yaml if not already
- * present. Also auto-migrates the legacy `print-task` seed (which used a
- * shell-interpreted cmd) to the new argv-safe form. Per-ship overrides are
- * unaffected.
+ * present. Per-ship overrides are unaffected.
  */
-export function seedDefaultScriptsIfMissing(): { wrote: string[]; migrated: string[] } {
+export function seedDefaultScriptsIfMissing(): { wrote: string[] } {
   const baseDir = path.join(homedir(), '.agentyard', 'scripts')
   mkdirSync(baseDir, { recursive: true })
   const wrote: string[] = []
-  const migrated: string[] = []
   for (const s of SEED_SCRIPTS) {
     const folder = path.join(baseDir, s.name)
     const manifestPath = path.join(folder, 'manifest.yaml')
-    if (existsSync(manifestPath)) {
-      try {
-        const parsed = yaml.load(readFileSync(manifestPath, 'utf8'))
-        if (looksLikeLegacyPrintTask(parsed)) {
-          writeManifest(manifestPath, s)
-          migrated.push(s.name)
-        }
-      } catch {
-        // Corrupt manifest — leave it alone; the user will see the error at scan time.
-      }
-      continue
-    }
+    if (existsSync(manifestPath)) continue
     mkdirSync(folder, { recursive: true })
-    writeManifest(manifestPath, s)
+    const manifest: Record<string, unknown> = {
+      name: s.name,
+      description: s.description,
+      cmd: s.cmd,
+      args: s.args,
+    }
+    writeFileSync(manifestPath, yaml.dump(manifest, { lineWidth: 0 }), 'utf8')
     wrote.push(s.name)
   }
-  return { wrote, migrated }
+  return { wrote }
 }

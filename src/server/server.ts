@@ -13,7 +13,6 @@ import { TestRunRegistry } from './runtime/testRun.js'
 import { loadSecrets } from './secrets.js'
 import { seedDefaultAgentsIfMissing } from './agentsSeed.js'
 import { seedDefaultScriptsIfMissing } from './scriptsSeed.js'
-import { scanSkills } from './skills.js'
 import { ensureDefaultWorkflow } from './workflows.js'
 import { RunRegistry } from './runState.js'
 import { TranscriptStore } from './transcriptStore.js'
@@ -44,14 +43,7 @@ export async function startServer(opts: ServerOptions) {
     // eslint-disable-next-line no-console
     console.log(`seeded default scripts: ${seededScripts.wrote.join(', ')}`)
   }
-  if (seededScripts.migrated.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log(
-      `migrated legacy default scripts to argv-safe form: ${seededScripts.migrated.join(', ')}`,
-    )
-  }
   ensureDefaultWorkflow()
-  scanSkills()
   const seeded = seedDefaultAgentsIfMissing()
   if (seeded.wrote.length > 0) {
     // eslint-disable-next-line no-console

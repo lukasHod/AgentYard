@@ -16,7 +16,6 @@ import { createScriptTool } from './tools/scriptTool.js'
 import { resolveTool } from '../tools/resolver.js'
 import type { ScanContext } from '../tools/scanner.js'
 import type { AgentTool, McpTool, ScriptTool, SkillTool } from '../../core/tools.js'
-import { renderSkillContext } from '../skills.js'
 import { resolveEnvVarsDeep } from '../secrets.js'
 import { runScriptNode } from './scriptRuntime.js'
 
