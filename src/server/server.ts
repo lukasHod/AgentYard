@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { simpleGit } from 'simple-git'
-import { getDb } from './db.js'
+import { closeDb, getDb } from './db.js'
 import { SessionManager, type SessionDescriptor } from './runtime/SessionManager.js'
 import type { Session, SessionEvent } from './runtime/Session.js'
 import { runWorkflowOnSessions } from './runtime/runWorkflowOnSessions.js'
@@ -141,6 +141,19 @@ export async function startServer(opts: ServerOptions) {
     finalSummary?: string
     error?: string
   } | null = null
+  /**
+   * AbortController for the in-flight run/feature. Set when a run starts and
+   * cleared when it settles. `/api/runs/reset` signals abort here, so the
+   * executor + script spawns + AI gate all stop deterministically before we
+   * tear down sessions.
+   */
+  let activeRunController: AbortController | null = null
+  /**
+   * The promise driving the active run. Reset awaits this so it can't race
+   * with the run's own state writes (which otherwise might land *after*
+   * activeRun was nulled out).
+   */
+  let activeRunPromise: Promise<unknown> | null = null
 
   const io = new IOServer(app.server, {
     // In dev the UI is served by Vite on a different origin and needs CORS allow.
@@ -636,15 +649,15 @@ export async function startServer(opts: ServerOptions) {
       nodeStates: {},
       nodeSummaries: {},
     }
+    const controller = new AbortController()
+    activeRunController = controller
 
-    // Run asynchronously — respond immediately with the runId once the
-    // executor emits run:started. We do that synchronously here by
-    // capturing the runId before awaiting completion.
-    const runId = await runWorkflowOnSessions({
+    const runPromise = runWorkflowOnSessions({
       workflow: wf,
       task,
       manager,
       ctx: { shipProjectPath: null }, // ship-less run (legacy /api/runs path)
+      signal: controller.signal,
       emit: (ev) => {
         if (activeRun) activeRun.runId = ev.runId
         emitRunEvent(ev)
@@ -654,16 +667,38 @@ export async function startServer(opts: ServerOptions) {
       if (activeRun) activeRun.error = err instanceof Error ? err.message : String(err)
       return null
     })
+    activeRunPromise = runPromise
+    // Clear the lifecycle handles when the run settles so reset doesn't await
+    // a finished promise unnecessarily (and so a stale signal isn't reused).
+    runPromise.finally(() => {
+      if (activeRunPromise === runPromise) activeRunPromise = null
+      if (activeRunController === controller) activeRunController = null
+    })
+
+    const runId = await runPromise
 
     return { ok: true, runId: runId ?? activeRun.runId }
   })
 
   app.post('/api/runs/reset', async () => {
+    // Signal abort first so the executor + AI gate + script spawns cooperate
+    // with the teardown instead of being killed mid-await.
+    activeRunController?.abort()
+    const pending = activeRunPromise
+    if (pending) {
+      try {
+        await pending
+      } catch {
+        // run rejected — fine, we're tearing down
+      }
+    }
     await manager.destroyAll()
     transcripts.clear()
     pendingByAgent.clear()
     states.clear()
     activeRun = null
+    activeRunController = null
+    activeRunPromise = null
     activeFeatureId = null
     return { ok: true }
   })
@@ -925,14 +960,16 @@ export async function startServer(opts: ServerOptions) {
       nodeStates: {},
       nodeSummaries: {},
     }
+    const controller = new AbortController()
+    activeRunController = controller
 
-    // Run asynchronously — return immediately.
-    runWorkflowOnSessions({
+    const runPromise = runWorkflowOnSessions({
       workflow: wf,
       task,
       manager,
       ctx: { shipProjectPath: ship.projectPath },
       cwd,
+      signal: controller.signal,
       emit: (ev) => {
         if (activeRun) activeRun.runId = ev.runId
         emitRunEvent(ev)
@@ -958,6 +995,11 @@ export async function startServer(opts: ServerOptions) {
       })
       if (updated) io.emit('feature:updated', updated)
     })
+    activeRunPromise = runPromise
+    runPromise.finally(() => {
+      if (activeRunPromise === runPromise) activeRunPromise = null
+      if (activeRunController === controller) activeRunController = null
+    })
 
     return { ok: true, feature }
   })
@@ -973,5 +1015,50 @@ export async function startServer(opts: ServerOptions) {
   })
 
   const address = await app.listen({ port: opts.port, host: '127.0.0.1' })
-  return { app, io, address, manager }
+
+  /**
+   * Tear the server down deterministically on SIGINT/SIGTERM:
+   *   1. abort any in-flight run (executor + scripts + AI gate stop cleanly)
+   *   2. abort all sandbox test runs (kills sessions, removes worktrees)
+   *   3. close all live sessions
+   *   4. close the HTTP server
+   *   5. close the SQLite handle (flushes WAL)
+   * All steps are best-effort; we never rethrow during shutdown.
+   */
+  async function shutdown(): Promise<void> {
+    try {
+      activeRunController?.abort()
+      if (activeRunPromise) {
+        try {
+          await activeRunPromise
+        } catch {
+          // run rejected on abort — expected
+        }
+      }
+    } catch (err) {
+      app.log.error({ err }, 'shutdown: abort active run')
+    }
+    try {
+      await testRuns.abortAll()
+    } catch (err) {
+      app.log.error({ err }, 'shutdown: abort test runs')
+    }
+    try {
+      await manager.destroyAll()
+    } catch (err) {
+      app.log.error({ err }, 'shutdown: destroy sessions')
+    }
+    try {
+      await app.close()
+    } catch (err) {
+      app.log.error({ err }, 'shutdown: close fastify')
+    }
+    try {
+      closeDb()
+    } catch (err) {
+      app.log.error({ err }, 'shutdown: close db')
+    }
+  }
+
+  return { app, io, address, manager, shutdown }
 }

@@ -54,6 +54,8 @@ export interface RunProcessOpts {
   timeoutMs: number
   /** Per-stream cap. Once exceeded the child is killed. */
   maxOutputChars?: number
+  /** Abort signal: when aborted, the child is killed and stderr notes the cancel. */
+  signal?: AbortSignal
 }
 
 const DEFAULT_MAX_OUTPUT_CHARS = 32_000
@@ -88,6 +90,7 @@ export function runProcess(
     let stderr = ''
     let timedOut = false
     let killedForOverflow = false
+    let aborted = false
 
     const killChild = () => {
       try {
@@ -101,6 +104,18 @@ export function runProcess(
       timedOut = true
       killChild()
     }, opts.timeoutMs)
+
+    const onAbort = () => {
+      aborted = true
+      killChild()
+    }
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        onAbort()
+      } else {
+        opts.signal.addEventListener('abort', onAbort, { once: true })
+      }
+    }
 
     const append = (which: 'stdout' | 'stderr', chunk: Buffer) => {
       const next = chunk.toString('utf8')
@@ -129,7 +144,10 @@ export function runProcess(
     })
     child.on('close', (code) => {
       clearTimeout(timer)
-      if (timedOut) {
+      opts.signal?.removeEventListener('abort', onAbort)
+      if (aborted) {
+        stderr += `\n[aborted]`
+      } else if (timedOut) {
         stderr += `\n[timeout after ${opts.timeoutMs}ms]`
       } else if (killedForOverflow) {
         stderr += `\n[output exceeded ${maxChars} chars per stream — process killed]`
@@ -138,11 +156,13 @@ export function runProcess(
         code:
           typeof code === 'number'
             ? code
-            : timedOut
-              ? 124
-              : killedForOverflow
-                ? 137
-                : 1,
+            : aborted
+              ? 130
+              : timedOut
+                ? 124
+                : killedForOverflow
+                  ? 137
+                  : 1,
         stdout,
         stderr,
         timedOut,

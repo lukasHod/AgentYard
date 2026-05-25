@@ -88,6 +88,11 @@ export class TestRunRegistry {
     }
   }
 
+  /** Abort every in-flight test run in parallel. Used by graceful shutdown. */
+  async abortAll(): Promise<void> {
+    await Promise.allSettled([...this.runs.keys()].map((id) => this.abort(id)))
+  }
+
   /** Forward a barge-in message to a specific agent in the sandbox SessionManager. */
   sendToAgent(testRunId: string, agentRunId: string, content: string): boolean {
     const state = this.runs.get(testRunId)

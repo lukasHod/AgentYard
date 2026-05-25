@@ -101,6 +101,30 @@ test('runProcess: timeout kills child and surfaces in stderr', async () => {
   assert.match(r.stderr, /timeout/)
 })
 
+test('runProcess: abort signal kills child and surfaces in stderr', async () => {
+  const ctl = new AbortController()
+  setTimeout(() => ctl.abort(), 50)
+  const r = await runProcess(
+    process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)'],
+    { timeoutMs: 10_000, signal: ctl.signal },
+  )
+  assert.match(r.stderr, /aborted/)
+  // exit code can be 130 (our sentinel) or whatever the OS uses for SIGKILL
+  assert.notEqual(r.code, 0)
+})
+
+test('runProcess: already-aborted signal returns immediately', async () => {
+  const ctl = new AbortController()
+  ctl.abort()
+  const r = await runProcess(
+    process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)'],
+    { timeoutMs: 10_000, signal: ctl.signal },
+  )
+  assert.match(r.stderr, /aborted/)
+})
+
 test('runProcess: output cap kills child before unbounded buffering', async () => {
   // Write more than the cap; runProcess should slice output and kill.
   const r = await runProcess(

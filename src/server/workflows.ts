@@ -25,6 +25,25 @@ function rowToWorkflow(row: WorkflowRow): Workflow {
 }
 
 /**
+ * Parse a row but never throw — bad rows just become null and get filtered
+ * out by callers. Lets a single corrupt graph_json not 500 the whole list
+ * endpoint.
+ */
+function tryRowToWorkflow(row: WorkflowRow): Workflow | null {
+  try {
+    return rowToWorkflow(row)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `workflows: row id=${row.id} (${row.name}) failed to parse; skipping. ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    )
+    return null
+  }
+}
+
+/**
  * Pre-C default workflow shape (3 AI nodes: analyze→develop→deploy, no script
  * node). If a row matches this exact signature, it's an untouched default from
  * the B era and gets reseeded with the C default (which adds print-context).
@@ -98,13 +117,14 @@ export function ensureDefaultWorkflow(): Workflow {
 export function listWorkflows(): Workflow[] {
   const db = getDb()
   const rows = db.prepare('SELECT * FROM workflows ORDER BY id').all() as WorkflowRow[]
-  return rows.map(rowToWorkflow)
+  return rows.map(tryRowToWorkflow).filter((w): w is Workflow => w !== null)
 }
 
 export function getWorkflow(id: number): Workflow | undefined {
   const db = getDb()
   const row = db.prepare('SELECT * FROM workflows WHERE id = ?').get(id) as WorkflowRow | undefined
-  return row ? rowToWorkflow(row) : undefined
+  if (!row) return undefined
+  return tryRowToWorkflow(row) ?? undefined
 }
 
 export function updateWorkflow(id: number, patch: { name?: string; graph?: WorkflowGraph }): Workflow | undefined {

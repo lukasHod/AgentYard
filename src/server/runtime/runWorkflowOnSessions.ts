@@ -8,9 +8,10 @@ import {
   type RunEvent,
 } from '../../core/executor.js'
 import { SessionManager } from './SessionManager.js'
-import { Session } from './Session.js'
+import { Session, type SessionEvent } from './Session.js'
 import { createAssignTaskTool } from './tools/assignTask.js'
 import { createMarkNodeCompleteTool } from './tools/markNodeComplete.js'
+import { createMarkCompleteGate } from './markCompleteGate.js'
 import { createScriptTool } from './tools/scriptTool.js'
 import { resolveTool } from '../tools/resolver.js'
 import type { ScanContext } from '../tools/scanner.js'
@@ -30,14 +31,32 @@ export interface RunWorkflowOptions {
   emit: (event: RunEvent) => void
   /** Working directory for AI drones / script nodes (feature worktree). */
   cwd?: string
+  /**
+   * Reject AI-node `mark_node_complete` waits after this many ms. Default
+   * 30 min; set <= 0 to disable. Script nodes have their own timeout
+   * inside scriptArgv.runProcess.
+   */
+  aiNodeTimeoutMs?: number
+  /**
+   * Aborts the whole run. Forwarded to the executor (per-node check) and
+   * to AI-node gates / script-node spawns.
+   */
+  signal?: AbortSignal
+}
+
+const DEFAULT_AI_NODE_TIMEOUT_MS = 30 * 60 * 1000 // 30 min
+
+interface RunAINodeDeps {
+  manager: SessionManager
+  ctx: ScanContext
+  input: NodeRunInput
+  aiNodeTimeoutMs: number
+  signal?: AbortSignal
 }
 
 /** Spawn leader + agents for an AI node, run it, return the leader's result. */
-async function runAINodeOnSessions(
-  manager: SessionManager,
-  ctx: ScanContext,
-  input: NodeRunInput,
-): Promise<NodeRunResult> {
+async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> {
+  const { manager, ctx, input, aiNodeTimeoutMs, signal } = deps
   const node = input.node
   const agentNames = node.agents ?? []
   if (agentNames.length === 0) {
@@ -56,18 +75,19 @@ async function runAINodeOnSessions(
     droneByRole.set(agent.role || agent.name, drone)
   }
 
-  // Wire mark_node_complete with adjacency info from the executor.
-  let resolveResult: ((r: NodeRunResult) => void) | null = null
-  const result = new Promise<NodeRunResult>((resolve) => {
-    resolveResult = resolve
+  // The gate decouples the mark_node_complete callback from session lifetime:
+  // if the leader's session closes (model exit, error) without firing the tool,
+  // or the per-node timeout elapses, or the run is aborted, the gate rejects
+  // — keeping the executor from hanging on `await runNode(input)`.
+  const gate = createMarkCompleteGate({
+    nodeId: node.id,
+    timeoutMs: aiNodeTimeoutMs,
+    signal,
   })
   const markCompleteTool = createMarkNodeCompleteTool({
     nodeId: node.id,
     outgoingNodeIds: input.outgoingNodeIds,
-    onComplete: (r) => {
-      resolveResult?.({ summary: r.summary, outputs: r.outputs, next: r.next })
-      resolveResult = null
-    },
+    onComplete: (r) => gate.complete({ summary: r.summary, outputs: r.outputs, next: r.next }),
   })
 
   const assignTaskTool = createAssignTaskTool({
@@ -75,18 +95,28 @@ async function runAINodeOnSessions(
     rosterDescription: [...droneByRole.keys()].join(', '),
   })
 
-  manager
-    .spawn({
-      role: 'leader',
-      label: `${node.id}/leader`,
-      systemPrompt: input.prompt,
-      runtimeTools: [assignTaskTool, markCompleteTool] as AnyTool[],
-    })
-    .sendUserMessage(
-      'Begin executing this workflow node. Follow your instructions, delegate to agents, then call mark_node_complete with the summary.',
-    )
+  const leader = manager.spawn({
+    role: 'leader',
+    label: `${node.id}/leader`,
+    systemPrompt: input.prompt,
+    runtimeTools: [assignTaskTool, markCompleteTool] as AnyTool[],
+  })
 
-  return result
+  const onLeaderEvent = (ev: SessionEvent) => {
+    if (ev.type === 'closed') gate.notifyClosed()
+  }
+  leader.on('event', onLeaderEvent)
+
+  leader.sendUserMessage(
+    'Begin executing this workflow node. Follow your instructions, delegate to agents, then call mark_node_complete with the summary.',
+  )
+
+  try {
+    return await gate.result
+  } finally {
+    leader.off('event', onLeaderEvent)
+    gate.dispose()
+  }
 }
 
 /** Spawn a single drone Session for a given agent definition. */
@@ -192,14 +222,22 @@ function renderSkillContextFromTools(skills: SkillTool[]): string {
 
 export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<string> {
   const runId = randomUUID()
+  const aiNodeTimeoutMs = opts.aiNodeTimeoutMs ?? DEFAULT_AI_NODE_TIMEOUT_MS
   await coreRunWorkflow(opts.workflow, {
     runId,
     task: opts.task,
     cwd: opts.cwd,
+    signal: opts.signal,
     emit: opts.emit,
     runNode: (input) => {
-      if (input.node.type === 'custom') return runScriptNode(input, opts.ctx)
-      return runAINodeOnSessions(opts.manager, opts.ctx, input)
+      if (input.node.type === 'custom') return runScriptNode(input, opts.ctx, opts.signal)
+      return runAINodeOnSessions({
+        manager: opts.manager,
+        ctx: opts.ctx,
+        input,
+        aiNodeTimeoutMs,
+        signal: opts.signal,
+      })
     },
   })
   return runId

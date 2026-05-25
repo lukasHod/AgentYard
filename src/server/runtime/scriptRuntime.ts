@@ -19,6 +19,7 @@ const TIMEOUT_MS = 600_000 // 10 min for a script node — much longer than a pe
 export async function runScriptNode(
   input: NodeRunInput,
   ctx: ScanContext,
+  signal?: AbortSignal,
 ): Promise<NodeRunResult> {
   const node = input.node
   if (node.type !== 'custom' || node.customType !== 'script') {
@@ -47,6 +48,7 @@ export async function runScriptNode(
     cwd: input.cwd,
     timeoutMs: TIMEOUT_MS,
     maxOutputChars: MAX_OUTPUT_CHARS,
+    signal,
   })
 
   if (result.code !== 0) {
