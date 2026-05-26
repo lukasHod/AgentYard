@@ -5,8 +5,9 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { Sun } from './Sun'
 import { Planet } from './Planet'
 import { CameraRig } from './CameraRig'
-import { planetOrbitPositions } from './lib/orbits'
-import { usePlanets } from '../state/socketStore'
+import { planetOrbitPositions, ringAngles } from './lib/orbits'
+import { derivePlanetParams } from './lib/planetParams'
+import { usePlanets, useFeaturesMap } from '../state/socketStore'
 
 export function SolarSystemScene() {
   const planets = usePlanets()
@@ -24,6 +25,34 @@ export function SolarSystemScene() {
 
   const lookup = useCallback((id: number) => planetWorld.get(id) ?? null, [planetWorld])
 
+  const features = useFeaturesMap()
+
+  const shipPositions = useMemo(() => {
+    const map = new Map<string, { x: number; y: number; z: number }>()
+    planets.forEach((p, pi) => {
+      const planetAngle = (pi * Math.PI) / 3
+      const planetX = Math.cos(planetAngle) * positions[pi]!.radius
+      const planetZ = -Math.sin(planetAngle) * positions[pi]!.radius
+      const fs = (features.get(p.id) ?? []).filter((f) => f.status === 'running')
+      const angles = ringAngles(fs.length)
+      const planetParams = derivePlanetParams(p.name)
+      const ringR = planetParams.radius * 1.8
+      fs.forEach((f, i) => {
+        map.set(`${p.id}:${f.id}`, {
+          x: planetX + Math.cos(angles[i]!) * ringR,
+          y: 0,
+          z: planetZ + Math.sin(angles[i]!) * ringR,
+        })
+      })
+    })
+    return map
+  }, [planets, features, positions])
+
+  const shipLookup = useCallback(
+    (planetId: number, featureId: number) => shipPositions.get(`${planetId}:${featureId}`) ?? null,
+    [shipPositions],
+  )
+
   return (
     <>
       <color attach="background" args={['#020617']} />
@@ -33,7 +62,7 @@ export function SolarSystemScene() {
       {planets.map((p, i) => (
         <Planet key={p.id} planet={p} orbitRadius={positions[i]!.radius} orbitAngleOffset={(i * Math.PI) / 3} />
       ))}
-      <CameraRig planetLookup={lookup} />
+      <CameraRig planetLookup={lookup} shipLookup={shipLookup} />
       <EffectComposer>
         <Bloom intensity={1.0} luminanceThreshold={0.25} luminanceSmoothing={0.4} mipmapBlur />
         <Vignette darkness={0.6} offset={0.3} />

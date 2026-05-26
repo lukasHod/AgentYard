@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cameraTargetFor } from './cameraTargets'
+import { cameraTargetFor, cameraTargetForV2 } from './cameraTargets'
 
 describe('cameraTargetFor', () => {
   const planetPos = { x: 6, y: 0, z: 0 }
@@ -28,5 +28,21 @@ describe('cameraTargetFor', () => {
     const t = cameraTargetFor({ lod: 2, planetId: 1, shipFeatureId: 7 }, () => planetPos)
     // For now: ship target is "near the planet" — refined in Phase 10.
     expect(t.lookAt).toEqual([6, 0, 0])
+  })
+})
+
+describe('cameraTargetForV2', () => {
+  it('LOD 2 frames the ship via shipLookup', () => {
+    const planetLookup = () => ({ x: 0, y: 0, z: 0 })
+    const shipLookup = () => ({ x: 7, y: 0, z: 2 })
+    const t = cameraTargetForV2({ lod: 2, planetId: 1, shipFeatureId: 9 }, planetLookup, shipLookup)
+    expect(t.lookAt).toEqual([7, 0, 2])
+    expect(t.position[0]).toBeCloseTo(8.5) // 7 + 1.5
+  })
+
+  it('falls back to LOD 1 framing if ship not found at LOD 2', () => {
+    const planetLookup = () => ({ x: 5, y: 0, z: 0 })
+    const t = cameraTargetForV2({ lod: 2, planetId: 1, shipFeatureId: 99 }, planetLookup, () => null)
+    expect(t.lookAt).toEqual([5, 0, 0]) // same as LOD 1 planet
   })
 })

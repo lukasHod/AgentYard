@@ -7,6 +7,11 @@ export interface CameraTarget {
 
 export type PlanetPositionLookup = (planetId: number) => { x: number; y: number; z: number } | null
 
+export type ShipPositionLookup = (
+  planetId: number,
+  featureId: number
+) => { x: number; y: number; z: number } | null
+
 const SYSTEM_OVERVIEW: CameraTarget = {
   position: [0, 8, 24],
   lookAt: [0, 0, 0],
@@ -41,4 +46,22 @@ export function cameraTargetFor(focus: Focus, lookup: PlanetPositionLookup): Cam
     }
   }
   return SYSTEM_OVERVIEW
+}
+
+export function cameraTargetForV2(
+  focus: Focus,
+  planetLookup: PlanetPositionLookup,
+  shipLookup: ShipPositionLookup,
+): CameraTarget {
+  if (focus.lod === 2) {
+    const s = shipLookup(focus.planetId, focus.shipFeatureId)
+    if (s) {
+      // Frame the ship from the side + slightly above + pulled back.
+      return {
+        position: [s.x + 1.5, s.y + 0.8, s.z + 2.5],
+        lookAt: [s.x, s.y, s.z],
+      }
+    }
+  }
+  return cameraTargetFor(focus, planetLookup)
 }
