@@ -1,9 +1,9 @@
 import { useFrame } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Group } from 'three'
 import { derivePlanetParams } from './lib/planetParams'
 import { PlanetMaterial } from './PlanetMaterial'
-import type { PlanetSummary } from '../../core/types'
+import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
 import { useFeaturesMap, useSessionList, usePendingsMap } from '../state/socketStore'
 import { Ship } from './Ship'
@@ -22,8 +22,56 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const focusPlanet = useUiStore((s) => s.focusPlanet)
 
   const features = useFeaturesMap().get(planet.id) ?? []
-  const active = useMemo(() => features.filter((f) => f.status === 'running'), [features])
-  const angles = useMemo(() => ringAngles(active.length), [active.length])
+
+  // Track features that are currently playing their despawn animation.
+  // These are kept mounted after they leave the 'running' state so the
+  // flash-and-fade has time to complete before we unmount the Ship.
+  const [despawning, setDespawning] = useState<FeatureSummary[]>([])
+
+  // Remember which feature ids were running on the previous render so we can
+  // detect the transition running → complete/failed.
+  const prevRunningIds = useRef<Set<number>>(new Set())
+
+  useEffect(() => {
+    const currentRunningIds = new Set(
+      features.filter((f) => f.status === 'running').map((f) => f.id),
+    )
+
+    // Find features that just transitioned out of running into complete/failed
+    // and are not yet in the despawning list.
+    const justEnded: FeatureSummary[] = []
+    for (const f of features) {
+      if (
+        (f.status === 'complete' || f.status === 'failed') &&
+        prevRunningIds.current.has(f.id) &&
+        !despawning.some((d) => d.id === f.id)
+      ) {
+        justEnded.push(f)
+      }
+    }
+
+    if (justEnded.length > 0) {
+      setDespawning((prev) => [...prev, ...justEnded])
+    }
+
+    prevRunningIds.current = currentRunningIds
+  }, [features, despawning])
+
+  // Called by Ship when its despawn animation completes.
+  const onShipDespawned = useCallback((featureId: number) => {
+    setDespawning((prev) => prev.filter((f) => f.id !== featureId))
+  }, [])
+
+  // The full set of ships to render = currently running + those finishing despawn.
+  const visible = useMemo(
+    () => [
+      ...features.filter((f) => f.status === 'running'),
+      ...despawning,
+    ],
+    [features, despawning],
+  )
+
+  const angles = useMemo(() => ringAngles(visible.length), [visible.length])
   const shipOrbitRadius = params.radius * 1.8
 
   const sessions = useSessionList()
@@ -64,7 +112,7 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
             <meshBasicMaterial color="#94a3b8" transparent opacity={0.4} side={2 /* DoubleSide */} />
           </mesh>
         )}
-        {active.map((f, i) => (
+        {visible.map((f, i) => (
           <Ship
             key={f.id}
             feature={f}
@@ -72,6 +120,7 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
             orbitAngle={angles[i]!}
             drones={droneSessions}
             pendingDroneIds={pendingDroneIds}
+            onDespawned={() => onShipDespawned(f.id)}
           />
         ))}
       </group>
