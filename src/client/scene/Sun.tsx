@@ -2,6 +2,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import { ShaderMaterial, Mesh, Color } from 'three'
+import { useUiStore } from '../state/uiStore'
 
 const vert = `
   varying vec3 vPos;
@@ -28,6 +29,7 @@ const frag = `
 export function Sun() {
   const meshRef = useRef<Mesh>(null)
   const matRef = useRef<ShaderMaterial>(null)
+  const focusSun = useUiStore((s) => s.focusSun)
   const material = useMemo(
     () =>
       new ShaderMaterial({
@@ -42,7 +44,11 @@ export function Sun() {
     if (meshRef.current) meshRef.current.rotation.y += dt * 0.02
   })
   return (
-    <mesh ref={meshRef} position={[0, 0, 0]}>
+    <mesh
+      ref={meshRef}
+      position={[0, 0, 0]}
+      onClick={(e) => { e.stopPropagation(); focusSun() }}
+    >
       <sphereGeometry args={[2.4, 64, 64]} />
       <primitive ref={matRef} object={material} attach="material" />
       {/* Corona — additive, larger sphere with a soft glow material */}

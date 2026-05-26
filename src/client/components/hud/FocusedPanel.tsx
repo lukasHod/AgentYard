@@ -5,6 +5,7 @@ import { GlassChip } from '../glass/GlassChip'
 import { GlassSplitter } from '../glass/GlassSplitter'
 import { GlassTab } from '../glass/GlassTab'
 import { WorkflowEditorOverlay } from './WorkflowEditorOverlay'
+import { SunPanelInfo } from './SunPanel'
 import { useUiStore } from '../../state/uiStore'
 import {
   usePlanets,
@@ -454,7 +455,9 @@ export function FocusedPanel() {
 
   const [wfOpen, setWfOpen] = useState(false)
 
-  if (!planet) return null
+  const isSunFocus = focus.lod === 1 && 'sun' in focus && focus.sun === true
+
+  if (!isSunFocus && !planet) return null
 
   return (
     <div className="absolute inset-0 p-4">
@@ -464,39 +467,55 @@ export function FocusedPanel() {
           <GlassButton variant="ghost" onClick={() => back()}>
             ← system
           </GlassButton>
-          <span className="font-semibold tracking-wide">{planet.name}</span>
-          <span className="font-mono text-xs text-slate-400">{planet.projectPath}</span>
+          {isSunFocus ? (
+            <span className="font-semibold tracking-widest text-amber-200">SUN — GLOBAL LIBRARY</span>
+          ) : (
+            <>
+              <span className="font-semibold tracking-wide">{planet!.name}</span>
+              <span className="font-mono text-xs text-slate-400">{planet!.projectPath}</span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <GlassChip>● link</GlassChip>
           <GlassButton variant="ghost" onClick={() => setWfOpen(true)}>⚙ workflow editor</GlassButton>
-          <GlassButton variant="danger">✕ delete</GlassButton>
+          {!isSunFocus && <GlassButton variant="danger">✕ delete</GlassButton>}
         </div>
       </GlassPanel>
 
-      {/* Body: info | splitter | chat */}
-      <div className="relative" style={{ height: 'calc(100% - 80px)' }}>
-        <div className="absolute inset-y-0 left-0 p-2" style={{ width: `${splitterRatio * 100}%` }}>
-          <GlassPanel className="h-full p-4 overflow-y-auto">
-            {focus.lod === 2 && focusedFeature ? (
-              <ShipInfoPanel feature={focusedFeature} />
-            ) : (
-              <InfoPanelBody planet={planet} />
-            )}
-          </GlassPanel>
+      {/* Body */}
+      {isSunFocus ? (
+        <div className="relative" style={{ height: 'calc(100% - 80px)' }}>
+          <div className="absolute inset-0 p-2">
+            <GlassPanel className="h-full p-4 overflow-y-auto">
+              <SunPanelInfo />
+            </GlassPanel>
+          </div>
         </div>
+      ) : (
+        <div className="relative" style={{ height: 'calc(100% - 80px)' }}>
+          <div className="absolute inset-y-0 left-0 p-2" style={{ width: `${splitterRatio * 100}%` }}>
+            <GlassPanel className="h-full p-4 overflow-y-auto">
+              {focus.lod === 2 && focusedFeature ? (
+                <ShipInfoPanel feature={focusedFeature} />
+              ) : (
+                <InfoPanelBody planet={planet!} />
+              )}
+            </GlassPanel>
+          </div>
 
-        <GlassSplitter ratio={splitterRatio} onChange={setSplitterRatio} />
+          <GlassSplitter ratio={splitterRatio} onChange={setSplitterRatio} />
 
-        <div
-          className="absolute inset-y-0 right-0 p-2"
-          style={{ left: `${splitterRatio * 100}%`, paddingLeft: 12 }}
-        >
-          <GlassPanel className="h-full p-4 overflow-hidden">
-            <ChatPanelBody planet={planet} targetSessionId={targetSessionId} />
-          </GlassPanel>
+          <div
+            className="absolute inset-y-0 right-0 p-2"
+            style={{ left: `${splitterRatio * 100}%`, paddingLeft: 12 }}
+          >
+            <GlassPanel className="h-full p-4 overflow-hidden">
+              <ChatPanelBody planet={planet!} targetSessionId={targetSessionId} />
+            </GlassPanel>
+          </div>
         </div>
-      </div>
+      )}
 
       <WorkflowEditorOverlay open={wfOpen} onClose={() => setWfOpen(false)} />
     </div>
