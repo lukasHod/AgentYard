@@ -1,5 +1,5 @@
 // Shared types used by both server and client.
-// Authoritative shapes for ships, workflows, agents, messages.
+// Authoritative shapes for planets, workflows, agents, messages.
 // Keep this file dependency-free.
 
 export type AgentState =
@@ -10,7 +10,7 @@ export type AgentState =
   | 'done'
   | 'failed'
 
-export type ShipState =
+export type PlanetState =
   | 'idle'
   | 'analyzing'
   | 'developing'
@@ -22,12 +22,12 @@ export type AgentRole = 'leader' | 'drone' | 'free'
 
 // Workflow shapes live in core/schema.ts (Zod-derived). Don't redefine here.
 
-export interface Ship {
+export interface Planet {
   id: number
   name: string
   projectPath: string
   workflowId: number
-  state: ShipState
+  state: PlanetState
   createdAt: number
 }
 
@@ -50,7 +50,7 @@ export interface RunSnapshot {
   error?: string
 }
 
-export interface ShipSummary {
+export interface PlanetSummary {
   id: number
   name: string
   projectPath: string
@@ -63,7 +63,7 @@ export interface ShipSummary {
 
 export interface FeatureSummary {
   id: number
-  shipId: number
+  planetId: number
   name: string
   task: string
   branch: string | null
@@ -83,7 +83,7 @@ export interface ServerEvents {
   'session:removed':  { id: string }
   'agent:message':    { agentRunId: string; role: 'assistant' | 'user' | 'system'; content: string; timestamp: number }
   'agent:state':      { agentRunId: string; state: AgentState }
-  'ship:state':       { shipId: number; state: ShipState }
+  'planet:state':     { planetId: number; state: PlanetState }
   'clarification:requested': { agentRunId: string; toolUseId: string; question: string }
   'clarification:resolved':  { agentRunId: string; toolUseId: string }
   'run:snapshot':     RunSnapshot
@@ -93,8 +93,8 @@ export interface ServerEvents {
   'node:skipped':     { runId: string; nodeId: string; title: string }
   'run:complete':     { runId: string; finalSummary: string }
   'run:failed':       { runId: string; nodeId?: string; error: string }
-  'ship:created':     ShipSummary
-  'ship:deleted':     { id: number }
+  'planet:created':   PlanetSummary
+  'planet:deleted':   { id: number }
   'feature:created':  FeatureSummary
   'feature:updated':  FeatureSummary
   // ── Sandbox test-run events ──

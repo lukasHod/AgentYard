@@ -21,7 +21,7 @@ export function agentyardHome(): string {
 /** Root directory for a (scope, ctx) tuple. Returns null if the scope is N/A for the context. */
 export function scopeRoot(scope: ToolScope, ctx: PathContext): string | null {
   switch (scope) {
-    case 'ship':
+    case 'planet':
       return ctx.planetProjectPath ? path.join(ctx.planetProjectPath, '.agentyard') : null
     case 'global':
       return agentyardHome()

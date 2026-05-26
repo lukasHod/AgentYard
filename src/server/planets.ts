@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { simpleGit } from 'simple-git'
 import { createRepo } from './repository.js'
 
-export interface Ship {
+export interface Planet {
   id: number
   name: string
   projectPath: string
@@ -22,7 +22,7 @@ interface PlanetRow {
   created_at: number
 }
 
-function rowToPlanet(row: PlanetRow): Ship {
+function rowToPlanet(row: PlanetRow): Planet {
   return {
     id: row.id,
     name: row.name,
@@ -34,13 +34,13 @@ function rowToPlanet(row: PlanetRow): Ship {
   }
 }
 
-const planets = createRepo<PlanetRow, Ship>(rowToPlanet)
+const planets = createRepo<PlanetRow, Planet>(rowToPlanet)
 
-export function listPlanets(): Ship[] {
+export function listPlanets(): Planet[] {
   return planets.all('SELECT * FROM planets ORDER BY created_at DESC')
 }
 
-export function getPlanet(id: number): Ship | undefined {
+export function getPlanet(id: number): Planet | undefined {
   return planets.one('SELECT * FROM planets WHERE id = ?', id)
 }
 
@@ -48,7 +48,7 @@ export async function createPlanet(opts: {
   name: string
   projectPath: string
   workflowId?: number | null
-}): Promise<Ship> {
+}): Promise<Planet> {
   if (!opts.name?.trim()) throw new Error('name required')
   if (!opts.projectPath?.trim()) throw new Error('project path required')
   if (!existsSync(opts.projectPath)) {

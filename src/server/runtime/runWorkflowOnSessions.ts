@@ -62,13 +62,13 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
     throw new Error(`AI node ${node.id} has no agents connected`)
   }
 
-  // Resolve each agent name from the library (ship → global → error), then
+  // Resolve each agent name from the library (planet → global → error), then
   // spawn drones in parallel (each drone resolves its own attached tools).
   const resolvedAgents = await Promise.all(
     agentNames.map(async (name) => {
       const r = await resolveTool('agent', name, ctx)
       if (!r || r.type !== 'agent') {
-        throw new Error(`Agent "${name}" not found in ship or global tool library`)
+        throw new Error(`Agent "${name}" not found in planet or global tool library`)
       }
       return r.data
     }),

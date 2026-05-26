@@ -16,7 +16,7 @@ import { getCached, setCached } from './scanCache.js'
 
 export type ScanContext = PathContext
 
-const ALL_SCOPES: ToolScope[] = ['ship', 'global', 'claude-project', 'claude-user']
+const ALL_SCOPES: ToolScope[] = ['planet', 'global', 'claude-project', 'claude-user']
 const ALL_TYPES: ToolType[] = ['skill', 'mcp', 'script', 'agent']
 
 /** Find all tools of all types across all applicable scopes. Cached per scope+type+planet. */

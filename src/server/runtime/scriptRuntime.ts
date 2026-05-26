@@ -9,7 +9,7 @@ const TIMEOUT_MS = 600_000 // 10 min for a script node — much longer than a pe
 
 /**
  * Execute a workflow node of type 'custom' with customType 'script'.
- * - Resolves node.scriptName via the tool library (ship → global)
+ * - Resolves node.scriptName via the tool library (planet → global)
  * - Substitutes {task} / {upstream_outputs} into the script's arg values
  * - Tokenizes script.cmd by whitespace and per-token substitutes {argName} +
  *   `${env:VAR}` (see buildScriptArgv — no shell is invoked)
@@ -30,7 +30,7 @@ export async function runScriptNode(
   }
   const resolved = await resolveTool('script', node.scriptName, ctx)
   if (!resolved || resolved.type !== 'script') {
-    throw new Error(`runScriptNode: script "${node.scriptName}" not found in ship or global library`)
+    throw new Error(`runScriptNode: script "${node.scriptName}" not found in planet or global library`)
   }
   const script: ScriptTool = resolved.data
 

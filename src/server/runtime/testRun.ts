@@ -5,11 +5,11 @@ import type { SessionEvent } from './Session.js'
 import { runWorkflowOnSessions } from './runWorkflowOnSessions.js'
 import { createTestWorktree, removeTestWorktree } from './worktrees.js'
 import type { Workflow, WorkflowNode } from '../../core/schema.js'
-import type { Ship } from '../planets.js'
+import type { Planet } from '../planets.js'
 import type { TypedIOServer } from '../socketTypes.js'
 
 export interface TestRunStartOptions {
-  planet: Ship
+  planet: Planet
   workflow: Workflow
   task: string
   scope: 'workflow' | 'node'
@@ -21,7 +21,7 @@ export interface TestRunStartOptions {
 
 interface TestRunState {
   testRunId: string
-  planet: Ship
+  planet: Planet
   manager: SessionManager
   worktreePath: string
   worktreeBranch: string

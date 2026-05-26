@@ -2,7 +2,7 @@ import type { ToolEntry, ToolType } from '../../core/tools.js'
 import { scanScopeType, type ScanContext } from './scanner.js'
 
 /**
- * Resolve a tool by type + name. Walks `ship` → `global` and returns the first match,
+ * Resolve a tool by type + name. Walks `planet` → `global` and returns the first match,
  * or null if not found. Catalog scopes (`claude-*`) are NOT consulted — those entries
  * must be adopted into an editable scope first.
  */
@@ -11,7 +11,7 @@ export async function resolveTool(
   name: string,
   ctx: ScanContext,
 ): Promise<ToolEntry | null> {
-  for (const scope of ['ship', 'global'] as const) {
+  for (const scope of ['planet', 'global'] as const) {
     const entries = await scanScopeType(scope, type, ctx)
     const match = entries.find((e) => e.data.name === name)
     if (match) return match

@@ -68,7 +68,7 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
 
   app.get('/api/global-tools', async () => {
     const ctx: PathContext = { planetProjectPath: null }
-    // Global-only view: include global (~/.agentyard) + user catalog (~/.claude). Skip ship + claude-project.
+    // Global-only view: include global (~/.agentyard) + user catalog (~/.claude). Skip planet + claude-project.
     const buckets = await Promise.all(
       (['global', 'claude-user'] as const).flatMap((scope) =>
         (['skill', 'mcp', 'script', 'agent'] as const).map((type) =>
@@ -133,7 +133,7 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
       const data = parseToolData(type, req.body?.data, reply)
       if (!data) return
       const ctx: PathContext = { planetProjectPath: planet.projectPath }
-      const targetPath = writeTool('ship', type, data, ctx)
+      const targetPath = writeTool('planet', type, data, ctx)
       return { ok: true, path: targetPath }
     },
   )
@@ -164,7 +164,7 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
         return reply.code(400).send({ error: 'cannot rename via PUT; name must match URL' })
       }
       const ctx: PathContext = { planetProjectPath: planet.projectPath }
-      const targetPath = writeTool('ship', type, data, ctx)
+      const targetPath = writeTool('planet', type, data, ctx)
       return { ok: true, path: targetPath }
     },
   )
@@ -193,7 +193,7 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
       const type = parseToolType(req.params.type, reply)
       if (!type) return
       const ctx: PathContext = { planetProjectPath: planet.projectPath }
-      deleteTool('ship', type, req.params.name, ctx)
+      deleteTool('planet', type, req.params.name, ctx)
       return { ok: true }
     },
   )
@@ -222,7 +222,7 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
     if (sourceScope !== 'claude-project' && sourceScope !== 'claude-user') {
       return reply.code(400).send({ error: 'adopt: sourceScope must be a claude-* catalog scope' })
     }
-    const target = body.target === 'global' ? 'global' : 'ship'
+    const target = body.target === 'global' ? 'global' : 'planet'
     const ctx: PathContext = { planetProjectPath: planet.projectPath }
     const entries = await scanScopeType(sourceScope, type, ctx)
     const source = entries.find((e) => e.data.name === body.name)
@@ -262,10 +262,10 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
       const type = parseToolType(req.params.type, reply)
       if (!type) return
       const ctx: PathContext = { planetProjectPath: planet.projectPath }
-      const source = (await scanScopeType('ship', type, ctx)).find(
+      const source = (await scanScopeType('planet', type, ctx)).find(
         (e) => e.data.name === req.params.name,
       )
-      if (!source) return reply.code(404).send({ error: 'tool not found in per-ship scope' })
+      if (!source) return reply.code(404).send({ error: 'tool not found in per-planet scope' })
       try {
         const { targetPath } = elevateTool(source, ctx)
         return { ok: true, path: targetPath }

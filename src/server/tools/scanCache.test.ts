@@ -39,18 +39,18 @@ test('scanCache: a second scan hits the cache, not the disk', async () => {
   try {
     writeSkill(env.ctx, 'first', 'one')
 
-    const first = await scanScopeType('ship', 'skill', env.ctx)
+    const first = await scanScopeType('planet', 'skill', env.ctx)
     assert.equal(first.length, 1)
     assert.equal(first[0]!.data.name, 'first')
 
     // Direct on-disk edit that the cache must NOT see immediately.
     writeSkill(env.ctx, 'sneaky', 'two')
 
-    const second = await scanScopeType('ship', 'skill', env.ctx)
+    const second = await scanScopeType('planet', 'skill', env.ctx)
     assert.equal(second.length, 1, 'cache should serve stale data within TTL')
     assert.equal(second[0]!.data.name, 'first')
     // Underlying cache has the entry.
-    assert.ok(getCached('ship', 'skill', env.ctx))
+    assert.ok(getCached('planet', 'skill', env.ctx))
   } finally {
     env.cleanup()
   }
@@ -61,12 +61,12 @@ test('scanCache: TTL expiry forces a fresh scan', async () => {
   const prevTtl = _setTtlForTests(50)
   try {
     writeSkill(env.ctx, 'one', 'a')
-    const first = await scanScopeType('ship', 'skill', env.ctx)
+    const first = await scanScopeType('planet', 'skill', env.ctx)
     assert.equal(first.length, 1)
 
     writeSkill(env.ctx, 'two', 'b')
     await new Promise((r) => setTimeout(r, 70))
-    const second = await scanScopeType('ship', 'skill', env.ctx)
+    const second = await scanScopeType('planet', 'skill', env.ctx)
     assert.equal(second.length, 2)
   } finally {
     _setTtlForTests(prevTtl)
@@ -78,15 +78,15 @@ test('scanCache: writeTool invalidates the matching scope/type', async () => {
   const env = makeShip()
   try {
     writeSkill(env.ctx, 'one', 'a')
-    const before = await scanScopeType('ship', 'skill', env.ctx)
+    const before = await scanScopeType('planet', 'skill', env.ctx)
     assert.equal(before.length, 1)
 
-    // Writing through the API should bust the cache for ship+skill.
-    writeTool('ship', 'skill', { name: 'two', description: '', body: 'b' }, env.ctx)
+    // Writing through the API should bust the cache for planet+skill.
+    writeTool('planet', 'skill', { name: 'two', description: '', body: 'b' }, env.ctx)
 
-    // Cache for ship+skill is gone; the next scan re-reads.
-    assert.equal(getCached('ship', 'skill', env.ctx), undefined)
-    const after = await scanScopeType('ship', 'skill', env.ctx)
+    // Cache for planet+skill is gone; the next scan re-reads.
+    assert.equal(getCached('planet', 'skill', env.ctx), undefined)
+    const after = await scanScopeType('planet', 'skill', env.ctx)
     assert.equal(after.length, 2)
   } finally {
     env.cleanup()
@@ -96,13 +96,13 @@ test('scanCache: writeTool invalidates the matching scope/type', async () => {
 test('scanCache: deleteTool invalidates the matching scope/type', async () => {
   const env = makeShip()
   try {
-    writeTool('ship', 'skill', { name: 'goodbye', description: '', body: 'b' }, env.ctx)
-    const before = await scanScopeType('ship', 'skill', env.ctx)
+    writeTool('planet', 'skill', { name: 'goodbye', description: '', body: 'b' }, env.ctx)
+    const before = await scanScopeType('planet', 'skill', env.ctx)
     assert.equal(before.length, 1)
 
-    deleteTool('ship', 'skill', 'goodbye', env.ctx)
-    assert.equal(getCached('ship', 'skill', env.ctx), undefined)
-    const after = await scanScopeType('ship', 'skill', env.ctx)
+    deleteTool('planet', 'skill', 'goodbye', env.ctx)
+    assert.equal(getCached('planet', 'skill', env.ctx), undefined)
+    const after = await scanScopeType('planet', 'skill', env.ctx)
     assert.equal(after.length, 0)
   } finally {
     env.cleanup()
@@ -112,9 +112,9 @@ test('scanCache: deleteTool invalidates the matching scope/type', async () => {
 test('scanCache: invalidate is dimension-scoped — unrelated entries survive', async () => {
   const env = makeShip()
   try {
-    writeTool('ship', 'skill', { name: 'skill1', description: '', body: 'a' }, env.ctx)
+    writeTool('planet', 'skill', { name: 'skill1', description: '', body: 'a' }, env.ctx)
     writeTool(
-      'ship',
+      'planet',
       'agent',
       {
         name: 'agent1',
@@ -130,15 +130,15 @@ test('scanCache: invalidate is dimension-scoped — unrelated entries survive', 
     )
 
     // Prime both caches.
-    await scanScopeType('ship', 'skill', env.ctx)
-    await scanScopeType('ship', 'agent', env.ctx)
-    assert.ok(getCached('ship', 'skill', env.ctx))
-    assert.ok(getCached('ship', 'agent', env.ctx))
+    await scanScopeType('planet', 'skill', env.ctx)
+    await scanScopeType('planet', 'agent', env.ctx)
+    assert.ok(getCached('planet', 'skill', env.ctx))
+    assert.ok(getCached('planet', 'agent', env.ctx))
 
     // Invalidate only skill — agent cache must survive.
-    invalidate('ship', 'skill', env.ctx)
-    assert.equal(getCached('ship', 'skill', env.ctx), undefined)
-    assert.ok(getCached('ship', 'agent', env.ctx), 'agent entry preserved')
+    invalidate('planet', 'skill', env.ctx)
+    assert.equal(getCached('planet', 'skill', env.ctx), undefined)
+    assert.ok(getCached('planet', 'agent', env.ctx), 'agent entry preserved')
   } finally {
     env.cleanup()
   }
@@ -147,11 +147,11 @@ test('scanCache: invalidate is dimension-scoped — unrelated entries survive', 
 test('scanCache: clear() drops everything', async () => {
   const env = makeShip()
   try {
-    writeTool('ship', 'skill', { name: 's', description: '', body: 'b' }, env.ctx)
-    await scanScopeType('ship', 'skill', env.ctx)
-    assert.ok(getCached('ship', 'skill', env.ctx))
+    writeTool('planet', 'skill', { name: 's', description: '', body: 'b' }, env.ctx)
+    await scanScopeType('planet', 'skill', env.ctx)
+    assert.ok(getCached('planet', 'skill', env.ctx))
     clearScanCache()
-    assert.equal(getCached('ship', 'skill', env.ctx), undefined)
+    assert.equal(getCached('planet', 'skill', env.ctx), undefined)
   } finally {
     env.cleanup()
   }

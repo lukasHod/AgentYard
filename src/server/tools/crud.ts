@@ -16,7 +16,7 @@ import { toolOnDiskPath, type PathContext } from './paths.js'
 import { invalidate as invalidateScanCache } from './scanCache.js'
 
 type AnyToolData = SkillTool | McpTool | ScriptTool | AgentTool
-type EditableScope = 'ship' | 'global'
+type EditableScope = 'planet' | 'global'
 
 function ensureEditable(scope: ToolScope): asserts scope is EditableScope {
   if (!isEditableScope(scope)) {
@@ -58,8 +58,8 @@ export function writeTool(
       break
   }
   // Drop any cached scan that could now be stale. We also drop the matching
-  // ship-context cache when writing global (since resolver walks ship→global
-  // and a global write could shadow no ship entry — affects find results).
+  // planet-context cache when writing global (since resolver walks planet→global
+  // and a global write could shadow no planet entry — affects find results).
   invalidateScanCache(scope, type, ctx)
   return target
 }

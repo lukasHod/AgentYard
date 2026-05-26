@@ -13,7 +13,7 @@ import { toolOnDiskPath, type PathContext } from './paths.js'
 import { writeTool } from './crud.js'
 import { invalidate as invalidateScanCache } from './scanCache.js'
 
-type EditableTarget = 'ship' | 'global'
+type EditableTarget = 'planet' | 'global'
 
 /**
  * Adopt a tool from a catalog scope (.claude-*) into an editable scope (.agentyard).
@@ -73,22 +73,22 @@ function adoptCatalogMcp(source: ToolEntry, target: EditableTarget, ctx: PathCon
 }
 
 /**
- * Elevate: move a per-ship tool to global. Workflow refs are by name; the
- * resolver finds the elevated tool on next read. The per-ship file is removed.
+ * Elevate: move a per-planet tool to global. Workflow refs are by name; the
+ * resolver finds the elevated tool on next read. The per-planet file is removed.
  */
 export function elevateTool(source: ToolEntry, ctx: PathContext): { targetPath: string } {
-  if (source.scope !== 'ship') {
-    throw new Error(`elevateTool: source must be in 'ship' scope (got ${source.scope})`)
+  if (source.scope !== 'planet') {
+    throw new Error(`elevateTool: source must be in 'planet' scope (got ${source.scope})`)
   }
   return moveOrCopy(source, 'global', ctx, 'move')
 }
 
-/** Fork: copy a global tool into per-ship (for ship-specific divergence). */
+/** Fork: copy a global tool into per-planet (for planet-specific divergence). */
 export function forkTool(source: ToolEntry, ctx: PathContext): { targetPath: string } {
   if (source.scope !== 'global') {
     throw new Error(`forkTool: source must be in 'global' scope (got ${source.scope})`)
   }
-  return moveOrCopy(source, 'ship', ctx, 'copy')
+  return moveOrCopy(source, 'planet', ctx, 'copy')
 }
 
 function moveOrCopy(

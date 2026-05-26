@@ -45,19 +45,19 @@ export type ToolType = z.infer<typeof ToolTypeSchema>
 
 /**
  * Four sources for tools:
- *  - claude-project: <ship>/.claude/...    (read-only catalog, project-level)
- *  - claude-user:    ~/.claude/...         (read-only catalog, user-level)
- *  - ship:           <ship>/.agentyard/... (editable, per-ship, version-controlled with repo)
- *  - global:         ~/.agentyard/...      (editable, cross-ship)
+ *  - claude-project: <planet>/.claude/...    (read-only catalog, project-level)
+ *  - claude-user:    ~/.claude/...           (read-only catalog, user-level)
+ *  - planet:         <planet>/.agentyard/... (editable, per-planet, version-controlled with repo)
+ *  - global:         ~/.agentyard/...        (editable, cross-planet)
  *
- * Resolution at runtime walks ship → global → error. Catalog never resolves
- * directly; must be adopted into ship or global first.
+ * Resolution at runtime walks planet → global → error. Catalog never resolves
+ * directly; must be adopted into planet or global first.
  */
-export const ToolScopeSchema = z.enum(['claude-project', 'claude-user', 'ship', 'global'])
+export const ToolScopeSchema = z.enum(['claude-project', 'claude-user', 'planet', 'global'])
 export type ToolScope = z.infer<typeof ToolScopeSchema>
 
 export const READ_ONLY_SCOPES: readonly ToolScope[] = ['claude-project', 'claude-user'] as const
-export const EDITABLE_SCOPES: readonly ToolScope[] = ['ship', 'global'] as const
+export const EDITABLE_SCOPES: readonly ToolScope[] = ['planet', 'global'] as const
 
 export function isEditableScope(s: ToolScope): boolean {
   return EDITABLE_SCOPES.includes(s)
@@ -68,8 +68,8 @@ export function isCatalogScope(s: ToolScope): boolean {
 }
 
 /** Default adoption target for a given catalog source — matches the design's "follow the source" default. */
-export function defaultAdoptionTarget(source: ToolScope): 'ship' | 'global' {
-  if (source === 'claude-project') return 'ship'
+export function defaultAdoptionTarget(source: ToolScope): 'planet' | 'global' {
+  if (source === 'claude-project') return 'planet'
   if (source === 'claude-user') return 'global'
   throw new Error(`Not a catalog scope: ${source}`)
 }
@@ -239,8 +239,8 @@ export function toolEntryToSummary(entry: ToolEntry): ToolSummary {
 
 /**
  * A reference to a tool by type + name. Scope is intentionally NOT part of
- * the ref — the resolver walks ship → global at read time so elevating a
- * per-ship tool to global doesn't break the references that point at it.
+ * the ref — the resolver walks planet → global at read time so elevating a
+ * per-planet tool to global doesn't break the references that point at it.
  */
 export const ToolRefSchema = z.object({
   type: ToolTypeSchema,
