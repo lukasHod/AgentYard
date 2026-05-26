@@ -4,6 +4,7 @@ import { GlassButton } from '../glass/GlassButton'
 import { GlassChip } from '../glass/GlassChip'
 import { GlassSplitter } from '../glass/GlassSplitter'
 import { GlassTab } from '../glass/GlassTab'
+import { WorkflowEditorOverlay } from './WorkflowEditorOverlay'
 import { useUiStore } from '../../state/uiStore'
 import {
   usePlanets,
@@ -451,6 +452,8 @@ export function FocusedPanel() {
     return leader?.id ?? null
   }, [focus, sessions])
 
+  const [wfOpen, setWfOpen] = useState(false)
+
   if (!planet) return null
 
   return (
@@ -466,7 +469,7 @@ export function FocusedPanel() {
         </div>
         <div className="flex items-center gap-2">
           <GlassChip>● link</GlassChip>
-          <GlassButton variant="ghost">⚙ workflow editor</GlassButton>
+          <GlassButton variant="ghost" onClick={() => setWfOpen(true)}>⚙ workflow editor</GlassButton>
           <GlassButton variant="danger">✕ delete</GlassButton>
         </div>
       </GlassPanel>
@@ -494,6 +497,8 @@ export function FocusedPanel() {
           </GlassPanel>
         </div>
       </div>
+
+      <WorkflowEditorOverlay open={wfOpen} onClose={() => setWfOpen(false)} />
     </div>
   )
 }
