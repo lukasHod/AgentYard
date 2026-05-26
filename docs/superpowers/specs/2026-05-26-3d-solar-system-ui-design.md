@@ -23,7 +23,6 @@ The redesign replaces the entire top-level UI with a single React Three Fiber sc
 **Out of scope (logged as follow-ups):**
 - **Workflow model overhaul** (per-planet workflows, adopt-with-link semantics, per-planet skills/agents, leader-picks-workflow). Separate spec — UI redesign keeps today's single-global workflow.
 - **Planet appearance customization UI** — wired structurally so a future "Customize" panel can override the procedural defaults, but the panel itself is not built in this spec.
-- **Schema rename `ship` → `planet`** — the DB column and types keep the `ship` name during this spec to avoid churn. The 3D layer talks about planets internally; types still say `ShipSummary`.
 
 ## Locked decisions
 
@@ -48,6 +47,7 @@ The redesign replaces the entire top-level UI with a single React Three Fiber sc
 | Drone clarification state | Red emissive + pulsing scale + floating `!` sprite |
 | Notification deck | Always rendered top-right regardless of LOD; click → spline-fly to that drone's chat |
 | Approach | Single feature branch from `main`; phased commits; no feature flag |
+| Naming | Full rename `ship` → `planet` across DB schema, types, API routes, socket events, components, files, session labels. No leftovers. Done as Phase 0 before any 3D work. |
 
 ## Conceptual model
 
@@ -351,6 +351,61 @@ Procedural planet/ship/drone params are derived selectors (pure functions of nam
 
 **No backend changes.** All current socket events (`session:added`, `session:state`, `clarification:pending`, `feature:status`, `ship:added`, `ship:deleted`) drive the new scene unchanged. The new components subscribe to the existing store slices.
 
+## Naming migration (Phase 0)
+
+Done before any 3D work touches the code. Single preparatory commit (or a short sequence) on the new branch. The rename is **complete and one-shot — no backwards-compat aliases, no shim routes, no legacy event names**. The app does not need to support running against the old schema once Phase 0 lands.
+
+**Naming conventions established:**
+- Internal name (data model, types, schema, routes, files, sockets, code symbols, session labels): `planet`.
+- User-facing label in the UI: `project` for the noun ("+ new project", "delete project") because that's still what it IS; `planet` only when referring to the visual.
+
+**DB migration** (`src/server/db.ts`, idempotent — run on every startup; conditional on `ships` table existing):
+
+```sql
+ALTER TABLE ships RENAME TO planets;
+ALTER TABLE features RENAME COLUMN ship_id TO planet_id;
+ALTER TABLE ship_chat_messages RENAME TO planet_chat_messages;
+ALTER TABLE planet_chat_messages RENAME COLUMN ship_id TO planet_id;
+DROP INDEX IF EXISTS idx_ship_chat_messages_ship_id_id;
+CREATE INDEX IF NOT EXISTS idx_planet_chat_messages_planet_id_id
+  ON planet_chat_messages(planet_id, id);
+```
+
+The `CREATE TABLE IF NOT EXISTS` block in `db.ts` is updated to use the new names. The migration block above runs before those creates so a fresh DB skips the rename and the create-if-not-exists handles greenfield installs.
+
+**Server file renames** (`git mv`):
+- `src/server/ships.ts` → `src/server/planets.ts`
+- `src/server/shipChat.ts` → `src/server/planetChat.ts`
+- `src/server/routes/ships.ts` → `src/server/routes/planets.ts`
+
+Exported symbols updated in lockstep: `listShips` → `listPlanets`, `getShip` → `getPlanet`, `createShip` → `createPlanet`, `deleteShip` → `deletePlanet`, etc.
+
+**API routes** (no aliases):
+- `/api/ships*` → `/api/planets*` everywhere it appears (`ships.ts`, `features.ts`, `tools.ts` route files).
+
+**Socket events:**
+- `ship:created` → `planet:created`
+- `ship:deleted` → `planet:deleted`
+- Any other `ship:*` event name in `socketHandlers.ts` or `core/types.ts` `ServerEvents` map.
+
+**TypeScript types** (`src/core/types.ts`):
+- `ShipSummary` → `PlanetSummary`
+- `FeatureSummary.shipId` → `FeatureSummary.planetId`
+- Event-map entries renamed.
+
+**Client renames** (even files being deleted later in the branch — kept coherent for the lifetime of the branch):
+- `src/client/views/ShipsView.tsx` → `PlanetsView.tsx` (file deleted later, but renamed now)
+- `src/client/components/ShipDetailsPanel.tsx` → `PlanetDetailsPanel.tsx` (ditto)
+- `src/client/canvas/galaxyScene.ts` and `dockScene.ts` — internal symbols renamed (`ShipMood` → `PlanetMood`, `setShips` → `setPlanets`, etc.); files keep their `*Scene.ts` names since "galaxy" / "dock" refer to the view, not the entity.
+- `useShips()` Zustand selector → `usePlanets()`; `useFeaturesMap()` keys are now `planetId`.
+- All `shipId` props/locals → `planetId`. All `onCreateShip` / `onDeleteShip` callbacks → `onCreatePlanet` / `onDeletePlanet`.
+
+**Session labels.** The persistent ship-chat session label `ship:<id>:chat` becomes `planet:<id>:chat`. This is a runtime label only — no migration of historical sessions needed (sessions are ephemeral; labels are reconstructed each run).
+
+**Brand identity is separate.** The app's product name is "AgentYard" and the original metaphor was "shipyard." Renaming the data model to `planet` does not change the product brand — UI copy can still say "AGENTYARD" and "shipyard" where appropriate. Whether to also rebrand the product itself is **not** part of this spec.
+
+**Audit pass.** A `grep -ri 'ship' src/` after Phase 0 should return only intentional brand-related occurrences (the string `AGENTYARD`, doc/comment references to the "shipyard" identity). Any other hits are leftovers and must be fixed before Phase 0 closes.
+
 ## Migration / deletion plan
 
 Files added:
@@ -362,7 +417,8 @@ Files added:
 - `THIRD_PARTY_LICENSES.md` — license attribution.
 
 Files deleted (after the new path is wired and verified):
-- `src/client/canvas/GameCanvas.tsx`, `GameHud.tsx`, `Modal.tsx`, `ChatModal.tsx`, `galaxyScene.ts`, `dockScene.ts`, `useGameHud.ts`.
+- `src/client/canvas/GameCanvas.tsx`, `GameHud.tsx`, `Modal.tsx`, `ChatModal.tsx`, `galaxyScene.ts`, `dockScene.ts`, `useGameHud.ts`, `sprites.ts`.
+- `src/client/views/PlanetsView.tsx` (renamed from `ShipsView.tsx` in Phase 0).
 - `src/client/views/RunView.tsx`, `EditorView.tsx` (as top-level views — their internals are reused inside overlays and the planet RUN tab).
 - The `ViewMode` / `view` / `visited` machinery in `App.tsx`.
 - The chrome at the top of `App.tsx` (the `ships | run | editor` header).
@@ -396,6 +452,6 @@ Dependencies added: `three`, `@react-three/fiber`, `@react-three/drei`, `@react-
 
 - **Workflow model overhaul** — separate spec. Per-planet workflows, adopt-with-link, leader picks workflow at task start, per-planet skills/agents.
 - **Planet appearance customization UI** — the `override` prop is stubbed in; the UI is the follow-up.
-- **Schema rename `ship` → `planet`** — deferred. The 3D layer talks about planets internally; types still say `ShipSummary`. A future cleanup can rename DB columns and TypeScript types in lockstep.
 - **Multi-window support** (one window per project) — not in scope. The 3D layer assumes a single window.
 - **Performance tuning for very large project counts (>50)** — not in scope. The architecture supports it (impostor sprites at LOD 0; lazy GLB loads at LOD ≥ 1), but tuning is deferred until someone hits the wall.
+- **Product rebrand** (away from "AgentYard"/"shipyard" identity) — explicitly not in scope.
