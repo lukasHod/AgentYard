@@ -19,7 +19,7 @@ function makeEnv() {
   process.env.AGENTYARD_HOME = homeRoot
   clearScanCache()
   return {
-    ctx: { shipProjectPath: ship },
+    ctx: { planetProjectPath: ship },
     homeRoot,
     shipRoot: path.join(ship, '.agentyard'),
     cleanup: () => {
@@ -132,7 +132,7 @@ test('resolveTool: ship without a project path falls back to global only', async
   clearScanCache()
   try {
     writeAgentFile(homeRoot, 'planner', 'global')
-    const r = await resolveTool('agent', 'planner', { shipProjectPath: null })
+    const r = await resolveTool('agent', 'planner', { planetProjectPath: null })
     assert.ok(r && r.scope === 'global')
   } finally {
     if (prev === undefined) delete process.env.AGENTYARD_HOME
@@ -147,7 +147,7 @@ test('resolveTool: catalog scopes (.claude/) are NEVER consulted', async () => {
   // scope should remain unresolved until adopted.
   const env = makeEnv()
   try {
-    const catalogDir = path.join(env.ctx.shipProjectPath, '.claude', 'agents')
+    const catalogDir = path.join(env.ctx.planetProjectPath, '.claude', 'agents')
     mkdirSync(catalogDir, { recursive: true })
     writeFileSync(
       path.join(catalogDir, 'cataloged.md'),

@@ -16,7 +16,7 @@ function makeShip() {
   const ship = mkdtempSync(path.join(os.tmpdir(), 'ay-cache-'))
   clearScanCache()
   return {
-    ctx: { shipProjectPath: ship },
+    ctx: { planetProjectPath: ship },
     cleanup: () => {
       clearScanCache()
       rmSync(ship, { recursive: true, force: true })
@@ -24,8 +24,8 @@ function makeShip() {
   }
 }
 
-function writeSkill(ctx: { shipProjectPath: string }, name: string, body: string): void {
-  const dir = path.join(ctx.shipProjectPath, '.agentyard', 'skills', name)
+function writeSkill(ctx: { planetProjectPath: string }, name: string, body: string): void {
+  const dir = path.join(ctx.planetProjectPath, '.agentyard', 'skills', name)
   mkdirSync(dir, { recursive: true })
   writeFileSync(
     path.join(dir, 'SKILL.md'),

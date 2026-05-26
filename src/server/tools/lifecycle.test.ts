@@ -16,7 +16,7 @@ function makeEnv() {
   process.env.AGENTYARD_HOME = homeRoot
   clearScanCache()
   return {
-    ctx: { shipProjectPath: ship },
+    ctx: { planetProjectPath: ship },
     homeRoot,
     shipRoot: path.join(ship, '.agentyard'),
     catalogProjectRoot: path.join(ship, '.claude'),

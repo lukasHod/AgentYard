@@ -3,7 +3,7 @@ import { getDb } from './db.js'
 
 /**
  * Tiny typed SELECT helper for the snake_case ↔ camelCase entity modules
- * (features, ships). Each entity supplies a `Row` interface (raw DB shape)
+ * (features, planets). Each entity supplies a `Row` interface (raw DB shape)
  * and a `toEntity` mapper; the helper provides `all` / `one` that prepare
  * a statement, run it, and map every row — replacing the recurring
  * `db.prepare(...).all() as Row[]` cast pattern.

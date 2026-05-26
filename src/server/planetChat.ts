@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify'
 import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
 import { getDb } from './db.js'
-import { getShip } from './ships.js'
+import { getPlanet } from './planets.js'
 import type { RunRegistry } from './runState.js'
 import type { Session, SessionEvent } from './runtime/Session.js'
 import type { SessionDescriptor, SessionManager } from './runtime/SessionManager.js'
@@ -22,38 +22,38 @@ interface ChatMessageRow {
   timestamp: number
 }
 
-function loadHistory(shipId: number): PersistedChatMessage[] {
+function loadHistory(planetId: number): PersistedChatMessage[] {
   const rows = getDb()
     .prepare(
-      'SELECT role, content, timestamp FROM ship_chat_messages WHERE ship_id = ? ORDER BY id ASC',
+      'SELECT role, content, timestamp FROM planet_chat_messages WHERE planet_id = ? ORDER BY id ASC',
     )
-    .all(shipId) as ChatMessageRow[]
+    .all(planetId) as ChatMessageRow[]
   return rows.map((r) => ({ role: r.role, content: r.content, timestamp: r.timestamp }))
 }
 
-function appendHistory(shipId: number, msg: PersistedChatMessage): void {
+function appendHistory(planetId: number, msg: PersistedChatMessage): void {
   getDb()
     .prepare(
-      'INSERT INTO ship_chat_messages (ship_id, role, content, timestamp) VALUES (?, ?, ?, ?)',
+      'INSERT INTO planet_chat_messages (planet_id, role, content, timestamp) VALUES (?, ?, ?, ?)',
     )
-    .run(shipId, msg.role, msg.content, msg.timestamp)
+    .run(planetId, msg.role, msg.content, msg.timestamp)
 }
 
-function clearHistory(shipId: number): void {
-  getDb().prepare('DELETE FROM ship_chat_messages WHERE ship_id = ?').run(shipId)
+function clearHistory(planetId: number): void {
+  getDb().prepare('DELETE FROM planet_chat_messages WHERE planet_id = ?').run(planetId)
 }
 
-function buildShipChatLabel(shipId: number): string {
-  return `ship:${shipId}:chat`
+function buildPlanetChatLabel(planetId: number): string {
+  return `planet:${planetId}:chat`
 }
 
 function buildSystemPrompt(opts: {
-  shipName: string
+  planetName: string
   projectPath: string
   history: PersistedChatMessage[]
 }): string {
   const base = [
-    `You are the AgentYard ship-chat assistant for the project "${opts.shipName}".`,
+    `You are the AgentYard planet-chat assistant for the project "${opts.planetName}".`,
     `Working directory: ${opts.projectPath}. You have the full Claude Code toolset (Read, Edit, Write, Glob, Grep, Bash, etc.) — use it freely to explore and modify the project.`,
     '',
     'Two modes of use:',
@@ -76,10 +76,10 @@ function buildSystemPrompt(opts: {
       return `<${tag}>\n${m.content}\n</${tag}>`
     })
     .join('\n\n')
-  return `${base}\n\n## Prior conversation\nThe user has chatted with you before on this ship. Treat this as already said — do not repeat the greeting.\n\n${transcript}`
+  return `${base}\n\n## Prior conversation\nThe user has chatted with you before on this planet. Treat this as already said — do not repeat the greeting.\n\n${transcript}`
 }
 
-export interface ShipChatDeps {
+export interface PlanetChatDeps {
   manager: SessionManager
   io: TypedIOServer
   runState: RunRegistry
@@ -87,19 +87,19 @@ export interface ShipChatDeps {
 }
 
 /**
- * Owns the long-lived ship-chat session per ship. Persists transcripts to
+ * Owns the long-lived planet-chat session per planet. Persists transcripts to
  * SQLite, lazily spawns the Claude session on demand, replays history as
- * system-prompt context on restart, and tears the session down on ship
+ * system-prompt context on restart, and tears the session down on planet
  * deletion. Listens to SessionManager events for sessions it owns and
  * persists every emitted user/assistant message.
  */
-export class ShipChatRegistry {
-  /** shipId → live session id. Empty until the user opens chat for that ship. */
-  private sessionByShip = new Map<number, string>()
-  /** sessionId → shipId reverse lookup, used by event listener. */
-  private shipBySession = new Map<string, number>()
+export class PlanetChatRegistry {
+  /** planetId → live session id. Empty until the user opens chat for that planet. */
+  private sessionByPlanet = new Map<number, string>()
+  /** sessionId → planetId reverse lookup, used by event listener. */
+  private planetBySession = new Map<string, number>()
 
-  constructor(private deps: ShipChatDeps) {
+  constructor(private deps: PlanetChatDeps) {
     deps.manager.on('event', (ev: SessionEvent) => this.onSessionEvent(ev))
   }
 
@@ -110,13 +110,13 @@ export class ShipChatRegistry {
    *
    * We emit `session:added` for the live session (if any) AND replay history
    * under that session id, OR under a stable placeholder id when no live
-   * session exists yet. The client's ShipDetailsPanel does its own lookup by
+   * session exists yet. The client's PlanetDetailsPanel does its own lookup by
    * label so a placeholder id wouldn't actually match — we only replay for
    * live sessions on socket connect.
    */
   catchUpSocket(socket: TypedSocket): void {
-    for (const [shipId, sessionId] of this.sessionByShip) {
-      const history = loadHistory(shipId)
+    for (const [planetId, sessionId] of this.sessionByPlanet) {
+      const history = loadHistory(planetId)
       for (const entry of history) {
         socket.emit('agent:message', {
           agentRunId: sessionId,
@@ -129,33 +129,33 @@ export class ShipChatRegistry {
   }
 
   /**
-   * Get an existing ship-chat session or spawn a new one. The new session
+   * Get an existing planet-chat session or spawn a new one. The new session
    * is seeded with persisted transcript as system-prompt context AND those
    * historical messages are replayed back to all sockets as `agent:message`
    * events so the UI shows the full conversation immediately.
    */
-  openChat(shipId: number): Session {
-    const existingId = this.sessionByShip.get(shipId)
+  openChat(planetId: number): Session {
+    const existingId = this.sessionByPlanet.get(planetId)
     if (existingId) {
       const s = this.deps.manager.get(existingId)
       if (s) return s
       // Stale entry — session was closed under us. Fall through to respawn.
-      this.sessionByShip.delete(shipId)
-      this.shipBySession.delete(existingId)
+      this.sessionByPlanet.delete(planetId)
+      this.planetBySession.delete(existingId)
     }
 
-    const ship = getShip(shipId)
-    if (!ship) throw new Error(`Ship ${shipId} not found`)
+    const planet = getPlanet(planetId)
+    if (!planet) throw new Error(`Planet ${planetId} not found`)
 
-    const history = loadHistory(shipId)
+    const history = loadHistory(planetId)
     const systemPrompt = buildSystemPrompt({
-      shipName: ship.name,
-      projectPath: ship.projectPath,
+      planetName: planet.name,
+      projectPath: planet.projectPath,
       history,
     })
 
     const startFeatureTool = createStartFeatureTool({
-      shipId,
+      planetId,
       manager: this.deps.manager,
       io: this.deps.io,
       runState: this.deps.runState,
@@ -164,9 +164,9 @@ export class ShipChatRegistry {
 
     const session = this.deps.manager.spawn({
       role: 'free',
-      label: buildShipChatLabel(shipId),
+      label: buildPlanetChatLabel(planetId),
       systemPrompt,
-      cwd: ship.projectPath,
+      cwd: planet.projectPath,
       toolPreset: 'claude_code',
       runtimeTools: [startFeatureTool],
       // Load the user's installed Claude Code config — personal skills,
@@ -184,11 +184,11 @@ export class ShipChatRegistry {
       // and are NOT dispatchable — they return "/X isn't available in
       // this environment" no matter what systemPrompt shape we use.
       // To override, drop a custom file in ~/.claude/commands/help.md
-      // or .claude/commands/help.md inside the ship's project.
+      // or .claude/commands/help.md inside the planet's project.
       settingSources: ['user', 'project'],
     })
-    this.sessionByShip.set(shipId, session.id)
-    this.shipBySession.set(session.id, shipId)
+    this.sessionByPlanet.set(planetId, session.id)
+    this.planetBySession.set(session.id, planetId)
 
     // Replay persisted history to all connected clients under the new session
     // id so the chat UI shows the conversation immediately on open. The Claude
@@ -205,30 +205,30 @@ export class ShipChatRegistry {
     return session
   }
 
-  /** Find the live session descriptor for a ship, if one exists. */
-  describe(shipId: number): SessionDescriptor | undefined {
-    const sid = this.sessionByShip.get(shipId)
+  /** Find the live session descriptor for a planet, if one exists. */
+  describe(planetId: number): SessionDescriptor | undefined {
+    const sid = this.sessionByPlanet.get(planetId)
     if (!sid) return undefined
     const s = this.deps.manager.get(sid)
     return s ? this.deps.manager.describe(s) : undefined
   }
 
   /** Close + forget the chat session and drop all persisted history. */
-  async deleteForShip(shipId: number): Promise<void> {
-    const sid = this.sessionByShip.get(shipId)
+  async deleteForPlanet(planetId: number): Promise<void> {
+    const sid = this.sessionByPlanet.get(planetId)
     if (sid) {
-      this.sessionByShip.delete(shipId)
-      this.shipBySession.delete(sid)
+      this.sessionByPlanet.delete(planetId)
+      this.planetBySession.delete(sid)
       await this.deps.manager.destroy(sid)
     }
-    clearHistory(shipId)
+    clearHistory(planetId)
   }
 
   private onSessionEvent(ev: SessionEvent): void {
-    const shipId = this.shipBySession.get(ev.agentRunId)
-    if (shipId === undefined) return
+    const planetId = this.planetBySession.get(ev.agentRunId)
+    if (planetId === undefined) return
     if (ev.type === 'message') {
-      appendHistory(shipId, {
+      appendHistory(planetId, {
         role: ev.message.role,
         content: ev.message.text,
         timestamp: ev.message.timestamp,
@@ -236,10 +236,10 @@ export class ShipChatRegistry {
     } else if (ev.type === 'closed') {
       // The Claude SDK closed under us (e.g. model error). Drop the mapping
       // so the next openChat() respawns fresh — but keep persisted history.
-      this.sessionByShip.delete(shipId)
-      this.shipBySession.delete(ev.agentRunId)
+      this.sessionByPlanet.delete(planetId)
+      this.planetBySession.delete(ev.agentRunId)
     }
   }
 }
 
-export { buildShipChatLabel }
+export { buildPlanetChatLabel }

@@ -19,7 +19,7 @@ export type ScanContext = PathContext
 const ALL_SCOPES: ToolScope[] = ['ship', 'global', 'claude-project', 'claude-user']
 const ALL_TYPES: ToolType[] = ['skill', 'mcp', 'script', 'agent']
 
-/** Find all tools of all types across all applicable scopes. Cached per scope+type+ship. */
+/** Find all tools of all types across all applicable scopes. Cached per scope+type+planet. */
 export async function scanAllTools(ctx: ScanContext): Promise<ToolEntry[]> {
   const buckets = await Promise.all(
     ALL_SCOPES.flatMap((scope) => ALL_TYPES.map((type) => scanScopeType(scope, type, ctx))),

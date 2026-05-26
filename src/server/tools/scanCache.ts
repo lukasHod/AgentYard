@@ -2,7 +2,7 @@ import type { ToolEntry, ToolScope, ToolType } from '../../core/tools.js'
 import type { PathContext } from './paths.js'
 
 /**
- * In-memory cache for tool scans, keyed by (scope, type, shipProjectPath).
+ * In-memory cache for tool scans, keyed by (scope, type, planetProjectPath).
  *
  * Two invalidation mechanisms:
  *   - TTL: entries expire after `DEFAULT_TTL_MS` so direct on-disk edits land
@@ -23,7 +23,7 @@ const cache = new Map<string, CacheEntry>()
 let ttlMs = DEFAULT_TTL_MS
 
 function key(scope: ToolScope, type: ToolType, ctx: PathContext): string {
-  return `${scope}|${type}|${ctx.shipProjectPath ?? ''}`
+  return `${scope}|${type}|${ctx.planetProjectPath ?? ''}`
 }
 
 export function getCached(
@@ -62,12 +62,12 @@ export function invalidate(
     cache.clear()
     return
   }
-  const shipMatch = ctx?.shipProjectPath ?? ''
+  const planetMatch = ctx?.planetProjectPath ?? ''
   for (const k of [...cache.keys()]) {
-    const [s, t, ship] = k.split('|')
+    const [s, t, planet] = k.split('|')
     if (scope && s !== scope) continue
     if (type && t !== type) continue
-    if (ctx !== undefined && ship !== shipMatch) continue
+    if (ctx !== undefined && planet !== planetMatch) continue
     cache.delete(k)
   }
 }

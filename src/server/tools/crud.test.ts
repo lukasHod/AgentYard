@@ -6,14 +6,14 @@ import path from 'node:path'
 import { deleteTool, writeTool } from './crud.js'
 
 interface Tmp {
-  ctx: { shipProjectPath: string }
+  ctx: { planetProjectPath: string }
   cleanup: () => void
 }
 
 function makeTmp(): Tmp {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'ay-crud-'))
   return {
-    ctx: { shipProjectPath: dir },
+    ctx: { planetProjectPath: dir },
     cleanup: () => {
       try {
         rmSync(dir, { recursive: true, force: true })
@@ -70,7 +70,7 @@ test('writeTool accepts a valid name and writes inside the ship root', () => {
       ctx,
     )
     // Must land under the ship's .agentyard folder, NOT outside.
-    const root = path.join(ctx.shipProjectPath, '.agentyard')
+    const root = path.join(ctx.planetProjectPath, '.agentyard')
     assert.ok(
       target.startsWith(root + path.sep) || target === root,
       `target ${target} should be inside ${root}`,

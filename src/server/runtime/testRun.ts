@@ -5,11 +5,11 @@ import type { SessionEvent } from './Session.js'
 import { runWorkflowOnSessions } from './runWorkflowOnSessions.js'
 import { createTestWorktree, removeTestWorktree } from './worktrees.js'
 import type { Workflow, WorkflowNode } from '../../core/schema.js'
-import type { Ship } from '../ships.js'
+import type { Ship } from '../planets.js'
 import type { TypedIOServer } from '../socketTypes.js'
 
 export interface TestRunStartOptions {
-  ship: Ship
+  planet: Ship
   workflow: Workflow
   task: string
   scope: 'workflow' | 'node'
@@ -21,7 +21,7 @@ export interface TestRunStartOptions {
 
 interface TestRunState {
   testRunId: string
-  ship: Ship
+  planet: Ship
   manager: SessionManager
   worktreePath: string
   worktreeBranch: string
@@ -35,7 +35,7 @@ interface TestRunState {
  * Owns all in-flight sandbox test runs.
  *
  * Each test run gets:
- *   - Its own disposable git worktree off the ship's current HEAD
+ *   - Its own disposable git worktree off the planet's current HEAD
  *   - Its own SessionManager (no overlap with the real run state)
  *   - Scoped socket.io events (`test-run:*`) carrying its testRunId
  *
@@ -50,17 +50,17 @@ export class TestRunRegistry {
   /** Kick off a new test run. Returns the testRunId immediately; the run executes async. */
   async start(opts: TestRunStartOptions): Promise<string> {
     const testRunId = `test-${randomUUID().slice(0, 8)}`
-    const { ship, workflow, task, scope, nodeId, upstreamOutputs = '' } = opts
+    const { planet, workflow, task, scope, nodeId, upstreamOutputs = '' } = opts
 
     const wfToRun = buildWorkflowForScope(workflow, scope, nodeId, upstreamOutputs)
-    const wt = await createTestWorktree({ shipPath: ship.projectPath, testRunId })
+    const wt = await createTestWorktree({ planetPath: planet.projectPath, testRunId })
 
     const manager = new SessionManager()
     const detach = this.wireManagerToSocket(manager, testRunId)
 
     const state: TestRunState = {
       testRunId,
-      ship,
+      planet,
       manager,
       worktreePath: wt.path,
       worktreeBranch: wt.branch,
@@ -141,7 +141,7 @@ export class TestRunRegistry {
         workflow,
         task,
         manager: state.manager,
-        ctx: { shipProjectPath: state.ship.projectPath },
+        ctx: { planetProjectPath: state.planet.projectPath },
         cwd: state.worktreePath,
         emit: (ev) => {
           if (state.aborted) return
@@ -259,7 +259,7 @@ export class TestRunRegistry {
     }
     state.detach()
     try {
-      await removeTestWorktree(state.ship.projectPath, state.worktreePath, state.worktreeBranch)
+      await removeTestWorktree(state.planet.projectPath, state.worktreePath, state.worktreeBranch)
     } catch {
       // best effort
     }

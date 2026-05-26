@@ -4,7 +4,7 @@ export type FeatureStatus = 'pending' | 'running' | 'complete' | 'failed'
 
 export interface Feature {
   id: number
-  shipId: number
+  planetId: number
   name: string
   task: string
   branch: string | null
@@ -18,7 +18,7 @@ export interface Feature {
 
 interface FeatureRow {
   id: number
-  ship_id: number
+  planet_id: number
   name: string
   task: string
   branch: string | null
@@ -33,7 +33,7 @@ interface FeatureRow {
 function rowToFeature(row: FeatureRow): Feature {
   return {
     id: row.id,
-    shipId: row.ship_id,
+    planetId: row.planet_id,
     name: row.name,
     task: row.task,
     branch: row.branch,
@@ -48,10 +48,10 @@ function rowToFeature(row: FeatureRow): Feature {
 
 const features = createRepo<FeatureRow, Feature>(rowToFeature)
 
-export function listFeatures(shipId: number): Feature[] {
+export function listFeatures(planetId: number): Feature[] {
   return features.all(
-    'SELECT * FROM features WHERE ship_id = ? ORDER BY created_at DESC',
-    shipId,
+    'SELECT * FROM features WHERE planet_id = ? ORDER BY created_at DESC',
+    planetId,
   )
 }
 
@@ -60,7 +60,7 @@ export function getFeature(id: number): Feature | undefined {
 }
 
 export function createFeature(opts: {
-  shipId: number
+  planetId: number
   name: string
   task: string
   workflowId: number
@@ -68,9 +68,9 @@ export function createFeature(opts: {
   const info = features
     .db()
     .prepare(
-      'INSERT INTO features (ship_id, name, task, status, created_at, workflow_id) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO features (planet_id, name, task, status, created_at, workflow_id) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    .run(opts.shipId, opts.name, opts.task, 'pending', Date.now(), opts.workflowId)
+    .run(opts.planetId, opts.name, opts.task, 'pending', Date.now(), opts.workflowId)
   return getFeature(Number(info.lastInsertRowid))!
 }
 

@@ -74,7 +74,7 @@ export interface SessionOptions {
   /**
    * Which on-disk settings sources the SDK loads (defaults to none — keeps
    * workflow drones/leaders sandboxed from the user's personal config).
-   * Set to `['user', 'project']` for ship-chat to pick up the user's
+   * Set to `['user', 'project']` for planet-chat to pick up the user's
    * installed skills and personal MCP server configs from `~/.claude/` +
    * `<cwd>/.claude/`.
    *
@@ -82,7 +82,7 @@ export interface SessionOptions {
    * built-in Claude Code slash commands (`/help`, `/clear`, `/mcp`, ...)
    * via streamed user input — those are rejected with "isn't available in
    * this environment" regardless of which systemPrompt shape we use. See
-   * src/server/shipChat.ts for the workaround surface.
+   * src/server/planetChat.ts for the workaround surface.
    */
   settingSources?: ('user' | 'project' | 'local')[]
   /**

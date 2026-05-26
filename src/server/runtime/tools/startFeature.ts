@@ -7,7 +7,7 @@ import {
   updateFeature,
   type Feature,
 } from '../../features.js'
-import { getShip } from '../../ships.js'
+import { getPlanet } from '../../planets.js'
 import { getWorkflow, listWorkflows } from '../../workflows.js'
 import type { RunRegistry } from '../../runState.js'
 import type { SessionManager } from '../SessionManager.js'
@@ -16,7 +16,7 @@ import { createFeatureWorktree } from '../worktrees.js'
 import { runWorkflowOnSessions } from '../runWorkflowOnSessions.js'
 
 export interface StartFeatureDeps {
-  shipId: number
+  planetId: number
   manager: SessionManager
   io: TypedIOServer
   runState: RunRegistry
@@ -24,15 +24,15 @@ export interface StartFeatureDeps {
 }
 
 /**
- * Tool given to ship-chat agents so the user can spawn a feature from chat
- * instead of the form. Mirrors POST /api/ships/:id/features so behaviour
+ * Tool given to planet-chat agents so the user can spawn a feature from chat
+ * instead of the form. Mirrors POST /api/planets/:id/features so behaviour
  * stays in sync — same gating (one active feature per server), same
  * worktree creation, same workflow runner, same socket events.
  */
 export function createStartFeatureTool(deps: StartFeatureDeps) {
   return tool(
     'start_feature',
-    'Start a new feature on this ship. Creates a git worktree off the ship\'s current branch and kicks off the ship\'s workflow against the task. Use this when the user wants you to BUILD something (not just answer questions). Confirm the task wording with the user first if it is ambiguous.',
+    'Start a new feature on this planet. Creates a git worktree off the planet\'s current branch and kicks off the planet\'s workflow against the task. Use this when the user wants you to BUILD something (not just answer questions). Confirm the task wording with the user first if it is ambiguous.',
     {
       name: z
         .string()
@@ -48,11 +48,11 @@ export function createStartFeatureTool(deps: StartFeatureDeps) {
         ),
     },
     async (args) => {
-      const ship = getShip(deps.shipId)
-      if (!ship) {
+      const planet = getPlanet(deps.planetId)
+      if (!planet) {
         return {
           isError: true,
-          content: [{ type: 'text', text: `Ship ${deps.shipId} no longer exists.` }],
+          content: [{ type: 'text', text: `Planet ${deps.planetId} no longer exists.` }],
         }
       }
 
@@ -72,11 +72,11 @@ export function createStartFeatureTool(deps: StartFeatureDeps) {
         }
       }
 
-      const workflowId = ship.workflowId ?? listWorkflows()[0]?.id
+      const workflowId = planet.workflowId ?? listWorkflows()[0]?.id
       if (typeof workflowId !== 'number') {
         return {
           isError: true,
-          content: [{ type: 'text', text: 'No workflow is configured for this ship.' }],
+          content: [{ type: 'text', text: 'No workflow is configured for this planet.' }],
         }
       }
       const wf = getWorkflow(workflowId)
@@ -88,7 +88,7 @@ export function createStartFeatureTool(deps: StartFeatureDeps) {
       }
 
       let feature: Feature = createFeature({
-        shipId: ship.id,
+        planetId: planet.id,
         name: args.name.trim(),
         task: args.task,
         workflowId,
@@ -99,7 +99,7 @@ export function createStartFeatureTool(deps: StartFeatureDeps) {
       let cwd: string
       try {
         const wt = await createFeatureWorktree({
-          shipPath: ship.projectPath,
+          planetPath: planet.projectPath,
           featureId: feature.id,
           featureName: feature.name,
         })
@@ -128,7 +128,7 @@ export function createStartFeatureTool(deps: StartFeatureDeps) {
         workflow: wf,
         task: args.task,
         manager: deps.manager,
-        ctx: { shipProjectPath: ship.projectPath },
+        ctx: { planetProjectPath: planet.projectPath },
         cwd,
         signal: controller.signal,
         emit: (ev) => {
@@ -161,7 +161,7 @@ export function createStartFeatureTool(deps: StartFeatureDeps) {
         content: [
           {
             type: 'text',
-            text: `Feature "${feature.name}" (#${feature.id}) created on branch \`${feature.branch ?? '?'}\` — workflow is running. You can follow progress in the Run view or in the ship's features tab.`,
+            text: `Feature "${feature.name}" (#${feature.id}) created on branch \`${feature.branch ?? '?'}\` — workflow is running. You can follow progress in the Run view or in the planet's features tab.`,
           },
         ],
       }

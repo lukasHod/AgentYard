@@ -25,7 +25,7 @@ export interface RunWorkflowOptions {
   workflow: Workflow
   task: string
   manager: SessionManager
-  /** Library-scan context — needs shipProjectPath for ship-scoped tool resolution. */
+  /** Library-scan context — needs planetProjectPath for planet-scoped tool resolution. */
   ctx: ScanContext
   emit: (event: RunEvent) => void
   /** Working directory for AI drones / script nodes (feature worktree). */

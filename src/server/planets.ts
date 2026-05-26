@@ -13,7 +13,7 @@ export interface Ship {
   pathExists: boolean
 }
 
-interface ShipRow {
+interface PlanetRow {
   id: number
   name: string
   project_path: string
@@ -22,7 +22,7 @@ interface ShipRow {
   created_at: number
 }
 
-function rowToShip(row: ShipRow): Ship {
+function rowToPlanet(row: PlanetRow): Ship {
   return {
     id: row.id,
     name: row.name,
@@ -34,17 +34,17 @@ function rowToShip(row: ShipRow): Ship {
   }
 }
 
-const ships = createRepo<ShipRow, Ship>(rowToShip)
+const planets = createRepo<PlanetRow, Ship>(rowToPlanet)
 
-export function listShips(): Ship[] {
-  return ships.all('SELECT * FROM ships ORDER BY created_at DESC')
+export function listPlanets(): Ship[] {
+  return planets.all('SELECT * FROM planets ORDER BY created_at DESC')
 }
 
-export function getShip(id: number): Ship | undefined {
-  return ships.one('SELECT * FROM ships WHERE id = ?', id)
+export function getPlanet(id: number): Ship | undefined {
+  return planets.one('SELECT * FROM planets WHERE id = ?', id)
 }
 
-export async function createShip(opts: {
+export async function createPlanet(opts: {
   name: string
   projectPath: string
   workflowId?: number | null
@@ -60,21 +60,21 @@ export async function createShip(opts: {
     throw new Error(`Project path is not a git repository: ${opts.projectPath}`)
   }
 
-  const info = ships
+  const info = planets
     .db()
     .prepare(
-      'INSERT INTO ships (name, project_path, workflow_id, state, created_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO planets (name, project_path, workflow_id, state, created_at) VALUES (?, ?, ?, ?, ?)',
     )
     .run(opts.name.trim(), opts.projectPath, opts.workflowId ?? null, 'idle', Date.now())
-  return getShip(Number(info.lastInsertRowid))!
+  return getPlanet(Number(info.lastInsertRowid))!
 }
 
-export function deleteShip(id: number): void {
-  const db = ships.db()
-  db.prepare('DELETE FROM features WHERE ship_id = ?').run(id)
-  db.prepare('DELETE FROM ships WHERE id = ?').run(id)
+export function deletePlanet(id: number): void {
+  const db = planets.db()
+  db.prepare('DELETE FROM features WHERE planet_id = ?').run(id)
+  db.prepare('DELETE FROM planets WHERE id = ?').run(id)
 }
 
-export function setShipState(id: number, state: string): void {
-  ships.db().prepare('UPDATE ships SET state = ? WHERE id = ?').run(state, id)
+export function setPlanetState(id: number, state: string): void {
+  planets.db().prepare('UPDATE planets SET state = ? WHERE id = ?').run(state, id)
 }
