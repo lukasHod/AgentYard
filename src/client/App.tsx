@@ -9,6 +9,7 @@ import { apiGet } from './api'
 import type { FeatureSummary, PlanetSummary } from '../core/types'
 import { Toasts } from './components/Toasts'
 import { SolarSystemScene } from './scene/SolarSystemScene'
+import { BackOutHandler } from './components/hud/BackOutHandler'
 
 export function App() {
   useEffect(() => {
@@ -38,6 +39,7 @@ export function App() {
           <SolarSystemScene />
         </Canvas>
       </div>
+      <BackOutHandler />
       <Toasts />
     </main>
   )
