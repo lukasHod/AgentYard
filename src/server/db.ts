@@ -36,6 +36,17 @@ CREATE TABLE IF NOT EXISTS features (
   error         TEXT,
   created_at    INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ship_chat_messages (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  ship_id   INTEGER NOT NULL,
+  role      TEXT NOT NULL,
+  content   TEXT NOT NULL,
+  timestamp INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ship_chat_messages_ship
+  ON ship_chat_messages(ship_id, id);
 `
 
 export type DB = Database.Database

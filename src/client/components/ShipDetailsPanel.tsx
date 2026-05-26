@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   FeatureSummary,
   SessionDescriptor,
   ShipSummary,
 } from '../../core/types'
-import { apiGet } from '../api'
+import { apiGet, apiPost } from '../api'
+import { pushToast } from '../state/toastStore'
 import { AgentChat, type AgentChatMessage, type AgentChatPending } from './AgentChat'
 import { ToolsTabContent } from './ToolsTabContent'
 import { EmptyMessage } from './ui/EmptyMessage'
@@ -101,12 +102,63 @@ export function ShipDetailsPanel(props: Props) {
   }, [tab, description, ship.id, ship.projectPath])
 
   const runningFeature = features.find((f) => f.status === 'running')
-  const leader = useMemo(
-    () => (runningFeature ? sessions.find((s) => s.role === 'leader') : undefined),
-    [runningFeature, sessions],
+
+  // The chat tab is anchored to a long-lived ship-chat session identified by
+  // the label `ship:<id>:chat` — NOT the transient feature-run leader. The
+  // session is created lazily the first time the user opens the chat for this
+  // ship and persists across tab/ship switches until the ship is deleted.
+  const chatLabel = `ship:${ship.id}:chat`
+  const chatSession = useMemo(
+    () => sessions.find((s) => s.label === chatLabel),
+    [sessions, chatLabel],
   )
 
-  const chatBadge = leader && pendings.get(leader.id) ? '●' : null
+  const [chatOpening, setChatOpening] = useState(false)
+  // A prior failure inhibits the auto-open useEffect from spinning indefinitely
+  // — the user can still hit the manual retry button to clear it.
+  const [chatOpenError, setChatOpenError] = useState<string | null>(null)
+  const openChat = useCallback(async () => {
+    setChatOpening(true)
+    setChatOpenError(null)
+    const res = await apiPost(`/api/ships/${ship.id}/chat/open`)
+    setChatOpening(false)
+    if (!res.ok) {
+      setChatOpenError(res.error)
+      pushToast('error', `Couldn't open chat: ${res.error}`)
+    }
+    // On success the server emits `session:added` which lands in the store and
+    // the panel re-renders with `chatSession` populated.
+  }, [ship.id])
+
+  // Reset the cached error when the user switches ships so the next ship's
+  // chat tab gets a fresh auto-open attempt.
+  useEffect(() => {
+    setChatOpenError(null)
+  }, [ship.id])
+
+  // Auto-open the chat the moment the user switches to the CHAT tab. Gated
+  // on: no live session yet, not already opening, no prior failure, socket
+  // connected, project path exists on disk. The manual button is preserved
+  // as a retry path for the error case.
+  useEffect(() => {
+    if (tab !== 'chat') return
+    if (chatSession) return
+    if (chatOpening) return
+    if (chatOpenError !== null) return
+    if (!connected) return
+    if (!ship.pathExists) return
+    void openChat()
+  }, [
+    tab,
+    chatSession,
+    chatOpening,
+    chatOpenError,
+    connected,
+    ship.pathExists,
+    openChat,
+  ])
+
+  const chatBadge = chatSession && pendings.get(chatSession.id) ? '●' : null
 
   return (
     <div className="flex flex-col h-full text-xs">
@@ -185,21 +237,42 @@ export function ShipDetailsPanel(props: Props) {
         )}
         {tab === 'chat' && (
           <div className="h-full min-h-0">
-            {leader ? (
+            {chatSession ? (
               <AgentChat
-                agentRunId={leader.id}
-                label={leader.label ?? 'leader'}
-                role={leader.role}
-                state={leader.state}
-                transcript={transcripts.get(leader.id) ?? []}
-                pending={pendings.get(leader.id) ?? null}
+                agentRunId={chatSession.id}
+                label={ship.name}
+                role={chatSession.role}
+                state={chatSession.state}
+                transcript={transcripts.get(chatSession.id) ?? []}
+                pending={pendings.get(chatSession.id) ?? null}
                 connected={connected}
-                onSend={(c) => onSend(leader.id, c)}
-                onReply={(t, a) => onClarificationReply(leader.id, t, a)}
+                onSend={(c) => onSend(chatSession.id, c)}
+                onReply={(t, a) => onClarificationReply(chatSession.id, t, a)}
               />
+            ) : chatOpening ? (
+              <div className="h-full flex items-center justify-center p-4">
+                <span className="text-cyan-300 text-xs tracking-widest animate-pulse">
+                  ◌ opening chat…
+                </span>
+              </div>
             ) : (
-              <div className="h-full flex items-center justify-center p-4 text-center">
-                <EmptyMessage>no active leader for this ship. start a new feature to bring one online.</EmptyMessage>
+              <div className="h-full flex flex-col items-center justify-center gap-3 p-4 text-center">
+                <EmptyMessage>
+                  {chatOpenError
+                    ? `couldn't open chat: ${chatOpenError}`
+                    : !ship.pathExists
+                      ? 'ship project path is missing on disk — restore the path or delete the ship.'
+                      : !connected
+                        ? 'offline — reconnect to the server to open the chat.'
+                        : 'no chat yet.'}
+                </EmptyMessage>
+                <button
+                  onClick={openChat}
+                  disabled={chatOpening || !connected || !ship.pathExists}
+                  className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  {chatOpenError ? '⟳ retry' : '▶ open chat'}
+                </button>
               </div>
             )}
           </div>

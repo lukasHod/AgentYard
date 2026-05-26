@@ -4,7 +4,7 @@ import { simpleGit } from 'simple-git'
 import { createShip, deleteShip, getShip, listShips } from '../ships.js'
 import type { AppContext } from './context.js'
 
-export function registerShipRoutes({ app, io, apiError }: AppContext): void {
+export function registerShipRoutes({ app, io, shipChats, manager, apiError }: AppContext): void {
   app.get('/api/ships', async () => listShips())
 
   app.get<{ Params: { id: string } }>('/api/ships/:id', async (req, reply) => {
@@ -34,9 +34,33 @@ export function registerShipRoutes({ app, io, apiError }: AppContext): void {
   )
 
   app.delete<{ Params: { id: string } }>('/api/ships/:id', async (req) => {
-    deleteShip(Number(req.params.id))
-    io.emit('ship:deleted', { id: Number(req.params.id) })
+    const shipId = Number(req.params.id)
+    // Tear down the chat session (if any) + drop its transcript BEFORE the
+    // ship row is gone, so the session's tools (start_feature) can still
+    // resolve the ship during graceful close.
+    await shipChats.deleteForShip(shipId)
+    deleteShip(shipId)
+    io.emit('ship:deleted', { id: shipId })
     return { ok: true }
+  })
+
+  app.post<{ Params: { id: string } }>('/api/ships/:id/chat/open', async (req, reply) => {
+    const shipId = Number(req.params.id)
+    const ship = getShip(shipId)
+    if (!ship) return reply.code(404).send({ error: 'ship not found' })
+    if (!ship.pathExists) {
+      return apiError(
+        reply,
+        400,
+        'Ship project path is missing on disk — cannot start chat.',
+      )
+    }
+    try {
+      const session = shipChats.openChat(shipId)
+      return manager.describe(session)
+    } catch (e) {
+      return apiError(reply, 500, 'failed to open ship chat', e)
+    }
   })
 
   app.get<{ Params: { id: string } }>('/api/ships/:id/description', async (req, reply) => {

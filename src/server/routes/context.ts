@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { SessionManager } from '../runtime/SessionManager.js'
 import type { TestRunRegistry } from '../runtime/testRun.js'
 import type { RunRegistry } from '../runState.js'
+import type { ShipChatRegistry } from '../shipChat.js'
 import type { TranscriptStore } from '../transcriptStore.js'
 import type { TypedIOServer } from '../socketTypes.js'
 
@@ -17,6 +18,7 @@ export interface AppContext {
   testRuns: TestRunRegistry
   runState: RunRegistry
   transcripts: TranscriptStore
+  shipChats: ShipChatRegistry
   apiError: (
     reply: FastifyReply,
     code: number,

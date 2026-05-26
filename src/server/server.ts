@@ -14,6 +14,7 @@ import { seedDefaultAgentsIfMissing } from './agentsSeed.js'
 import { seedDefaultScriptsIfMissing } from './scriptsSeed.js'
 import { ensureDefaultWorkflow } from './workflows.js'
 import { RunRegistry } from './runState.js'
+import { ShipChatRegistry } from './shipChat.js'
 import { TranscriptStore } from './transcriptStore.js'
 import { wireSocketHandlers } from './socketHandlers.js'
 import type { TypedIOServer } from './socketTypes.js'
@@ -88,6 +89,7 @@ export async function startServer(opts: ServerOptions) {
   const transcripts = new TranscriptStore(io)
   const runState = new RunRegistry(io)
   const testRuns = new TestRunRegistry(io)
+  const shipChats = new ShipChatRegistry({ manager, io, runState, log: app.log })
 
   manager.on('session:added', (desc: SessionDescriptor) => transcripts.onSessionAdded(desc))
   manager.on('session:removed', (ev: { id: string }) => transcripts.onSessionRemoved(ev))
@@ -96,7 +98,16 @@ export async function startServer(opts: ServerOptions) {
     transcripts.onSessionEvent(ev)
   })
 
-  const ctx: AppContext = { app, io, manager, testRuns, runState, transcripts, apiError }
+  const ctx: AppContext = {
+    app,
+    io,
+    manager,
+    testRuns,
+    runState,
+    transcripts,
+    shipChats,
+    apiError,
+  }
   wireSocketHandlers(ctx)
   registerHealthRoutes(ctx)
   registerWorkflowRoutes(ctx)
