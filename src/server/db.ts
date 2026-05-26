@@ -7,7 +7,7 @@ const DB_DIR = path.join(homedir(), '.agentyard')
 const DB_PATH = path.join(DB_DIR, 'agentyard.db')
 
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS ships (
+CREATE TABLE IF NOT EXISTS planets (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   name         TEXT NOT NULL,
   project_path TEXT NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS workflows (
 
 CREATE TABLE IF NOT EXISTS features (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  ship_id       INTEGER NOT NULL,
+  planet_id     INTEGER NOT NULL,
   name          TEXT NOT NULL,
   task          TEXT NOT NULL DEFAULT '',
   branch        TEXT,
@@ -37,21 +37,42 @@ CREATE TABLE IF NOT EXISTS features (
   created_at    INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS ship_chat_messages (
+CREATE TABLE IF NOT EXISTS planet_chat_messages (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
-  ship_id   INTEGER NOT NULL,
+  planet_id INTEGER NOT NULL,
   role      TEXT NOT NULL,
   content   TEXT NOT NULL,
   timestamp INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_ship_chat_messages_ship
-  ON ship_chat_messages(ship_id, id);
+CREATE INDEX IF NOT EXISTS idx_planet_chat_messages_planet
+  ON planet_chat_messages(planet_id, id);
 `
 
 export type DB = Database.Database
 
 let _db: DB | null = null
+
+function tableExists(db: DB, name: string): boolean {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(name)
+}
+
+function runRenameMigration(db: DB) {
+  // Only act if the legacy `ships` table exists AND `planets` doesn't.
+  if (tableExists(db, 'ships') && !tableExists(db, 'planets')) {
+    db.transaction(() => {
+      db.exec(`
+        ALTER TABLE ships RENAME TO planets;
+        ALTER TABLE features RENAME COLUMN ship_id TO planet_id;
+        ALTER TABLE ship_chat_messages RENAME TO planet_chat_messages;
+        ALTER TABLE planet_chat_messages RENAME COLUMN ship_id TO planet_id;
+        DROP INDEX IF EXISTS idx_ship_chat_messages_ship;
+        CREATE INDEX IF NOT EXISTS idx_planet_chat_messages_planet
+          ON planet_chat_messages(planet_id, id);
+      `)
+    })()
+  }
+}
 
 export function getDb(): DB {
   if (_db) return _db
@@ -59,6 +80,7 @@ export function getDb(): DB {
   const db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  runRenameMigration(db)
   db.exec(SCHEMA)
   _db = db
   return db
