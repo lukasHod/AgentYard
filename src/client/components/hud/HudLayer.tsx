@@ -1,6 +1,7 @@
 import { useUiStore } from '../../state/uiStore'
 import { FocusedPanel } from './FocusedPanel'
 import { AmbientHUD } from './AmbientHUD'
+import { NotificationDeck } from './NotificationDeck'
 
 export function HudLayer() {
   const focus = useUiStore((s) => s.focus)
@@ -16,6 +17,7 @@ export function HudLayer() {
           <FocusedPanel />
         </div>
       )}
+      <NotificationDeck />
     </div>
   )
 }
