@@ -215,15 +215,30 @@ function RunTabContent({
 // ChatPanelBody
 // ---------------------------------------------------------------------------
 
-function ChatPanelBody({ planet }: { planet: PlanetSummary }) {
+function ChatPanelBody({
+  planet,
+  targetSessionId,
+}: {
+  planet: PlanetSummary
+  /** Explicit session to render; null → auto-open the planet's ambient chat (LOD 1). */
+  targetSessionId: string | null
+}) {
   const sessions = useSessionList()
   const transcripts = useTranscriptsMap()
   const pendings = usePendingsMap()
   const connected = useConnected()
+
   const chatLabel = `planet:${planet.id}:chat`
-  const session = useMemo(
+  const ambientSession = useMemo(
     () => sessions.find((s) => s.label === chatLabel),
     [sessions, chatLabel],
+  )
+  const session = useMemo(
+    () =>
+      targetSessionId
+        ? (sessions.find((s) => s.id === targetSessionId) ?? null)
+        : (ambientSession ?? null),
+    [targetSessionId, sessions, ambientSession],
   )
 
   const [opening, setOpening] = useState(false)
@@ -248,14 +263,25 @@ function ChatPanelBody({ planet }: { planet: PlanetSummary }) {
     // the panel re-renders with `session` populated.
   }, [planet.id])
 
-  // Auto-open when entering a planet that has no session yet.
-  // Gated on: not already opening, no prior error, socket connected, planet pathExists.
+  // Auto-open when entering a planet that has no ambient session yet.
+  // Only fires at LOD 1 (targetSessionId === null); at LOD 2 the drone session
+  // is managed by the server, not by the client.
   useEffect(() => {
+    if (targetSessionId !== null) return
     if (session || opening || openErr || !connected || !planet.pathExists) return
     void open()
-  }, [session, opening, openErr, connected, planet.pathExists, open])
+  }, [targetSessionId, session, opening, openErr, connected, planet.pathExists, open])
 
   if (!session) {
+    // At LOD 2 with an explicit targetSessionId: the drone is simply not connected yet.
+    if (targetSessionId !== null) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
+          <EmptyMessage>this drone has no live session yet.</EmptyMessage>
+        </div>
+      )
+    }
+    // LOD 1 ambient-chat empty state with retry button.
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
         <EmptyMessage>
@@ -291,6 +317,59 @@ function ChatPanelBody({ planet }: { planet: PlanetSummary }) {
       onSend={(c) => sendAgentMessage(session.id, c)}
       onReply={(t, a) => emitReply(session.id, t, a)}
     />
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ShipInfoPanel — left panel content at LOD 2
+// ---------------------------------------------------------------------------
+
+function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
+  return (
+    <>
+      <div className="text-xs tracking-widest text-slate-400">FEATURE</div>
+      <h3 className="text-sky-100 text-lg mt-1">{feature.name}</h3>
+      <p className="text-sm text-slate-300 mt-2 whitespace-pre-wrap">{feature.task}</p>
+
+      <div className="text-xs tracking-widest text-slate-400 mt-4">STATUS</div>
+      <p
+        className={
+          feature.status === 'running'
+            ? 'text-sky-300 text-sm mt-1'
+            : feature.status === 'complete'
+              ? 'text-emerald-300 text-sm mt-1'
+              : feature.status === 'failed'
+                ? 'text-rose-400 text-sm mt-1'
+                : 'text-slate-400 text-sm mt-1'
+        }
+      >
+        {feature.status}
+      </p>
+
+      <div className="text-xs tracking-widest text-slate-400 mt-4">WORKFLOW</div>
+      <p className="text-sm text-slate-300 mt-1">workflow #{feature.workflowId}</p>
+
+      {feature.branch && (
+        <>
+          <div className="text-xs tracking-widest text-slate-400 mt-4">BRANCH</div>
+          <p className="text-xs font-mono text-slate-300 mt-1 break-all">{feature.branch}</p>
+        </>
+      )}
+
+      {feature.finalSummary && (
+        <>
+          <div className="text-xs tracking-widest text-emerald-300 mt-4">SUMMARY</div>
+          <p className="text-sm text-slate-200 whitespace-pre-wrap mt-1">{feature.finalSummary}</p>
+        </>
+      )}
+
+      {feature.error && (
+        <>
+          <div className="text-xs tracking-widest text-rose-300 mt-4">ERROR</div>
+          <p className="text-sm text-rose-200 whitespace-pre-wrap mt-1">{feature.error}</p>
+        </>
+      )}
+    </>
   )
 }
 
@@ -345,11 +424,32 @@ export function FocusedPanel() {
   const splitterRatio = useUiStore((s) => s.splitterRatio)
   const setSplitterRatio = useUiStore((s) => s.setSplitterRatio)
   const planets = usePlanets()
+  const sessions = useSessionList()
+  const features = useFeaturesMap()
 
-  const planetId = focus.lod === 1 && 'planetId' in focus ? focus.planetId
-                 : focus.lod === 2 ? focus.planetId
-                 : null
-  const planet = planetId !== null ? planets.find((p) => p.id === planetId) ?? null : null
+  const planetId =
+    focus.lod === 1 && 'planetId' in focus
+      ? focus.planetId
+      : focus.lod === 2
+        ? focus.planetId
+        : null
+  const planet = planetId !== null ? (planets.find((p) => p.id === planetId) ?? null) : null
+
+  const focusedFeature = useMemo(
+    () =>
+      focus.lod === 2
+        ? ((features.get(focus.planetId) ?? []).find((f) => f.id === focus.shipFeatureId) ?? null)
+        : null,
+    [focus, features],
+  )
+
+  const targetSessionId = useMemo(() => {
+    if (focus.lod !== 2) return null // LOD 1 → null → ChatPanelBody opens the ambient chat
+    if (focus.chatDroneId) return focus.chatDroneId
+    // Default at LOD 2: bind to the leader session for this feature.
+    const leader = sessions.find((s) => s.role === 'leader')
+    return leader?.id ?? null
+  }, [focus, sessions])
 
   if (!planet) return null
 
@@ -358,7 +458,9 @@ export function FocusedPanel() {
       {/* Top bar */}
       <GlassPanel className="flex items-center justify-between px-4 py-2 mb-3">
         <div className="flex items-center gap-3">
-          <GlassButton variant="ghost" onClick={() => back()}>← system</GlassButton>
+          <GlassButton variant="ghost" onClick={() => back()}>
+            ← system
+          </GlassButton>
           <span className="font-semibold tracking-wide">{planet.name}</span>
           <span className="font-mono text-xs text-slate-400">{planet.projectPath}</span>
         </div>
@@ -373,15 +475,22 @@ export function FocusedPanel() {
       <div className="relative" style={{ height: 'calc(100% - 80px)' }}>
         <div className="absolute inset-y-0 left-0 p-2" style={{ width: `${splitterRatio * 100}%` }}>
           <GlassPanel className="h-full p-4 overflow-y-auto">
-            <InfoPanelBody planet={planet} />
+            {focus.lod === 2 && focusedFeature ? (
+              <ShipInfoPanel feature={focusedFeature} />
+            ) : (
+              <InfoPanelBody planet={planet} />
+            )}
           </GlassPanel>
         </div>
 
         <GlassSplitter ratio={splitterRatio} onChange={setSplitterRatio} />
 
-        <div className="absolute inset-y-0 right-0 p-2" style={{ left: `${splitterRatio * 100}%`, paddingLeft: 12 }}>
+        <div
+          className="absolute inset-y-0 right-0 p-2"
+          style={{ left: `${splitterRatio * 100}%`, paddingLeft: 12 }}
+        >
           <GlassPanel className="h-full p-4 overflow-hidden">
-            <ChatPanelBody planet={planet} />
+            <ChatPanelBody planet={planet} targetSessionId={targetSessionId} />
           </GlassPanel>
         </div>
       </div>
