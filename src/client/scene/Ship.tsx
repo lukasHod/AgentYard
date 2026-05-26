@@ -1,7 +1,8 @@
 // src/client/scene/Ship.tsx
 import { useGLTF, useAnimations } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { GlbErrorBoundary } from './ErrorBoundaries'
 import { Color, Group, Mesh, MeshStandardMaterial, Material } from 'three'
 import type { FeatureSummary, SessionDescriptor } from '../../core/types'
 import { deriveShipParams } from './lib/shipParams'
@@ -41,7 +42,7 @@ const BASE_SCALE = 0.3
  *  completing → cyan flash (FLASH_DURATION) then fade-out (COMPLETE_FADE_DURATION), then onDespawned
  *  failing    → rose flash (FLASH_DURATION) then fade-out (FAIL_FADE_DURATION), then onDespawned
  */
-export function Ship({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds, onDespawned }: ShipProps) {
+function ShipImpl({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds, onDespawned }: ShipProps) {
   const params = useMemo(() => deriveShipParams(feature.id, feature.name), [feature.id, feature.name])
   const gltf = useGLTF(params.modelUrl)
   const groupRef = useRef<Group>(null)
@@ -191,6 +192,25 @@ export function Ship({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds
         ))}
       </group>
     </group>
+  )
+}
+
+function GhostShip() {
+  return (
+    <mesh>
+      <boxGeometry args={[0.4, 0.4, 0.4]} />
+      <meshStandardMaterial color="#475569" emissive="#94a3b8" emissiveIntensity={0.4} />
+    </mesh>
+  )
+}
+
+export function Ship(props: ShipProps) {
+  return (
+    <GlbErrorBoundary fallback={<GhostShip />}>
+      <Suspense fallback={<GhostShip />}>
+        <ShipImpl {...props} />
+      </Suspense>
+    </GlbErrorBoundary>
   )
 }
 

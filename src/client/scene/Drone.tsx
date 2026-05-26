@@ -1,7 +1,8 @@
 // src/client/scene/Drone.tsx
 import { useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { Suspense, useMemo, useRef } from 'react'
+import { GlbErrorBoundary } from './ErrorBoundaries'
 import { Color, Group, Mesh, MeshStandardMaterial, Material } from 'three'
 import type { SessionDescriptor } from '../../core/types'
 
@@ -16,7 +17,7 @@ interface DroneProps {
 
 const DRONE_URL = '/models/drones/drone.glb'
 
-export function Drone({ session, orbitRadius, orbitAngle, bobPhase, pending, onClick }: DroneProps) {
+function DroneImpl({ session, orbitRadius, orbitAngle, bobPhase, pending, onClick }: DroneProps) {
   const isLeader = session.role === 'leader'
   const gltf = useGLTF(DRONE_URL)
   const ref = useRef<Group>(null)
@@ -83,6 +84,25 @@ export function Drone({ session, orbitRadius, orbitAngle, bobPhase, pending, onC
     <group ref={ref} onClick={(e) => { e.stopPropagation(); onClick?.() }}>
       <primitive object={cloned} />
     </group>
+  )
+}
+
+function GhostDrone() {
+  return (
+    <mesh>
+      <boxGeometry args={[0.15, 0.15, 0.15]} />
+      <meshStandardMaterial color="#475569" emissive="#94a3b8" emissiveIntensity={0.4} />
+    </mesh>
+  )
+}
+
+export function Drone(props: DroneProps) {
+  return (
+    <GlbErrorBoundary fallback={<GhostDrone />}>
+      <Suspense fallback={<GhostDrone />}>
+        <DroneImpl {...props} />
+      </Suspense>
+    </GlbErrorBoundary>
   )
 }
 

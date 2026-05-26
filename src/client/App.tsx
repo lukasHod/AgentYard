@@ -1,5 +1,5 @@
 // src/client/App.tsx
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import {
   useSocketStore,
@@ -11,8 +11,18 @@ import { Toasts } from './components/Toasts'
 import { SolarSystemScene } from './scene/SolarSystemScene'
 import { BackOutHandler } from './components/hud/BackOutHandler'
 import { HudLayer } from './components/hud/HudLayer'
+import { GlassPanel } from './components/glass/GlassPanel'
 
 export function App() {
+  const webglOK = useMemo(() => {
+    try {
+      const c = document.createElement('canvas')
+      return !!c.getContext('webgl2')
+    } catch {
+      return false
+    }
+  }, [])
+
   useEffect(() => {
     initSocketClient()
   }, [])
@@ -32,6 +42,16 @@ export function App() {
       useSocketStore.getState().setFeatures(featureMap)
     })()
   }, [])
+
+  if (!webglOK) {
+    return (
+      <main className="min-h-screen w-screen bg-black flex items-center justify-center">
+        <GlassPanel className="px-6 py-4 text-slate-200 text-sm">
+          AgentYard requires WebGL 2. Please update your browser or GPU drivers.
+        </GlassPanel>
+      </main>
+    )
+  }
 
   return (
     <main className="min-h-screen w-screen bg-black overflow-hidden font-sans">

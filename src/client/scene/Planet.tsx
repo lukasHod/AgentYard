@@ -112,6 +112,12 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
             <meshBasicMaterial color="#94a3b8" transparent opacity={0.4} side={2 /* DoubleSide */} />
           </mesh>
         )}
+        {!planet.pathExists && (
+          <mesh>
+            <sphereGeometry args={[params.radius * 1.01, 32, 32]} />
+            <meshBasicMaterial color="#f43f5e" transparent opacity={0.25} wireframe />
+          </mesh>
+        )}
         {visible.map((f, i) => (
           <Ship
             key={f.id}
