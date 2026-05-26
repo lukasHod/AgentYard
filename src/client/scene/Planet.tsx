@@ -5,6 +5,9 @@ import { derivePlanetParams } from './lib/planetParams'
 import { PlanetMaterial } from './PlanetMaterial'
 import type { PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
+import { useFeaturesMap } from '../state/socketStore'
+import { Ship } from './Ship'
+import { ringAngles } from './lib/orbits'
 
 interface PlanetProps {
   planet: PlanetSummary
@@ -17,6 +20,11 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const groupRef = useRef<Group>(null)
   const meshRef = useRef<Group>(null)
   const focusPlanet = useUiStore((s) => s.focusPlanet)
+
+  const features = useFeaturesMap().get(planet.id) ?? []
+  const active = useMemo(() => features.filter((f) => f.status === 'running'), [features])
+  const angles = useMemo(() => ringAngles(active.length), [active.length])
+  const shipOrbitRadius = params.radius * 1.8
 
   useFrame((_, dt) => {
     if (groupRef.current) {
@@ -41,6 +49,9 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
             <meshBasicMaterial color="#94a3b8" transparent opacity={0.4} side={2 /* DoubleSide */} />
           </mesh>
         )}
+        {active.map((f, i) => (
+          <Ship key={f.id} feature={f} orbitRadius={shipOrbitRadius} orbitAngle={angles[i]!} />
+        ))}
       </group>
     </group>
   )
