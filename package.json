@@ -26,6 +26,9 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.144",
     "@fastify/static": "^7.0.4",
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
+    "@react-three/postprocessing": "^2.19.1",
     "better-sqlite3": "^11.5.0",
     "commander": "^12.1.0",
     "fastify": "^4.28.1",
@@ -33,10 +36,12 @@
     "open": "^10.1.0",
     "simple-git": "^3.27.0",
     "socket.io": "^4.8.1",
+    "three": "^0.166.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@pixi/react": "^7.1.2",
+    "@react-three/test-renderer": "^8.2.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "^7.6.11",
@@ -45,6 +50,7 @@
     "@types/node": "^22.7.4",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.3.2",
     "@vitest/ui": "^4.1.7",
     "@xyflow/react": "^12.3.2",
