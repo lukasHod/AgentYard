@@ -5,7 +5,7 @@ import { derivePlanetParams } from './lib/planetParams'
 import { PlanetMaterial } from './PlanetMaterial'
 import type { PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
-import { useFeaturesMap } from '../state/socketStore'
+import { useFeaturesMap, useSessionList, usePendingsMap } from '../state/socketStore'
 import { Ship } from './Ship'
 import { ringAngles } from './lib/orbits'
 
@@ -25,6 +25,21 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const active = useMemo(() => features.filter((f) => f.status === 'running'), [features])
   const angles = useMemo(() => ringAngles(active.length), [active.length])
   const shipOrbitRadius = params.radius * 1.8
+
+  const sessions = useSessionList()
+  const pendings = usePendingsMap()
+
+  // The server enforces single-active-feature per planet today, so all the
+  // agents currently in `sessions` belong to the running feature on this
+  // planet (if any). When that invariant changes, we'll need to label-route.
+  const droneSessions = useMemo(
+    () => sessions.filter((s) => s.role === 'drone' || s.role === 'leader'),
+    [sessions],
+  )
+  const pendingDroneIds = useMemo(
+    () => new Set(droneSessions.filter((s) => pendings.has(s.id)).map((s) => s.id)),
+    [droneSessions, pendings],
+  )
 
   useFrame((_, dt) => {
     if (groupRef.current) {
@@ -50,7 +65,14 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
           </mesh>
         )}
         {active.map((f, i) => (
-          <Ship key={f.id} feature={f} orbitRadius={shipOrbitRadius} orbitAngle={angles[i]!} />
+          <Ship
+            key={f.id}
+            feature={f}
+            orbitRadius={shipOrbitRadius}
+            orbitAngle={angles[i]!}
+            drones={droneSessions}
+            pendingDroneIds={pendingDroneIds}
+          />
         ))}
       </group>
     </group>

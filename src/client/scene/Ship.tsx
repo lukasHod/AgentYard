@@ -2,14 +2,17 @@
 import { useGLTF, useAnimations } from '@react-three/drei'
 import { useEffect, useMemo, useRef } from 'react'
 import { Color, Group, Mesh, MeshStandardMaterial, Material } from 'three'
-import type { FeatureSummary } from '../../core/types'
+import type { FeatureSummary, SessionDescriptor } from '../../core/types'
 import { deriveShipParams } from './lib/shipParams'
 import { useUiStore } from '../state/uiStore'
+import { Drone } from './Drone'
 
 interface ShipProps {
   feature: FeatureSummary
   orbitRadius: number  // around the parent planet
   orbitAngle: number   // angle on the orbit ring
+  drones: SessionDescriptor[]
+  pendingDroneIds: ReadonlySet<string>
 }
 
 /**
@@ -17,11 +20,13 @@ interface ShipProps {
  * animations + tints don't bleed across ships. We don't keep a heavy refs object;
  * the model owns its own animation via the baked animation track in the GLB.
  */
-export function Ship({ feature, orbitRadius, orbitAngle }: ShipProps) {
+export function Ship({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds }: ShipProps) {
   const params = useMemo(() => deriveShipParams(feature.id, feature.name), [feature.id, feature.name])
   const gltf = useGLTF(params.modelUrl)
   const groupRef = useRef<Group>(null)
   const focusShip = useUiStore((s) => s.focusShip)
+  const bindChatDrone = useUiStore((s) => s.bindChatDrone)
+  const onDroneClick = (droneId: string) => bindChatDrone(droneId)
 
   // Clone the loaded scene + override materials for hue tint. Memoized on
   // (gltf, hueShift) so we don't re-clone every render.
@@ -74,6 +79,17 @@ export function Ship({ feature, orbitRadius, orbitAngle }: ShipProps) {
     >
       <group scale={0.3}>
         <primitive object={cloned} />
+        {drones.map((d, i) => (
+          <Drone
+            key={d.id}
+            session={d}
+            orbitRadius={0.6 + (i % 3) * 0.15}
+            orbitAngle={(i * 2 * Math.PI) / Math.max(1, drones.length)}
+            bobPhase={i * 0.7}
+            pending={pendingDroneIds.has(d.id)}
+            onClick={() => onDroneClick(d.id)}
+          />
+        ))}
       </group>
     </group>
   )
