@@ -1,14 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GlassPanel } from '../glass/GlassPanel'
 import { GlassButton } from '../glass/GlassButton'
 import { GlassChip } from '../glass/GlassChip'
 import { GlassSplitter } from '../glass/GlassSplitter'
 import { GlassTab } from '../glass/GlassTab'
 import { useUiStore } from '../../state/uiStore'
-import { usePlanets, useFeaturesMap } from '../../state/socketStore'
+import {
+  usePlanets,
+  useFeaturesMap,
+  useSessionList,
+  useTranscriptsMap,
+  usePendingsMap,
+  useConnected,
+} from '../../state/socketStore'
+import { sendAgentMessage, replyClarification as emitReply } from '../../state/socketClient'
 import { ToolsTabContent } from '../ToolsTabContent'
+import { AgentChat } from '../AgentChat'
 import { EmptyMessage } from '../ui/EmptyMessage'
-import { apiGet } from '../../api'
+import { apiGet, apiPost } from '../../api'
+import { pushToast } from '../../state/toastStore'
 import type { PlanetSummary, FeatureSummary } from '../../../core/types'
 
 // ---------------------------------------------------------------------------
@@ -202,6 +212,89 @@ function RunTabContent({
 }
 
 // ---------------------------------------------------------------------------
+// ChatPanelBody
+// ---------------------------------------------------------------------------
+
+function ChatPanelBody({ planet }: { planet: PlanetSummary }) {
+  const sessions = useSessionList()
+  const transcripts = useTranscriptsMap()
+  const pendings = usePendingsMap()
+  const connected = useConnected()
+  const chatLabel = `planet:${planet.id}:chat`
+  const session = useMemo(
+    () => sessions.find((s) => s.label === chatLabel),
+    [sessions, chatLabel],
+  )
+
+  const [opening, setOpening] = useState(false)
+  const [openErr, setOpenErr] = useState<string | null>(null)
+
+  // Reset the cached error when the user switches planets so the next planet
+  // gets a fresh auto-open attempt.
+  useEffect(() => {
+    setOpenErr(null)
+  }, [planet.id])
+
+  const open = useCallback(async () => {
+    setOpening(true)
+    setOpenErr(null)
+    const res = await apiPost(`/api/planets/${planet.id}/chat/open`)
+    setOpening(false)
+    if (!res.ok) {
+      setOpenErr(res.error)
+      pushToast('error', `Couldn't open chat: ${res.error}`)
+    }
+    // On success the server emits `session:added` which lands in the store and
+    // the panel re-renders with `session` populated.
+  }, [planet.id])
+
+  // Auto-open when entering a planet that has no session yet.
+  // Gated on: not already opening, no prior error, socket connected, planet pathExists.
+  useEffect(() => {
+    if (session || opening || openErr || !connected || !planet.pathExists) return
+    void open()
+  }, [session, opening, openErr, connected, planet.pathExists, open])
+
+  if (!session) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
+        <EmptyMessage>
+          {openErr
+            ? `couldn't open chat: ${openErr}`
+            : opening
+              ? 'opening chat…'
+              : !planet.pathExists
+                ? 'project path is missing on disk — restore the path or delete the project.'
+                : !connected
+                  ? 'offline — reconnect to the server to open the chat.'
+                  : 'no chat yet.'}
+        </EmptyMessage>
+        <GlassButton
+          onClick={() => void open()}
+          disabled={opening || !connected || !planet.pathExists}
+        >
+          {openErr ? '⟳ retry' : '▶ open chat'}
+        </GlassButton>
+      </div>
+    )
+  }
+
+  return (
+    <AgentChat
+      agentRunId={session.id}
+      label={planet.name}
+      role={session.role}
+      state={session.state}
+      transcript={transcripts.get(session.id) ?? []}
+      pending={pendings.get(session.id) ?? null}
+      connected={connected}
+      onSend={(c) => sendAgentMessage(session.id, c)}
+      onReply={(t, a) => emitReply(session.id, t, a)}
+    />
+  )
+}
+
+// ---------------------------------------------------------------------------
 // InfoPanelBody
 // ---------------------------------------------------------------------------
 
@@ -287,9 +380,8 @@ export function FocusedPanel() {
         <GlassSplitter ratio={splitterRatio} onChange={setSplitterRatio} />
 
         <div className="absolute inset-y-0 right-0 p-2" style={{ left: `${splitterRatio * 100}%`, paddingLeft: 12 }}>
-          <GlassPanel className="h-full p-4">
-            <div className="text-xs tracking-widest text-slate-400">CHAT</div>
-            <p className="text-sm text-slate-300 mt-2">Wired in Task 6.3.</p>
+          <GlassPanel className="h-full p-4 overflow-hidden">
+            <ChatPanelBody planet={planet} />
           </GlassPanel>
         </div>
       </div>
