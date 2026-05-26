@@ -32,13 +32,13 @@ export function AiNodeFields({
         {agents.length === 0 ? (
           <p className="text-[10px] text-zinc-600">
             // no agents in the global library. seed them from{' '}
-            <span className="text-cyan-400">ships → tools</span>.
+            <span className="text-cyan-400">planets → tools</span>.
           </p>
         ) : (
           <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
             {agents.map((a) => {
               const isAttached = attached.includes(a.name)
-              const editable = a.scope === 'global' || a.scope === 'ship'
+              const editable = a.scope === 'global' || a.scope === 'planet'
               return (
                 <label
                   key={a.name}

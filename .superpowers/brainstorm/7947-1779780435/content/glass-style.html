@@ -1,0 +1,161 @@
+<h2>Which "glass display" feel do you want?</h2>
+<p class="subtitle">Each card shows the SAME planet-detail panel (features list) over a faux planet backdrop. Click to pick the direction. We can still tune colors/weight after.</p>
+
+<style>
+  .glass-stage {
+    position: relative;
+    height: 360px;
+    background: #000;
+    overflow: hidden;
+    border: 1px solid #1f2937;
+  }
+  /* Faux planet on the right edge */
+  .glass-stage::after {
+    content: '';
+    position: absolute;
+    right: -120px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 320px;
+    height: 320px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 30% 30%, #67e8f9 0%, #0891b2 25%, #134e4a 60%, #042f2e 90%, #000 100%);
+    box-shadow: 0 0 80px rgba(8,145,178,0.35), inset -40px -20px 80px rgba(0,0,0,0.6);
+    filter: brightness(0.85);
+  }
+  /* Starfield */
+  .glass-stage::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 80% 20%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 40% 70%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 65% 85%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 10% 80%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 92% 55%, #fff, transparent 60%);
+    opacity: 0.6;
+  }
+
+  /* === OPTION A: Minimal angular HUD === */
+  .a-panel {
+    position: absolute; left: 16px; top: 24px; bottom: 24px; width: 52%;
+    background: rgba(0,8,12,0.55);
+    border: 1px solid rgba(34,211,238,0.5);
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+    color: #67e8f9; font-family: ui-monospace, monospace; font-size: 11px;
+    padding: 14px 16px;
+  }
+  .a-panel .label { color: #0891b2; letter-spacing: 0.3em; font-size: 9px; }
+  .a-panel h4 { color: #a5f3fc; letter-spacing: 0.2em; font-size: 12px; margin: 4px 0 12px; }
+  .a-panel .row { border-top: 1px solid rgba(34,211,238,0.15); padding: 6px 0; display: flex; justify-content: space-between; }
+  .a-panel .dot { color: #34d399; }
+
+  /* === OPTION B: Frosted glass + soft glow === */
+  .b-panel {
+    position: absolute; left: 16px; top: 24px; bottom: 24px; width: 52%;
+    background: rgba(15,23,42,0.35);
+    backdrop-filter: blur(14px) saturate(1.1);
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+    border: 1px solid rgba(125,211,252,0.25);
+    border-radius: 14px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.06),
+      0 0 30px rgba(56,189,248,0.15);
+    color: #e0f2fe; font-family: ui-sans-serif, system-ui; font-size: 11px;
+    padding: 16px 18px;
+  }
+  .b-panel .label { color: #7dd3fc; opacity: 0.7; letter-spacing: 0.18em; font-size: 9px; font-weight: 600; }
+  .b-panel h4 { color: #f0f9ff; font-size: 13px; margin: 4px 0 12px; font-weight: 600; letter-spacing: 0.04em; }
+  .b-panel .row { border-top: 1px solid rgba(125,211,252,0.12); padding: 8px 0; display: flex; justify-content: space-between; }
+  .b-panel .dot { color: #4ade80; }
+
+  /* === OPTION C: Holographic projection === */
+  .c-panel {
+    position: absolute; left: 16px; top: 24px; bottom: 24px; width: 52%;
+    background:
+      linear-gradient(180deg, rgba(45,212,191,0.06), rgba(45,212,191,0.02)),
+      rgba(2,12,18,0.4);
+    border: 1px solid rgba(94,234,212,0.55);
+    box-shadow:
+      0 0 0 1px rgba(94,234,212,0.15) inset,
+      0 0 24px rgba(94,234,212,0.35);
+    color: #ccfbf1; font-family: ui-monospace, monospace; font-size: 11px;
+    padding: 14px 16px;
+    position: absolute;
+  }
+  .c-panel::before {
+    /* Scanline overlay */
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg, rgba(94,234,212,0.06) 0 1px, transparent 1px 3px);
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+  .c-panel .label { color: #5eead4; letter-spacing: 0.35em; font-size: 9px; text-shadow: 0 0 6px #2dd4bf; }
+  .c-panel h4 { color: #99f6e4; letter-spacing: 0.22em; font-size: 12px; margin: 4px 0 12px; text-shadow: 0 0 8px #2dd4bf; }
+  .c-panel .row { border-top: 1px dashed rgba(94,234,212,0.3); padding: 6px 0; display: flex; justify-content: space-between; }
+  .c-panel .dot { color: #fde047; text-shadow: 0 0 6px #facc15; }
+</style>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="glass-stage">
+        <div class="a-panel">
+          <div class="label">PROJECT</div>
+          <h4>AGENTYARD</h4>
+          <div class="row"><span>add-payment-flow</span><span class="dot">● running</span></div>
+          <div class="row"><span>fix-login-bug</span><span style="color:#34d399">complete</span></div>
+          <div class="row"><span>refactor-state</span><span style="color:#64748b">idle</span></div>
+          <div class="row"><span>onboarding-v2</span><span style="color:#f43f5e">failed</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Minimal angular HUD</h3>
+      <p>Thin cyan lines, clipped corners, mono type, sparse. Like HALO / Star Citizen. Cheapest on the GPU. Strong "operator console" identity. Closest to current AgentYard look.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="glass-stage">
+        <div class="b-panel">
+          <div class="label">PROJECT</div>
+          <h4>AgentYard</h4>
+          <div class="row"><span>add-payment-flow</span><span class="dot">● running</span></div>
+          <div class="row"><span>fix-login-bug</span><span style="color:#4ade80">complete</span></div>
+          <div class="row"><span>refactor-state</span><span style="color:#94a3b8">idle</span></div>
+          <div class="row"><span>onboarding-v2</span><span style="color:#fb7185">failed</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Frosted glass + soft glow</h3>
+      <p>Blurred backdrop, rounded corners, sans-serif, subtle inner highlight. Like Apple's liquid-glass or Star Citizen MobiGlas. Most "modern." Backdrop-filter blur costs GPU on slower machines; planet behind shows through softly.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="glass-stage">
+        <div class="c-panel">
+          <div class="label">PROJECT</div>
+          <h4>AGENTYARD</h4>
+          <div class="row"><span>add-payment-flow</span><span class="dot">● running</span></div>
+          <div class="row"><span>fix-login-bug</span><span style="color:#86efac">complete</span></div>
+          <div class="row"><span>refactor-state</span><span style="color:#94a3b8">idle</span></div>
+          <div class="row"><span>onboarding-v2</span><span style="color:#fda4af">failed</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Holographic projection</h3>
+      <p>Scanlines, soft teal/mint glow, double-stroke borders, slight bloom. Like Iron Man Jarvis. Strongest "see-through projection" reading. Heaviest visually — risk of getting tiresome on long sessions.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px">Pick one in the browser (or tell me in chat). We can mix elements (e.g., A's mono type + B's blur backdrop) once a direction is set.</p>

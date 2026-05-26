@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FeatureSummary, ShipSummary } from '../../core/types'
+import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { EmptyMessage } from '../components/ui/EmptyMessage'
 import { useDismissable } from '../hooks/useDismissable'
 
 interface Props {
-  ships: ShipSummary[]
+  planets: PlanetSummary[]
   features: Map<number, FeatureSummary[]>
-  onCreateShip: (name: string, projectPath: string) => Promise<void> | void
-  onDeleteShip: (id: number) => Promise<void> | void
-  onCreateFeature: (shipId: number, name: string, task: string) => Promise<FeatureSummary | null>
+  onCreatePlanet: (name: string, projectPath: string) => Promise<void> | void
+  onDeletePlanet: (id: number) => Promise<void> | void
+  onCreateFeature: (planetId: number, name: string, task: string) => Promise<FeatureSummary | null>
   onSelectFeature?: (feature: FeatureSummary) => void
   /** When a feature is created, parent may want to switch to the run view. */
   onJumpToRun?: () => void
@@ -21,45 +21,45 @@ const STATUS_COLORS: Record<FeatureSummary['status'], string> = {
   failed: 'text-rose-400',
 }
 
-export function ShipsView({
-  ships,
+export function PlanetsView({
+  planets,
   features,
-  onCreateShip,
-  onDeleteShip,
+  onCreatePlanet,
+  onDeletePlanet,
   onCreateFeature,
   onSelectFeature,
   onJumpToRun,
 }: Props) {
-  const [selectedShipId, setSelectedShipId] = useState<number | null>(null)
-  const [newShipOpen, setNewShipOpen] = useState(false)
+  const [selectedPlanetId, setSelectedPlanetId] = useState<number | null>(null)
+  const [newPlanetOpen, setNewPlanetOpen] = useState(false)
   const [newFeatureOpen, setNewFeatureOpen] = useState(false)
-  const [shipName, setShipName] = useState('')
-  const [shipPath, setShipPath] = useState('')
+  const [planetName, setPlanetName] = useState('')
+  const [planetPath, setPlanetPath] = useState('')
   const [featureName, setFeatureName] = useState('')
   const [featureTask, setFeatureTask] = useState('')
 
   useEffect(() => {
-    if (!selectedShipId && ships.length > 0) setSelectedShipId(ships[0]!.id)
-  }, [ships, selectedShipId])
+    if (!selectedPlanetId && planets.length > 0) setSelectedPlanetId(planets[0]!.id)
+  }, [planets, selectedPlanetId])
 
-  const selectedShip = ships.find((s) => s.id === selectedShipId)
-  const shipFeatures = useMemo(
-    () => (selectedShipId ? features.get(selectedShipId) ?? [] : []),
-    [features, selectedShipId],
+  const selectedPlanet = planets.find((s) => s.id === selectedPlanetId)
+  const planetFeatures = useMemo(
+    () => (selectedPlanetId ? features.get(selectedPlanetId) ?? [] : []),
+    [features, selectedPlanetId],
   )
 
-  async function submitShip() {
-    if (!shipName.trim() || !shipPath.trim()) return
-    await onCreateShip(shipName.trim(), shipPath.trim())
-    setNewShipOpen(false)
-    setShipName('')
-    setShipPath('')
+  async function submitPlanet() {
+    if (!planetName.trim() || !planetPath.trim()) return
+    await onCreatePlanet(planetName.trim(), planetPath.trim())
+    setNewPlanetOpen(false)
+    setPlanetName('')
+    setPlanetPath('')
   }
 
   async function submitFeature() {
-    if (!selectedShipId || !featureTask.trim()) return
+    if (!selectedPlanetId || !featureTask.trim()) return
     const f = await onCreateFeature(
-      selectedShipId,
+      selectedPlanetId,
       featureName.trim() || `feature-${Date.now()}`,
       featureTask.trim(),
     )
@@ -75,24 +75,24 @@ export function ShipsView({
     <div className="flex-1 flex text-sm">
       <aside className="w-64 border-r border-cyan-500/30 p-4 flex flex-col">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-cyan-300 tracking-widest text-xs">SHIPS</h2>
+          <h2 className="text-cyan-300 tracking-widest text-xs">PLANETS</h2>
           <button
-            onClick={() => setNewShipOpen(true)}
+            onClick={() => setNewPlanetOpen(true)}
             className="px-2 py-0.5 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black text-[10px]"
           >
             + new
           </button>
         </div>
-        {ships.length === 0 ? (
-          <EmptyMessage className="text-xs">no ships yet</EmptyMessage>
+        {planets.length === 0 ? (
+          <EmptyMessage className="text-xs">no projects yet</EmptyMessage>
         ) : (
           <ul className="space-y-1">
-            {ships.map((s) => {
-              const sel = s.id === selectedShipId
+            {planets.map((s) => {
+              const sel = s.id === selectedPlanetId
               return (
                 <li key={s.id}>
                   <button
-                    onClick={() => setSelectedShipId(s.id)}
+                    onClick={() => setSelectedPlanetId(s.id)}
                     className={`w-full text-left px-2 py-1 rounded text-xs ${
                       sel ? 'bg-cyan-500/10 text-cyan-200' : 'text-zinc-400 hover:bg-zinc-800/50'
                     }`}
@@ -108,12 +108,12 @@ export function ShipsView({
       </aside>
 
       <main className="flex-1 p-4 overflow-y-auto">
-        {selectedShip ? (
+        {selectedPlanet ? (
           <>
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h2 className="text-cyan-300 tracking-widest text-sm">{selectedShip.name}</h2>
-                <p className="text-[10px] text-zinc-500 font-mono">{selectedShip.projectPath}</p>
+                <h2 className="text-cyan-300 tracking-widest text-sm">{selectedPlanet.name}</h2>
+                <p className="text-[10px] text-zinc-500 font-mono">{selectedPlanet.projectPath}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -124,23 +124,23 @@ export function ShipsView({
                 </button>
                 <button
                   onClick={() => {
-                    if (confirm(`Delete ship "${selectedShip.name}"? This removes feature records (worktrees are not deleted from disk).`)) {
-                      onDeleteShip(selectedShip.id)
-                      setSelectedShipId(null)
+                    if (confirm(`Delete project "${selectedPlanet.name}"? This removes feature records (worktrees are not deleted from disk).`)) {
+                      onDeletePlanet(selectedPlanet.id)
+                      setSelectedPlanetId(null)
                     }
                   }}
                   className="px-2 py-1 border border-rose-500/60 text-rose-300 hover:bg-rose-500/20 text-[10px]"
                 >
-                  delete ship
+                  delete project
                 </button>
               </div>
             </div>
 
-            {shipFeatures.length === 0 ? (
+            {planetFeatures.length === 0 ? (
               <EmptyMessage>no features yet. click <span className="text-fuchsia-300">new feature</span> to start one.</EmptyMessage>
             ) : (
               <ul className="space-y-2">
-                {shipFeatures.map((f) => (
+                {planetFeatures.map((f) => (
                   <li
                     key={f.id}
                     className="border border-cyan-500/30 rounded p-3 hover:bg-cyan-500/5 cursor-pointer"
@@ -180,31 +180,31 @@ export function ShipsView({
             )}
           </>
         ) : (
-          <EmptyMessage>select a ship to view features</EmptyMessage>
+          <EmptyMessage>select a project to view features</EmptyMessage>
         )}
       </main>
 
-      {newShipOpen && (
-        <Modal title="NEW SHIP" onClose={() => setNewShipOpen(false)} onSubmit={submitShip}>
-          <label className="text-[10px] tracking-widest text-zinc-500">SHIP NAME</label>
+      {newPlanetOpen && (
+        <Modal title="NEW PROJECT" onClose={() => setNewPlanetOpen(false)} onSubmit={submitPlanet}>
+          <label className="text-[10px] tracking-widest text-zinc-500">PROJECT NAME</label>
           <input
-            value={shipName}
-            onChange={(e) => setShipName(e.target.value)}
+            value={planetName}
+            onChange={(e) => setPlanetName(e.target.value)}
             autoFocus
             className="w-full mt-1 mb-3 bg-black border border-cyan-500/40 rounded px-2 py-1"
           />
           <label className="text-[10px] tracking-widest text-zinc-500">PROJECT PATH</label>
           <input
-            value={shipPath}
-            onChange={(e) => setShipPath(e.target.value)}
+            value={planetPath}
+            onChange={(e) => setPlanetPath(e.target.value)}
             placeholder="C:/code/my-repo (must be a git repository)"
             className="w-full mt-1 bg-black border border-cyan-500/40 rounded px-2 py-1 font-mono text-xs"
           />
         </Modal>
       )}
 
-      {newFeatureOpen && selectedShip && (
-        <Modal title={`NEW FEATURE — ${selectedShip.name}`} onClose={() => setNewFeatureOpen(false)} onSubmit={submitFeature}>
+      {newFeatureOpen && selectedPlanet && (
+        <Modal title={`NEW FEATURE — ${selectedPlanet.name}`} onClose={() => setNewFeatureOpen(false)} onSubmit={submitFeature}>
           <label className="text-[10px] tracking-widest text-zinc-500">FEATURE NAME (optional)</label>
           <input
             value={featureName}
@@ -222,7 +222,7 @@ export function ShipsView({
             className="w-full mt-1 bg-black border border-cyan-500/40 rounded p-2 text-xs font-mono"
           />
           <p className="text-[10px] text-zinc-500 mt-2">
-            A git worktree will be created at <code className="text-cyan-300">{selectedShip.projectPath}/.agentyard/worktrees/&lt;id&gt;</code>
+            A git worktree will be created at <code className="text-cyan-300">{selectedPlanet.projectPath}/.agentyard/worktrees/&lt;id&gt;</code>
             on a fresh branch off the current HEAD.
           </p>
         </Modal>

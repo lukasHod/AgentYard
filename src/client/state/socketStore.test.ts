@@ -3,7 +3,7 @@ import { useSocketStore } from './socketStore'
 import type {
   FeatureSummary,
   SessionDescriptor,
-  ShipSummary,
+  PlanetSummary,
 } from '../../core/types'
 
 const baseState = useSocketStore.getState()
@@ -15,7 +15,7 @@ const session = (id: string, state: SessionDescriptor['state'] = 'idle'): Sessio
   state,
 })
 
-const ship = (id: number, name: string): ShipSummary => ({
+const planet = (id: number, name: string): PlanetSummary => ({
   id,
   name,
   projectPath: `/tmp/${name}`,
@@ -25,9 +25,9 @@ const ship = (id: number, name: string): ShipSummary => ({
   pathExists: true,
 })
 
-const feature = (id: number, shipId: number): FeatureSummary => ({
+const feature = (id: number, planetId: number): FeatureSummary => ({
   id,
-  shipId,
+  planetId,
   name: `f${id}`,
   task: 'task',
   branch: null,
@@ -46,7 +46,7 @@ beforeEach(() => {
     transcripts: new Map(),
     pendings: new Map(),
     activeRun: null,
-    ships: [],
+    planets: [],
     features: new Map(),
   })
 })
@@ -219,33 +219,33 @@ describe('socketStore — runs', () => {
   })
 })
 
-describe('socketStore — ships & features', () => {
-  it('adds ship on ship:created', () => {
-    baseState.applyShipCreated(ship(1, 'a'))
-    baseState.applyShipCreated(ship(2, 'b'))
-    const ships = useSocketStore.getState().ships
-    expect(ships.map((s) => s.id)).toEqual([2, 1])
+describe('socketStore — planets & features', () => {
+  it('adds planet on planet:created', () => {
+    baseState.applyPlanetCreated(planet(1, 'a'))
+    baseState.applyPlanetCreated(planet(2, 'b'))
+    const planets = useSocketStore.getState().planets
+    expect(planets.map((s) => s.id)).toEqual([2, 1])
   })
 
-  it('removes ship + its features on ship:deleted', () => {
-    baseState.applyShipCreated(ship(1, 'a'))
+  it('removes planet + its features on planet:deleted', () => {
+    baseState.applyPlanetCreated(planet(1, 'a'))
     baseState.applyFeatureCreated(feature(10, 1))
-    baseState.applyShipDeleted({ id: 1 })
+    baseState.applyPlanetDeleted({ id: 1 })
     const s = useSocketStore.getState()
-    expect(s.ships).toHaveLength(0)
+    expect(s.planets).toHaveLength(0)
     expect(s.features.has(1)).toBe(false)
   })
 
-  it('noops ship:deleted for unknown ship (preserves identity)', () => {
-    baseState.applyShipCreated(ship(1, 'a'))
+  it('noops planet:deleted for unknown planet (preserves identity)', () => {
+    baseState.applyPlanetCreated(planet(1, 'a'))
     const before = useSocketStore.getState()
-    baseState.applyShipDeleted({ id: 999 })
+    baseState.applyPlanetDeleted({ id: 999 })
     const after = useSocketStore.getState()
-    expect(after.ships).toBe(before.ships)
+    expect(after.planets).toBe(before.planets)
     expect(after.features).toBe(before.features)
   })
 
-  it('adds feature to the right ship bucket', () => {
+  it('adds feature to the right planet bucket', () => {
     baseState.applyFeatureCreated(feature(10, 1))
     baseState.applyFeatureCreated(feature(11, 1))
     baseState.applyFeatureCreated(feature(20, 2))

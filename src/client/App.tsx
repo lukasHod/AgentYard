@@ -1,5 +1,5 @@
 import { lazy, Suspense, startTransition, useCallback, useEffect, useState } from 'react'
-import type { FeatureSummary, ShipSummary } from '../core/types'
+import type { FeatureSummary, PlanetSummary } from '../core/types'
 import type { Workflow } from '../core/schema'
 import type { ToolSummary } from '../core/tools'
 import type { TestRunRequest } from './views/TestRunModal'
@@ -9,7 +9,7 @@ import {
   useFeaturesMap,
   usePendingsMap,
   useSessionList,
-  useShips,
+  usePlanets,
   useSocketStore,
   useTranscriptsMap,
 } from './state/socketStore'
@@ -23,7 +23,7 @@ import { apiDelete, apiGet, apiPost, apiPut } from './api'
 import { pushToast } from './state/toastStore'
 import { Toasts } from './components/Toasts'
 
-type ViewMode = 'ships' | 'run' | 'editor'
+type ViewMode = 'planets' | 'run' | 'editor'
 
 // Lazy loaders are exposed so tab hovers can preload the bundle before click.
 const loadGameCanvas = () => import('./canvas/GameCanvas')
@@ -37,7 +37,7 @@ const EditorView = lazy(() => loadEditorView().then((m) => ({ default: m.EditorV
 const TestRunModal = lazy(() => loadTestRunModal().then((m) => ({ default: m.TestRunModal })))
 
 const PRELOADERS: Record<ViewMode, () => Promise<unknown>> = {
-  ships: loadGameCanvas,
+  planets: loadGameCanvas,
   run: loadRunView,
   editor: loadEditorView,
 }
@@ -51,12 +51,12 @@ function LoadingPanel({ label }: { label: string }) {
 }
 
 export function App() {
-  const [view, setView] = useState<ViewMode>('ships')
+  const [view, setView] = useState<ViewMode>('planets')
   // Track which views the user has actually visited so we don't pay their JS
   // download cost at boot. Once visited, a view stays mounted (the z-index
   // layering described below requires this so xyflow / Pixi don't lose their
   // measurements).
-  const [visited, setVisited] = useState<Set<ViewMode>>(() => new Set(['ships']))
+  const [visited, setVisited] = useState<Set<ViewMode>>(() => new Set(['planets']))
   const navigate = useCallback((next: ViewMode) => {
     // First-time mounts of EditorView (xyflow) and GameCanvas (Pixi) can
     // block paint for tens of ms. Marking the swap as a transition lets
@@ -81,7 +81,7 @@ export function App() {
   const transcripts = useTranscriptsMap()
   const pendings = usePendingsMap()
   const activeRun = useActiveRun()
-  const ships = useShips()
+  const planets = usePlanets()
   const features = useFeaturesMap()
 
   // Wire the socket up once on mount; the client module is idempotent.
@@ -101,13 +101,13 @@ export function App() {
       const wf = await apiGet<Workflow[]>('/api/workflows')
       if (wf.ok && wf.data[0]) setWorkflow(wf.data[0])
 
-      const shipsRes = await apiGet<ShipSummary[]>('/api/ships')
-      if (!shipsRes.ok) return
-      useSocketStore.getState().setShips(shipsRes.data)
+      const planetsRes = await apiGet<PlanetSummary[]>('/api/planets')
+      if (!planetsRes.ok) return
+      useSocketStore.getState().setPlanets(planetsRes.data)
       const featureMap = new Map<number, FeatureSummary[]>()
       await Promise.all(
-        shipsRes.data.map(async (s) => {
-          const fs = await apiGet<FeatureSummary[]>(`/api/ships/${s.id}/features`)
+        planetsRes.data.map(async (s) => {
+          const fs = await apiGet<FeatureSummary[]>(`/api/planets/${s.id}/features`)
           featureMap.set(s.id, fs.ok ? fs.data : [])
         }),
       )
@@ -144,32 +144,32 @@ export function App() {
     useSocketStore.getState().resetRun()
   }, [])
 
-  const createShip = useCallback(async (name: string, projectPath: string) => {
-    const res = await apiPost('/api/ships', { name, projectPath })
-    if (!res.ok) pushToast('error', `Create ship failed: ${res.error}`)
+  const createPlanet = useCallback(async (name: string, projectPath: string) => {
+    const res = await apiPost('/api/planets', { name, projectPath })
+    if (!res.ok) pushToast('error', `Create project failed: ${res.error}`)
   }, [])
 
-  const deleteShip = useCallback(async (id: number) => {
-    await apiDelete(`/api/ships/${id}`)
+  const deletePlanet = useCallback(async (id: number) => {
+    await apiDelete(`/api/planets/${id}`)
   }, [])
 
   const createFeature = useCallback(
-    async (shipId: number, name: string, task: string): Promise<FeatureSummary | null> => {
+    async (planetId: number, name: string, task: string): Promise<FeatureSummary | null> => {
       const res = await apiPost<{ feature: FeatureSummary }>(
-        `/api/ships/${shipId}/features`,
+        `/api/planets/${planetId}/features`,
         { name, task },
       )
       if (!res.ok) {
         const msg = res.error
         // Path-missing / not-a-repo is a recoverable user-facing condition —
-        // offer to remove the now-orphaned ship.
-        if (msg.includes('Ship path does not exist') || msg.includes('not a git repository')) {
+        // offer to remove the now-orphaned project.
+        if (msg.includes('Planet path does not exist') || msg.includes('not a git repository')) {
           if (
             confirm(
-              `Can't create a feature on this ship:\n\n${msg}\n\nThis usually means the project path has been moved or deleted on disk. Delete the ship from AgentYard now?`,
+              `Can't create a feature on this project:\n\n${msg}\n\nThis usually means the project path has been moved or deleted on disk. Delete the project from AgentYard now?`,
             )
           ) {
-            await apiDelete(`/api/ships/${shipId}`)
+            await apiDelete(`/api/planets/${planetId}`)
           }
         } else {
           pushToast('error', `Create feature failed: ${msg}`)
@@ -203,16 +203,16 @@ export function App() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <button
-            onClick={() => navigate('ships')}
-            onMouseEnter={() => preload('ships')}
-            onFocus={() => preload('ships')}
+            onClick={() => navigate('planets')}
+            onMouseEnter={() => preload('planets')}
+            onFocus={() => preload('planets')}
             className={`px-3 py-1 border tracking-wide ${
-              view === 'ships'
+              view === 'planets'
                 ? 'border-cyan-500 text-cyan-300 bg-cyan-500/10'
                 : 'border-zinc-600 text-zinc-400 hover:bg-zinc-800/50'
             }`}
           >
-            ships
+            planets
           </button>
           <button
             onClick={() => navigate('run')}
@@ -261,20 +261,20 @@ export function App() {
       <div className="flex-1 relative">
         <div
           className={`absolute inset-0 flex flex-col bg-black ${
-            view === 'ships' ? 'z-10' : 'z-0 pointer-events-none'
+            view === 'planets' ? 'z-10' : 'z-0 pointer-events-none'
           }`}
         >
-          {visited.has('ships') && (
-            <Suspense fallback={<LoadingPanel label="shipyard" />}>
+          {visited.has('planets') && (
+            <Suspense fallback={<LoadingPanel label="galaxy" />}>
               <GameCanvas
-                ships={ships}
+                planets={planets}
                 features={features}
                 sessions={sessionList}
                 transcripts={transcripts}
                 pendings={pendings}
                 connected={connected}
-                onCreateShip={createShip}
-                onDeleteShip={deleteShip}
+                onCreatePlanet={createPlanet}
+                onDeletePlanet={deletePlanet}
                 onCreateFeature={createFeature}
                 onSend={sendMessage}
                 onClarificationReply={replyClarification}
@@ -329,7 +329,7 @@ export function App() {
           <TestRunModal
             request={testRunRequest}
             workflow={workflow}
-            ships={ships}
+            planets={planets}
             socket={getSocket()}
             onClose={() => setTestRunRequest(null)}
           />

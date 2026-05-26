@@ -3,10 +3,10 @@ import { useDismissable } from '../hooks/useDismissable'
 import type {
   FeatureSummary,
   SessionDescriptor,
-  ShipSummary,
+  PlanetSummary,
 } from '../../core/types'
 import { type AgentChatMessage, type AgentChatPending } from '../components/AgentChat'
-import { ShipDetailsPanel, type ShipPanelTab } from '../components/ShipDetailsPanel'
+import { PlanetDetailsPanel, type PlanetPanelTab } from '../components/PlanetDetailsPanel'
 import { ToolsTabContent } from '../components/ToolsTabContent'
 import { EmptyMessage } from '../components/ui/EmptyMessage'
 import { ChatModal } from './ChatModal'
@@ -14,14 +14,14 @@ import { Modal } from './Modal'
 import { useGameHud } from './useGameHud'
 
 export interface Tooltip {
-  shipId: number
+  planetId: number
   x: number
   y: number
 }
 
 interface Props {
   // Live data slices forwarded straight from the store.
-  ships: ShipSummary[]
+  planets: PlanetSummary[]
   features: Map<number, FeatureSummary[]>
   sessions: SessionDescriptor[]
   transcripts: Map<string, AgentChatMessage[]>
@@ -29,9 +29,9 @@ interface Props {
   connected: boolean
 
   // Callbacks the HUD invokes back into App.
-  onCreateShip: (name: string, projectPath: string) => Promise<void> | void
-  onDeleteShip: (shipId: number) => Promise<void> | void
-  onCreateFeature: (shipId: number, name: string, task: string) => Promise<FeatureSummary | null>
+  onCreatePlanet: (name: string, projectPath: string) => Promise<void> | void
+  onDeletePlanet: (planetId: number) => Promise<void> | void
+  onCreateFeature: (planetId: number, name: string, task: string) => Promise<FeatureSummary | null>
   onSend: (agentRunId: string, content: string) => void
   onClarificationReply: (agentRunId: string, toolUseId: string, answer: string) => void
   onOpenWorkflow?: () => void
@@ -39,10 +39,10 @@ interface Props {
 
   // Canvas-coupled state owned by GameCanvas — the HUD reads to render and
   // the scene callbacks write into it, so it must live one level up.
-  selectedShipId: number | null
-  setSelectedShipId: (id: number | null) => void
-  panelTab: ShipPanelTab
-  setPanelTab: (tab: ShipPanelTab) => void
+  selectedPlanetId: number | null
+  setSelectedPlanetId: (id: number | null) => void
+  panelTab: PlanetPanelTab
+  setPanelTab: (tab: PlanetPanelTab) => void
   tooltip: Tooltip | null
 
   // HUD-bar audio toggle (chime mute flag).
@@ -59,7 +59,7 @@ interface Props {
 /**
  * React HUD overlaid on top of the PixiJS canvas. Owns the top bar, the
  * notifications inbox, the dock cockpit panel, the hover tooltip, and the
- * modals (new ship / new feature / drone chat / global library / first-launch
+ * modals (new project / new feature / drone chat / global library / first-launch
  * splash). Doesn't touch PixiJS — the scenes live in GameCanvas.
  */
 export function GameHud(props: Props) {
@@ -68,16 +68,16 @@ export function GameHud(props: Props) {
   const closeLibrary = useCallback(() => hud.setLibraryOpen(false), [hud])
   useDismissable(hud.libraryOpen, closeLibrary)
 
-  const submitNewShip = useCallback(async () => {
-    if (!hud.shipName.trim() || !hud.shipPath.trim()) return
-    await props.onCreateShip(hud.shipName.trim(), hud.shipPath.trim())
-    hud.closeNewShip()
+  const submitNewPlanet = useCallback(async () => {
+    if (!hud.planetName.trim() || !hud.planetPath.trim()) return
+    await props.onCreatePlanet(hud.planetName.trim(), hud.planetPath.trim())
+    hud.closeNewPlanet()
   }, [props, hud])
 
   const submitNewFeature = useCallback(async () => {
-    if (!props.selectedShipId || !hud.featureTask.trim()) return
+    if (!props.selectedPlanetId || !hud.featureTask.trim()) return
     const f = await props.onCreateFeature(
-      props.selectedShipId,
+      props.selectedPlanetId,
       hud.featureName.trim() || `feature-${Date.now()}`,
       hud.featureTask.trim(),
     )
@@ -87,16 +87,16 @@ export function GameHud(props: Props) {
     }
   }, [props, hud])
 
-  const selectedShip =
-    props.selectedShipId !== null
-      ? props.ships.find((s) => s.id === props.selectedShipId) ?? null
+  const selectedPlanet =
+    props.selectedPlanetId !== null
+      ? props.planets.find((s) => s.id === props.selectedPlanetId) ?? null
       : null
-  const selectedShipFeatures =
-    props.selectedShipId !== null ? props.features.get(props.selectedShipId) ?? [] : []
-  const hoveredShip = props.tooltip
-    ? props.ships.find((s) => s.id === props.tooltip!.shipId) ?? null
+  const selectedPlanetFeatures =
+    props.selectedPlanetId !== null ? props.features.get(props.selectedPlanetId) ?? [] : []
+  const hoveredPlanet = props.tooltip
+    ? props.planets.find((s) => s.id === props.tooltip!.planetId) ?? null
     : null
-  const hoveredShipFeatures = hoveredShip ? props.features.get(hoveredShip.id) ?? [] : []
+  const hoveredPlanetFeatures = hoveredPlanet ? props.features.get(hoveredPlanet.id) ?? [] : []
   const totalPendingClarifications = props.pendings.size
 
   return (
@@ -104,31 +104,31 @@ export function GameHud(props: Props) {
       {/* HUD top bar */}
       <div className="absolute top-3 left-3 right-3 flex items-start justify-between pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2 text-xs">
-          {props.selectedShipId !== null ? (
+          {props.selectedPlanetId !== null ? (
             <>
               <button
-                onClick={() => props.setSelectedShipId(null)}
+                onClick={() => props.setSelectedPlanetId(null)}
                 className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide bg-black/70"
               >
                 ← galaxy
               </button>
-              {selectedShip && (
+              {selectedPlanet && (
                 <div className="bg-black/70 border border-cyan-500/40 px-3 py-1 text-cyan-200 tracking-wider">
-                  {selectedShip.name}
+                  {selectedPlanet.name}
                 </div>
               )}
             </>
           ) : (
             <>
               <button
-                onClick={() => hud.setNewShipOpen(true)}
+                onClick={() => hud.setNewPlanetOpen(true)}
                 className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide bg-black/70"
               >
-                + new ship
+                + new project
               </button>
               <button
                 onClick={props.onFitGalaxy}
-                disabled={props.ships.length === 0}
+                disabled={props.planets.length === 0}
                 className="px-3 py-1 border border-zinc-500 text-zinc-300 hover:bg-zinc-700 tracking-wide bg-black/70 disabled:opacity-30"
               >
                 ⛶ fit
@@ -147,7 +147,7 @@ export function GameHud(props: Props) {
         <div className="pointer-events-auto flex items-center gap-2 text-xs">
           <div className="bg-black/70 border border-cyan-500/30 px-3 py-1 flex items-center gap-3">
             <span className="text-cyan-200">
-              {props.ships.length} ship{props.ships.length === 1 ? '' : 's'}
+              {props.planets.length} planet{props.planets.length === 1 ? '' : 's'}
             </span>
             <span className="text-zinc-700">·</span>
             <button
@@ -193,12 +193,12 @@ export function GameHud(props: Props) {
                     className="px-3 py-2 border-b border-amber-400/10 hover:bg-amber-500/5 cursor-pointer"
                     onClick={() => {
                       hud.setInboxOpen(false)
-                      // Heuristic: if a drone is awaiting input, the ship is
+                      // Heuristic: if a drone is awaiting input, the planet is
                       // the one with a running feature.
-                      const runningShip = props.ships.find(
+                      const runningPlanet = props.planets.find(
                         (s) => (props.features.get(s.id) ?? []).some((f) => f.status === 'running'),
                       )
-                      if (runningShip) props.setSelectedShipId(runningShip.id)
+                      if (runningPlanet) props.setSelectedPlanetId(runningPlanet.id)
                       hud.setOpenedDroneId(agentRunId)
                     }}
                   >
@@ -213,14 +213,14 @@ export function GameHud(props: Props) {
       )}
 
       {/* Dock view: always-visible cockpit panel on the right */}
-      {props.selectedShipId !== null && selectedShip && (
+      {props.selectedPlanetId !== null && selectedPlanet && (
         <aside
           className="absolute right-0 top-0 bottom-0 bg-black/85 border-l border-cyan-500/30 pointer-events-auto"
           style={{ width: props.cockpitPanelWidth }}
         >
-          <ShipDetailsPanel
-            ship={selectedShip}
-            features={selectedShipFeatures}
+          <PlanetDetailsPanel
+            planet={selectedPlanet}
+            features={selectedPlanetFeatures}
             sessions={props.sessions}
             transcripts={props.transcripts}
             pendings={props.pendings}
@@ -231,12 +231,12 @@ export function GameHud(props: Props) {
             onClarificationReply={props.onClarificationReply}
             onNewFeature={() => hud.setNewFeatureOpen(true)}
             onOpenWorkflow={() => props.onOpenWorkflow?.()}
-            onDeleteShip={() => {
-              if (props.selectedShipId !== null) {
-                void props.onDeleteShip(props.selectedShipId)
-                // Optimistically pop back to galaxy; the ship:deleted event
+            onDeletePlanet={() => {
+              if (props.selectedPlanetId !== null) {
+                void props.onDeletePlanet(props.selectedPlanetId)
+                // Optimistically pop back to galaxy; the planet:deleted event
                 // will also do it below — this is a faster UI response.
-                props.setSelectedShipId(null)
+                props.setSelectedPlanetId(null)
               }
             }}
           />
@@ -244,10 +244,10 @@ export function GameHud(props: Props) {
       )}
 
       {/* Hover tooltip in galaxy view */}
-      {props.tooltip && hoveredShip && (
+      {props.tooltip && hoveredPlanet && (
         <div
           className={`absolute pointer-events-none bg-black/90 border text-xs px-3 py-2 z-10 ${
-            hoveredShip.pathExists ? 'border-cyan-500/50' : 'border-rose-500/60'
+            hoveredPlanet.pathExists ? 'border-cyan-500/50' : 'border-rose-500/60'
           }`}
           style={{
             left: Math.min(props.tooltip.x + 16, window.innerWidth - 240),
@@ -256,22 +256,22 @@ export function GameHud(props: Props) {
         >
           <div
             className={
-              hoveredShip.pathExists
+              hoveredPlanet.pathExists
                 ? 'text-cyan-300 tracking-widest'
                 : 'text-rose-300 tracking-widest'
             }
           >
-            {hoveredShip.name.toUpperCase()}
+            {hoveredPlanet.name.toUpperCase()}
           </div>
           <div className="text-zinc-400 font-mono text-[10px] mt-0.5 max-w-[220px] truncate">
-            {hoveredShip.projectPath}
+            {hoveredPlanet.projectPath}
           </div>
-          {!hoveredShip.pathExists ? (
+          {!hoveredPlanet.pathExists ? (
             <div className="mt-2 text-rose-300 text-[11px] tracking-wide">⚠ path missing</div>
           ) : (
             <div className="mt-2 text-zinc-300 text-[11px]">
-              features: {hoveredShipFeatures.length}
-              {hoveredShipFeatures.find((f) => f.status === 'running') && (
+              features: {hoveredPlanetFeatures.length}
+              {hoveredPlanetFeatures.find((f) => f.status === 'running') && (
                 <span className="text-cyan-300 ml-2">● active</span>
               )}
             </div>
@@ -280,19 +280,19 @@ export function GameHud(props: Props) {
       )}
 
       {/* Modals */}
-      {hud.newShipOpen && (
-        <Modal title="NEW SHIP" onClose={hud.closeNewShip} onSubmit={submitNewShip}>
-          <label className="text-[10px] tracking-widest text-zinc-500">SHIP NAME</label>
+      {hud.newPlanetOpen && (
+        <Modal title="NEW PROJECT" onClose={hud.closeNewPlanet} onSubmit={submitNewPlanet}>
+          <label className="text-[10px] tracking-widest text-zinc-500">PROJECT NAME</label>
           <input
-            value={hud.shipName}
-            onChange={(e) => hud.setShipName(e.target.value)}
+            value={hud.planetName}
+            onChange={(e) => hud.setPlanetName(e.target.value)}
             autoFocus
             className="w-full mt-1 mb-3 bg-black border border-cyan-500/40 rounded px-2 py-1"
           />
           <label className="text-[10px] tracking-widest text-zinc-500">PROJECT PATH</label>
           <input
-            value={hud.shipPath}
-            onChange={(e) => hud.setShipPath(e.target.value)}
+            value={hud.planetPath}
+            onChange={(e) => hud.setPlanetPath(e.target.value)}
             placeholder="C:/code/my-repo (must be a git repository)"
             className="w-full mt-1 bg-black border border-cyan-500/40 rounded px-2 py-1 font-mono text-xs"
           />
@@ -315,7 +315,7 @@ export function GameHud(props: Props) {
         />
       )}
 
-      {hud.libraryOpen && props.selectedShipId === null && (
+      {hud.libraryOpen && props.selectedPlanetId === null && (
         <div
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-30"
           onClick={() => hud.setLibraryOpen(false)}
@@ -334,34 +334,34 @@ export function GameHud(props: Props) {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-3">
-              <ToolsTabContent shipId={null} />
+              <ToolsTabContent planetId={null} />
             </div>
           </div>
         </div>
       )}
 
       {/* First-launch empty state */}
-      {props.ships.length === 0 && props.selectedShipId === null && (
+      {props.planets.length === 0 && props.selectedPlanetId === null && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="bg-black/80 border border-cyan-500/40 px-8 py-6 text-center pointer-events-auto max-w-md">
             <div className="text-cyan-300 tracking-[0.3em] text-xs mb-3">WELCOME, CAPTAIN</div>
             <p className="text-zinc-300 mb-4">
-              The shipyard is quiet. Register your first ship to begin — point it at a git repo on
+              The galaxy is empty. Register your first project to begin — point it at a git repo on
               your machine and the drones will report for duty.
             </p>
             <button
-              onClick={() => hud.setNewShipOpen(true)}
+              onClick={() => hud.setNewPlanetOpen(true)}
               className="px-4 py-2 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide text-xs"
             >
-              + register first ship
+              + register first project
             </button>
           </div>
         </div>
       )}
 
-      {hud.newFeatureOpen && selectedShip && (
+      {hud.newFeatureOpen && selectedPlanet && (
         <Modal
-          title={`NEW FEATURE — ${selectedShip.name}`}
+          title={`NEW FEATURE — ${selectedPlanet.name}`}
           onClose={hud.closeNewFeature}
           onSubmit={submitNewFeature}
         >

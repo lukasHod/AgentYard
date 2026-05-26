@@ -1,32 +1,32 @@
 import { Application, BlurFilter, Container, FederatedPointerEvent, Graphics, Ticker } from 'pixi.js'
-import type { ShipSummary } from '../../core/types'
-import { drawShipSprite, drawStarfield, shipPositionFor } from './sprites'
+import type { PlanetSummary } from '../../core/types'
+import { drawPlanetSprite, drawStarfield, planetPositionFor } from './sprites'
 
-export type ShipMood = 'idle' | 'active' | 'attention' | 'broken'
+export type PlanetMood = 'idle' | 'active' | 'attention' | 'broken'
 
 export interface GalaxyEvents {
-  onShipClick?: (shipId: number) => void
-  onShipHover?: (shipId: number, screenX: number, screenY: number) => void
-  onShipHoverEnd?: () => void
+  onPlanetClick?: (planetId: number) => void
+  onPlanetHover?: (planetId: number, screenX: number, screenY: number) => void
+  onPlanetHoverEnd?: () => void
   onBackgroundClick?: () => void
 }
 
-interface ShipEntry {
+interface PlanetEntry {
   container: Container
   halo: Graphics
-  ship: ShipSummary
-  mood: ShipMood
+  planet: PlanetSummary
+  mood: PlanetMood
 }
 
 const MIN_ZOOM = 0.4
 const MAX_ZOOM = 2.5
 const ZOOM_SPEED = 0.0015
 
-/** Galaxy scene — the top-level map of all ships. */
+/** Galaxy scene — the top-level map of all planets. */
 export class GalaxyScene {
   readonly root: Container
   private world: Container
-  private ships = new Map<number, ShipEntry>()
+  private planets = new Map<number, PlanetEntry>()
   private dragging = false
   private dragStart = { x: 0, y: 0 }
   private worldStart = { x: 0, y: 0 }
@@ -62,14 +62,14 @@ export class GalaxyScene {
   }
 
   /**
-   * Pan + zoom so every ship is comfortably visible.
-   * - One ship → centered, scale ~1.2
-   * - Many ships → bounding box centered, scale chosen so all fit with padding
+   * Pan + zoom so every planet is comfortably visible.
+   * - One planet → centered, scale ~1.2
+   * - Many planets → bounding box centered, scale chosen so all fit with padding
    */
-  fitToShips(): void {
-    if (this.ships.size === 0) return
+  fitToPlanets(): void {
+    if (this.planets.size === 0) return
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    for (const [, entry] of this.ships) {
+    for (const [, entry] of this.planets) {
       // Use the deterministic seeded position (entry.container may be in
       // mid-bob so we read the source-of-truth position instead).
       const pos = entry.container.position
@@ -102,50 +102,50 @@ export class GalaxyScene {
     this.root.destroy({ children: true })
   }
 
-  setShips(list: ShipSummary[], moods?: Map<number, ShipMood>) {
+  setPlanets(list: PlanetSummary[], moods?: Map<number, PlanetMood>) {
     const incoming = new Map(list.map((s) => [s.id, s]))
-    // Remove gone ships.
-    for (const [id, entry] of this.ships) {
+    // Remove gone planets.
+    for (const [id, entry] of this.planets) {
       if (!incoming.has(id)) {
         this.world.removeChild(entry.container)
         this.world.removeChild(entry.halo)
         entry.container.destroy({ children: true })
         entry.halo.destroy()
-        this.ships.delete(id)
+        this.planets.delete(id)
       }
     }
     // Add or update.
-    for (const ship of list) {
-      const existing = this.ships.get(ship.id)
-      const mood = moods?.get(ship.id) ?? 'idle'
+    for (const planet of list) {
+      const existing = this.planets.get(planet.id)
+      const mood = moods?.get(planet.id) ?? 'idle'
       if (existing) {
         // Rebuild only if the name changed (visible label).
-        if (existing.ship.name !== ship.name) {
+        if (existing.planet.name !== planet.name) {
           this.world.removeChild(existing.container)
           this.world.removeChild(existing.halo)
           existing.container.destroy({ children: true })
           existing.halo.destroy()
-          this.spawnShip(ship, mood)
+          this.spawnPlanet(planet, mood)
         } else {
           this.updateMood(existing, mood)
-          existing.ship = ship
+          existing.planet = planet
         }
       } else {
-        this.spawnShip(ship, mood)
+        this.spawnPlanet(planet, mood)
       }
     }
 
-    // First time we see any ship, frame them all on screen.
-    if (!this.hasInitialFit && this.ships.size > 0) {
-      this.fitToShips()
+    // First time we see any planet, frame them all on screen.
+    if (!this.hasInitialFit && this.planets.size > 0) {
+      this.fitToPlanets()
       this.hasInitialFit = true
     }
   }
 
-  private spawnShip(ship: ShipSummary, mood: ShipMood) {
-    const pos = shipPositionFor(ship.id)
+  private spawnPlanet(planet: PlanetSummary, mood: PlanetMood) {
+    const pos = planetPositionFor(planet.id)
 
-    // Halo behind the ship, animated in tick().
+    // Halo behind the planet, animated in tick().
     const halo = new Graphics()
     halo.circle(0, 0, 40).fill({ color: 0x22d3ee, alpha: 1 })
     halo.filters = [new BlurFilter({ strength: 14 })]
@@ -154,27 +154,27 @@ export class GalaxyScene {
     halo.eventMode = 'none'
     this.world.addChild(halo)
 
-    const sprite = drawShipSprite({ shipId: ship.id, name: ship.name })
+    const sprite = drawPlanetSprite({ planetId: planet.id, name: planet.name })
     sprite.position.set(pos.x, pos.y)
 
     sprite.on('pointerdown', (e) => {
       e.stopPropagation()
-      this.events.onShipClick?.(ship.id)
+      this.events.onPlanetClick?.(planet.id)
     })
     sprite.on('pointerover', (e: FederatedPointerEvent) => {
-      this.events.onShipHover?.(ship.id, e.globalX, e.globalY)
+      this.events.onPlanetHover?.(planet.id, e.globalX, e.globalY)
     })
     sprite.on('pointerout', () => {
-      this.events.onShipHoverEnd?.()
+      this.events.onPlanetHoverEnd?.()
     })
 
     this.world.addChild(sprite)
-    const entry: ShipEntry = { container: sprite, halo, ship, mood }
-    this.ships.set(ship.id, entry)
+    const entry: PlanetEntry = { container: sprite, halo, planet, mood }
+    this.planets.set(planet.id, entry)
     this.updateMood(entry, mood)
   }
 
-  private updateMood(entry: ShipEntry, mood: ShipMood): void {
+  private updateMood(entry: PlanetEntry, mood: PlanetMood): void {
     if (entry.mood === mood) return
     entry.mood = mood
     // Recolor halo.
@@ -186,7 +186,7 @@ export class GalaxyScene {
           ? 0xfb7185 /* rose-400 */
           : 0x22d3ee /* cyan-400 */
     entry.halo.circle(0, 0, 40).fill({ color, alpha: 1 })
-    // Fade the hull for broken ships so they read as offline at a glance.
+    // Fade the hull for broken planets so they read as offline at a glance.
     entry.container.alpha = mood === 'broken' ? 0.35 : 1
   }
 
@@ -241,8 +241,8 @@ export class GalaxyScene {
   private tick(t: Ticker) {
     // Idle bobbing + halo pulse.
     this.bobTime += t.deltaMS * 0.001
-    for (const [, entry] of this.ships) {
-      const base = shipPositionFor(entry.ship.id)
+    for (const [, entry] of this.planets) {
+      const base = planetPositionFor(entry.planet.id)
       const y = base.y + Math.sin(this.bobTime + base.x * 0.01) * 2
       entry.container.position.y = y
       entry.halo.position.set(base.x, y)

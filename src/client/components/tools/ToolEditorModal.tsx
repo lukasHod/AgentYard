@@ -15,7 +15,7 @@ import { McpForm } from './forms/McpForm'
 import { ScriptForm } from './forms/ScriptForm'
 import { AgentForm } from './forms/AgentForm'
 
-export type EditorScope = 'ship' | 'global'
+export type EditorScope = 'planet' | 'global'
 
 export type EditorMode =
   | { kind: 'create'; type: ToolType; scope: EditorScope }
@@ -25,7 +25,7 @@ export type AnyToolData = SkillTool | McpTool | ScriptTool | AgentTool
 
 interface Props {
   mode: EditorMode
-  shipId: number | null
+  planetId: number | null
   library: ToolSummary[]
   onClose: () => void
   onSaved: () => void
@@ -38,7 +38,7 @@ const TYPE_TITLE: Record<ToolType, string> = {
   script: 'SCRIPT',
 }
 
-export function ToolEditorModal({ mode, shipId, library, onClose, onSaved }: Props) {
+export function ToolEditorModal({ mode, planetId, library, onClose, onSaved }: Props) {
   useDismissable(true, onClose)
   const [saving, setSaving] = useState(false)
   const [scope, setScope] = useState<EditorScope>(mode.scope)
@@ -47,7 +47,7 @@ export function ToolEditorModal({ mode, shipId, library, onClose, onSaved }: Pro
 
   async function save(data: AnyToolData) {
     setSaving(true)
-    const res = await persist(mode, scope, shipId, data)
+    const res = await persist(mode, scope, planetId, data)
     setSaving(false)
     if (!res.ok) {
       pushToast('error', `Save failed: ${res.error}`)
@@ -120,15 +120,15 @@ export function ToolEditorModal({ mode, shipId, library, onClose, onSaved }: Pro
               <span className="text-[10px] text-zinc-500 flex items-center gap-1">
                 save to:
                 <button
-                  onClick={() => setScope('ship')}
+                  onClick={() => setScope('planet')}
                   className={`px-2 py-0.5 border ${
-                    scope === 'ship'
+                    scope === 'planet'
                       ? 'border-cyan-400 text-cyan-200 bg-cyan-500/10'
                       : 'border-zinc-600 text-zinc-400'
                   }`}
-                  disabled={shipId === null}
+                  disabled={planetId === null}
                 >
-                  ship
+                  planet
                 </button>
                 <button
                   onClick={() => setScope('global')}
@@ -156,23 +156,23 @@ export function ToolEditorModal({ mode, shipId, library, onClose, onSaved }: Pro
 async function persist(
   mode: EditorMode,
   scope: EditorScope,
-  shipId: number | null,
+  planetId: number | null,
   data: AnyToolData,
 ): Promise<ApiResult<unknown>> {
-  const inShip = scope === 'ship'
-  if (inShip && shipId === null) {
-    return { ok: false, error: 'Cannot save to ship scope without a shipId' }
+  const inPlanet = scope === 'planet'
+  if (inPlanet && planetId === null) {
+    return { ok: false, error: 'Cannot save to planet scope without a planetId' }
   }
   if (mode.kind === 'create') {
-    const url = inShip
-      ? `/api/ships/${shipId}/tools/${mode.type}`
+    const url = inPlanet
+      ? `/api/planets/${planetId}/tools/${mode.type}`
       : `/api/global-tools/${mode.type}`
     return apiPost(url, { data })
   }
   // edit
   const name = (data as { name: string }).name
-  const url = inShip
-    ? `/api/ships/${shipId}/tools/${mode.type}/${name}`
+  const url = inPlanet
+    ? `/api/planets/${planetId}/tools/${mode.type}/${name}`
     : `/api/global-tools/${mode.type}/${name}`
   return apiPut(url, { data })
 }

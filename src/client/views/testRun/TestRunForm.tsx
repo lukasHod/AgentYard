@@ -1,12 +1,12 @@
-import type { ShipSummary } from '../../../core/types'
+import type { PlanetSummary } from '../../../core/types'
 import type { Workflow, WorkflowNode } from '../../../core/schema'
 import { EmptyMessage } from '../../components/ui/EmptyMessage'
 import type { TestRunRequest } from './types'
 
 export function TestRunForm(props: {
-  ships: ShipSummary[]
-  shipId: number | null
-  setShipId: (id: number) => void
+  planets: PlanetSummary[]
+  planetId: number | null
+  setPlanetId: (id: number) => void
   task: string
   setTask: (s: string) => void
   request: TestRunRequest
@@ -19,9 +19,9 @@ export function TestRunForm(props: {
   onSubmit: () => void
 }) {
   const {
-    ships,
-    shipId,
-    setShipId,
+    planets,
+    planetId,
+    setPlanetId,
     task,
     setTask,
     request,
@@ -52,27 +52,27 @@ export function TestRunForm(props: {
   return (
     <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 text-xs">
       <p className="text-zinc-400 leading-relaxed">
-        Spawns a disposable git worktree on the selected ship, runs the{' '}
+        Spawns a disposable git worktree on the selected project, runs the{' '}
         {request.scope === 'workflow' ? 'whole workflow' : 'selected node only'} in that sandbox,
         and tears the worktree down when the run ends. Your project files outside the sandbox are
         not touched.
       </p>
 
       <div>
-        <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">SHIP</label>
+        <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">PROJECT</label>
         <p className="text-zinc-600 text-[10px] mb-1">
-          The project the sandbox worktree will be forked from. Tools and per-ship agents resolve
-          from this ship's library too.
+          The project the sandbox worktree will be forked from. Tools and per-project agents resolve
+          from this project's library too.
         </p>
-        {ships.length === 0 ? (
-          <EmptyMessage>no ships registered. create one from the galaxy view first.</EmptyMessage>
+        {planets.length === 0 ? (
+          <EmptyMessage>no projects registered. create one from the galaxy view first.</EmptyMessage>
         ) : (
           <select
-            value={shipId ?? ''}
-            onChange={(e) => setShipId(Number(e.target.value))}
+            value={planetId ?? ''}
+            onChange={(e) => setPlanetId(Number(e.target.value))}
             className="w-full bg-black border border-fuchsia-500/40 rounded px-2 py-1 focus:outline-none focus:border-fuchsia-300"
           >
-            {ships.map((s) => (
+            {planets.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name} — {s.projectPath}
               </option>
@@ -160,7 +160,7 @@ export function TestRunForm(props: {
       <div className="flex justify-end">
         <button
           onClick={onSubmit}
-          disabled={submitting || !shipId || task.trim().length === 0}
+          disabled={submitting || !planetId || task.trim().length === 0}
           className="px-4 py-2 border border-fuchsia-500 text-fuchsia-200 hover:bg-fuchsia-500/20 tracking-wide disabled:opacity-30"
         >
           {submitting ? 'launching…' : '▶ launch sandbox'}

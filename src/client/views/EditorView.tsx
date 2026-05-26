@@ -319,7 +319,7 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
         <Suspense fallback={null}>
           <ToolEditorModal
             mode={toolEditor}
-            shipId={null}
+            planetId={null}
             library={tools}
             onClose={() => setToolEditor(null)}
             onSaved={() => {

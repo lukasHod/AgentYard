@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   FeatureSummary,
   SessionDescriptor,
-  ShipSummary,
+  PlanetSummary,
 } from '../../core/types'
 import { apiGet, apiPost } from '../api'
 import { pushToast } from '../state/toastStore'
@@ -10,9 +10,9 @@ import { AgentChat, type AgentChatMessage, type AgentChatPending } from './Agent
 import { ToolsTabContent } from './ToolsTabContent'
 import { EmptyMessage } from './ui/EmptyMessage'
 
-export type ShipPanelTab = 'features' | 'tools' | 'plans' | 'description' | 'chat'
+export type PlanetPanelTab = 'features' | 'tools' | 'plans' | 'description' | 'chat'
 
-interface ShipDescriptionData {
+interface PlanetDescriptionData {
   readme: string | null
   readmePath: string | null
   git: { branch?: string; head?: { sha: string; subject: string } }
@@ -21,23 +21,23 @@ interface ShipDescriptionData {
 }
 
 interface Props {
-  ship: ShipSummary
+  planet: PlanetSummary
   features: FeatureSummary[]
   sessions: SessionDescriptor[]
   transcripts: Map<string, AgentChatMessage[]>
   pendings: Map<string, AgentChatPending>
   connected: boolean
   /** Controlled tab. Pass undefined for internal state. */
-  tab?: ShipPanelTab
-  onTabChange?: (tab: ShipPanelTab) => void
+  tab?: PlanetPanelTab
+  onTabChange?: (tab: PlanetPanelTab) => void
   onSend: (agentRunId: string, content: string) => void
   onClarificationReply: (agentRunId: string, toolUseId: string, answer: string) => void
   onNewFeature: () => void
   onOpenWorkflow: () => void
-  onDeleteShip: () => void
+  onDeletePlanet: () => void
 }
 
-const TABS: Array<{ id: ShipPanelTab; label: string }> = [
+const TABS: Array<{ id: PlanetPanelTab; label: string }> = [
   { id: 'features', label: 'features' },
   { id: 'tools', label: 'tools' },
   { id: 'plans', label: 'plans' },
@@ -45,9 +45,9 @@ const TABS: Array<{ id: ShipPanelTab; label: string }> = [
   { id: 'chat', label: 'chat' },
 ]
 
-export function ShipDetailsPanel(props: Props) {
+export function PlanetDetailsPanel(props: Props) {
   const {
-    ship,
+    planet,
     features,
     sessions,
     transcripts,
@@ -59,29 +59,29 @@ export function ShipDetailsPanel(props: Props) {
     onClarificationReply,
     onNewFeature,
     onOpenWorkflow,
-    onDeleteShip,
+    onDeletePlanet,
   } = props
 
-  const [internalTab, setInternalTab] = useState<ShipPanelTab>('features')
+  const [internalTab, setInternalTab] = useState<PlanetPanelTab>('features')
   const tab = controlledTab ?? internalTab
-  const setTab = (t: ShipPanelTab) => {
+  const setTab = (t: PlanetPanelTab) => {
     setInternalTab(t)
     onTabChange?.(t)
   }
 
-  const [description, setDescription] = useState<ShipDescriptionData | null>(null)
+  const [description, setDescription] = useState<PlanetDescriptionData | null>(null)
 
-  // Reset description when ship changes.
+  // Reset description when planet changes.
   useEffect(() => {
     setDescription(null)
-  }, [ship.id])
+  }, [planet.id])
 
   useEffect(() => {
     if (tab !== 'description' || description !== null) return
-    // Abort in-flight fetches when the user clicks between ships quickly so
+    // Abort in-flight fetches when the user clicks between planets quickly so
     // a stale response can't overwrite a newer one.
     const controller = new AbortController()
-    void apiGet<ShipDescriptionData>(`/api/ships/${ship.id}/description`, {
+    void apiGet<PlanetDescriptionData>(`/api/planets/${planet.id}/description`, {
       signal: controller.signal,
     }).then((res) => {
       if (controller.signal.aborted) return
@@ -92,22 +92,22 @@ export function ShipDetailsPanel(props: Props) {
           readme: null,
           readmePath: null,
           git: {},
-          projectPath: ship.projectPath,
+          projectPath: planet.projectPath,
           pathExists: false,
         })
       }
     })
     return () => controller.abort()
     // Tools tab self-fetches (see ToolsTabContent); no work here.
-  }, [tab, description, ship.id, ship.projectPath])
+  }, [tab, description, planet.id, planet.projectPath])
 
   const runningFeature = features.find((f) => f.status === 'running')
 
-  // The chat tab is anchored to a long-lived ship-chat session identified by
-  // the label `ship:<id>:chat` — NOT the transient feature-run leader. The
+  // The chat tab is anchored to a long-lived planet-chat session identified by
+  // the label `planet:<id>:chat` — NOT the transient feature-run leader. The
   // session is created lazily the first time the user opens the chat for this
-  // ship and persists across tab/ship switches until the ship is deleted.
-  const chatLabel = `ship:${ship.id}:chat`
+  // planet and persists across tab/planet switches until the planet is deleted.
+  const chatLabel = `planet:${planet.id}:chat`
   const chatSession = useMemo(
     () => sessions.find((s) => s.label === chatLabel),
     [sessions, chatLabel],
@@ -120,7 +120,7 @@ export function ShipDetailsPanel(props: Props) {
   const openChat = useCallback(async () => {
     setChatOpening(true)
     setChatOpenError(null)
-    const res = await apiPost(`/api/ships/${ship.id}/chat/open`)
+    const res = await apiPost(`/api/planets/${planet.id}/chat/open`)
     setChatOpening(false)
     if (!res.ok) {
       setChatOpenError(res.error)
@@ -128,13 +128,13 @@ export function ShipDetailsPanel(props: Props) {
     }
     // On success the server emits `session:added` which lands in the store and
     // the panel re-renders with `chatSession` populated.
-  }, [ship.id])
+  }, [planet.id])
 
-  // Reset the cached error when the user switches ships so the next ship's
+  // Reset the cached error when the user switches planets so the next planet's
   // chat tab gets a fresh auto-open attempt.
   useEffect(() => {
     setChatOpenError(null)
-  }, [ship.id])
+  }, [planet.id])
 
   // Auto-open the chat the moment the user switches to the CHAT tab. Gated
   // on: no live session yet, not already opening, no prior failure, socket
@@ -146,7 +146,7 @@ export function ShipDetailsPanel(props: Props) {
     if (chatOpening) return
     if (chatOpenError !== null) return
     if (!connected) return
-    if (!ship.pathExists) return
+    if (!planet.pathExists) return
     void openChat()
   }, [
     tab,
@@ -154,7 +154,7 @@ export function ShipDetailsPanel(props: Props) {
     chatOpening,
     chatOpenError,
     connected,
-    ship.pathExists,
+    planet.pathExists,
     openChat,
   ])
 
@@ -164,7 +164,7 @@ export function ShipDetailsPanel(props: Props) {
     <div className="flex flex-col h-full text-xs">
       <header className="border-b border-cyan-500/40 px-3 py-2">
         <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-cyan-300 tracking-widest truncate">SHIP / {ship.name.toUpperCase()}</h2>
+          <h2 className="text-cyan-300 tracking-widest truncate">PLANET / {planet.name.toUpperCase()}</h2>
           <div className="flex items-center gap-2 shrink-0">
             {runningFeature && (
               <span className="text-cyan-300 text-[10px] animate-pulse">● {runningFeature.name}</span>
@@ -173,20 +173,20 @@ export function ShipDetailsPanel(props: Props) {
               onClick={() => {
                 if (
                   confirm(
-                    `Delete ship "${ship.name}"? This removes the ship + feature records from AgentYard. Worktrees on disk are left in place.`,
+                    `Delete project "${planet.name}"? This removes the project + feature records from AgentYard. Worktrees on disk are left in place.`,
                   )
                 ) {
-                  onDeleteShip()
+                  onDeletePlanet()
                 }
               }}
-              title="delete ship"
+              title="delete project"
               className="text-zinc-500 hover:text-rose-300 text-sm leading-none px-1"
             >
               ✕
             </button>
           </div>
         </div>
-        <p className="text-[10px] text-zinc-500 font-mono mt-0.5 break-all">{ship.projectPath}</p>
+        <p className="text-[10px] text-zinc-500 font-mono mt-0.5 break-all">{planet.projectPath}</p>
       </header>
 
       <nav className="flex items-center flex-wrap gap-2 border-b border-cyan-500/20 px-3 py-3">
@@ -222,7 +222,7 @@ export function ShipDetailsPanel(props: Props) {
         )}
         {tab === 'tools' && (
           <div className="h-full overflow-y-auto p-3">
-            <ToolsTabContent shipId={ship.id} />
+            <ToolsTabContent planetId={planet.id} />
           </div>
         )}
         {tab === 'plans' && (
@@ -240,7 +240,7 @@ export function ShipDetailsPanel(props: Props) {
             {chatSession ? (
               <AgentChat
                 agentRunId={chatSession.id}
-                label={ship.name}
+                label={planet.name}
                 role={chatSession.role}
                 state={chatSession.state}
                 transcript={transcripts.get(chatSession.id) ?? []}
@@ -260,15 +260,15 @@ export function ShipDetailsPanel(props: Props) {
                 <EmptyMessage>
                   {chatOpenError
                     ? `couldn't open chat: ${chatOpenError}`
-                    : !ship.pathExists
-                      ? 'ship project path is missing on disk — restore the path or delete the ship.'
+                    : !planet.pathExists
+                      ? 'project path is missing on disk — restore the path or delete the project.'
                       : !connected
                         ? 'offline — reconnect to the server to open the chat.'
                         : 'no chat yet.'}
                 </EmptyMessage>
                 <button
                   onClick={openChat}
-                  disabled={chatOpening || !connected || !ship.pathExists}
+                  disabled={chatOpening || !connected || !planet.pathExists}
                   className="px-3 py-1 border border-cyan-500 text-cyan-300 hover:bg-cyan-500 hover:text-black tracking-wide disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   {chatOpenError ? '⟳ retry' : '▶ open chat'}
@@ -375,7 +375,7 @@ function PlansTab({ features }: { features: FeatureSummary[] }) {
   )
 }
 
-function DescriptionTab({ data }: { data: ShipDescriptionData | null }) {
+function DescriptionTab({ data }: { data: PlanetDescriptionData | null }) {
   if (data === null) return <EmptyMessage>loading...</EmptyMessage>
   return (
     <div className="space-y-3">
@@ -384,7 +384,7 @@ function DescriptionTab({ data }: { data: ShipDescriptionData | null }) {
           <div className="text-[10px] tracking-widest text-rose-300 mb-0.5">PATH MISSING</div>
           <p>
             The project path no longer exists on disk. Worktree creation and feature runs will fail
-            until the path is restored or the ship is deleted (use the ✕ in the header).
+            until the path is restored or the project is deleted (use the ✕ in the header).
           </p>
         </div>
       )}

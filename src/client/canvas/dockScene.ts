@@ -1,10 +1,10 @@
 import { Application, Container, Ticker } from 'pixi.js'
-import type { ShipSummary } from '../../core/types'
-import { drawDroneSprite, drawScaffolding, drawShipSprite, drawStarfield } from './sprites'
+import type { PlanetSummary } from '../../core/types'
+import { drawDroneSprite, drawScaffolding, drawPlanetSprite, drawStarfield } from './sprites'
 
 export interface DockEvents {
   onBack?: () => void
-  onShipHullClick?: () => void
+  onPlanetHullClick?: () => void
   onDroneClick?: (droneRole: string, agentRunId: string) => void
 }
 
@@ -12,7 +12,7 @@ interface DroneEntry {
   container: Container
   role: string
   agentRunId: string
-  /** Angle around the ship in radians; the ticker advances it. */
+  /** Angle around the planet in radians; the ticker advances it. */
   angle: number
   /** Orbit radius (px). */
   radius: number
@@ -34,7 +34,7 @@ export class DockScene {
   private centerLayer: Container
   private starfield: Container
   private drones = new Map<string, DroneEntry>()
-  private shipSprite: Container | null = null
+  private planetSprite: Container | null = null
   private tickerFn: (t: Ticker) => void
   private time = 0
   /** Pixels reserved at the right edge for the always-visible cockpit panel. */
@@ -50,7 +50,7 @@ export class DockScene {
     this.root.addChild(this.centerLayer)
     this.repositionCenter()
 
-    // Scaffolding behind the ship.
+    // Scaffolding behind the planet.
     const scaffolding = drawScaffolding()
     this.centerLayer.addChild(scaffolding)
 
@@ -76,18 +76,18 @@ export class DockScene {
     this.root.destroy({ children: true })
   }
 
-  setShip(ship: ShipSummary | null) {
-    if (this.shipSprite) {
-      this.centerLayer.removeChild(this.shipSprite)
-      this.shipSprite.destroy({ children: true })
-      this.shipSprite = null
+  setPlanet(planet: PlanetSummary | null) {
+    if (this.planetSprite) {
+      this.centerLayer.removeChild(this.planetSprite)
+      this.planetSprite.destroy({ children: true })
+      this.planetSprite = null
     }
-    if (!ship) return
-    const sprite = drawShipSprite({ shipId: ship.id, name: ship.name, glow: true })
+    if (!planet) return
+    const sprite = drawPlanetSprite({ planetId: planet.id, name: planet.name, glow: true })
     sprite.scale.set(4) // bigger in dock view
-    sprite.on('pointerdown', () => this.events.onShipHullClick?.())
+    sprite.on('pointerdown', () => this.events.onPlanetHullClick?.())
     this.centerLayer.addChild(sprite)
-    this.shipSprite = sprite
+    this.planetSprite = sprite
   }
 
   setDrones(specs: DockDroneSpec[]) {

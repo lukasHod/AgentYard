@@ -7,8 +7,8 @@ function hash32(s: string): number {
   return h
 }
 
-/** Deterministic position within [-half, half] for a given ship id. */
-export function shipPositionFor(id: string | number, halfX = 900, halfY = 600): { x: number; y: number } {
+/** Deterministic position within [-half, half] for a given planet id. */
+export function planetPositionFor(id: string | number, halfX = 900, halfY = 600): { x: number; y: number } {
   const h = hash32(String(id))
   const x = ((h % 1009) / 1009) * 2 - 1
   const y = ((Math.floor(h / 1009) % 977) / 977) * 2 - 1
@@ -43,19 +43,19 @@ function hsl(h: number, s: number, l: number, a = 1): number {
   return (R << 16) | (G << 8) | B
 }
 
-export interface DrawShipOptions {
-  shipId: string | number
+export interface DrawPlanetOptions {
+  planetId: string | number
   name: string
   glow?: boolean
   pulse?: boolean
 }
 
-export function drawShipSprite(opts: DrawShipOptions): Container {
+export function drawPlanetSprite(opts: DrawPlanetOptions): Container {
   const c = new Container()
   c.eventMode = 'static'
   c.cursor = 'pointer'
 
-  const hue = hueFor(opts.shipId)
+  const hue = hueFor(opts.planetId)
   const main = hsl(hue, 0.6, 0.55)
   const accent = hsl((hue + 30) % 360, 0.9, 0.7)
   const dark = hsl(hue, 0.3, 0.25)
@@ -95,7 +95,7 @@ export function drawShipSprite(opts: DrawShipOptions): Container {
   cock.circle(2, 0, 4).fill({ color: accent, alpha: 0.9 })
   c.addChild(cock)
 
-  // Name label below the ship.
+  // Name label below the planet.
   const text = new Text({
     text: opts.name,
     style: {
@@ -138,7 +138,7 @@ export function drawStarfield(width: number, height: number, density = 0.0008): 
   return c
 }
 
-/** Scaffolding frame around a ship in dock view. */
+/** Scaffolding frame around a planet in dock view. */
 export function drawScaffolding(): Container {
   const c = new Container()
   const g = new Graphics()

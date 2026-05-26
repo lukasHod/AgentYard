@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Focused planet layout</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #050505; color: #e5e7eb; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { padding: 24px; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: #9ca3af; margin-bottom: 20px; font-size: 13px; }
+
+  .stage {
+    position: relative;
+    height: 560px;
+    background: #000;
+    overflow: hidden;
+    border: 1px solid #1f2937;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .stage:hover { border-color: #38bdf8; }
+  .stage.selected { border-color: #f59e0b; border-width: 2px; }
+
+  /* Stars background */
+  .stage .stars {
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 10% 20%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 24% 70%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 38% 33%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 52% 88%, #fff, transparent 60%),
+      radial-gradient(2px 2px at 18% 55%, rgba(255,255,255,0.7), transparent 60%),
+      radial-gradient(1px 1px at 44% 10%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 78% 65%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 90% 32%, #fff, transparent 60%);
+    opacity: 0.5;
+  }
+
+  /* Planet, big, centered-right-ish, DIMMED so HUD reads */
+  .stage .planet {
+    position: absolute;
+    right: 8%; top: 50%; transform: translate(0, -50%);
+    width: 640px; height: 640px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #f0abfc 0%, #a855f7 25%, #581c87 60%, #1e1b4b 90%, #000 100%);
+    box-shadow: 0 0 160px rgba(168,85,247,0.18), inset -110px -60px 200px rgba(0,0,0,0.7);
+    filter: brightness(0.55) saturate(0.9);  /* DIMMED so panels pop */
+  }
+
+  /* Glass style B */
+  .glass {
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(18px) saturate(1.15);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    border: 1px solid rgba(125,211,252,0.30);
+    border-radius: 16px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.10),
+      0 8px 32px rgba(0,0,0,0.55),
+      0 0 0 1px rgba(125,211,252,0.20),
+      0 0 60px rgba(56,189,248,0.30);   /* outer glow */
+    color: #e0f2fe;
+  }
+
+  /* Top bar */
+  .topbar {
+    position: absolute; left: 16px; right: 16px; top: 16px;
+    height: 52px;
+    padding: 0 18px;
+    display: flex; align-items: center; justify-content: space-between;
+    z-index: 5;
+  }
+  .topbar .left { display: flex; align-items: center; gap: 14px; }
+  .topbar .back {
+    background: rgba(15,23,42,0.5);
+    border: 1px solid rgba(125,211,252,0.4);
+    border-radius: 999px;
+    padding: 6px 14px; font-size: 12px; color: #e0f2fe;
+    backdrop-filter: blur(8px);
+  }
+  .topbar .project { font-weight: 600; letter-spacing: 0.04em; font-size: 15px; }
+  .topbar .path { font-family: ui-monospace, monospace; font-size: 11px; color: #94a3b8; }
+  .topbar .right { display: flex; gap: 10px; align-items: center; font-size: 11px; color: #cbd5e1; }
+  .topbar .right .delete { color: #fb7185; padding: 5px 10px; border: 1px solid rgba(251,113,133,0.4); border-radius: 999px; background: rgba(15,23,42,0.3); }
+  .topbar .right .wfeditor { padding: 5px 10px; border: 1px solid rgba(125,211,252,0.4); border-radius: 999px; background: rgba(15,23,42,0.3); }
+
+  /* Left info panel */
+  .info {
+    position: absolute; left: 16px; top: 84px; bottom: 16px;
+    width: 36%;
+    padding: 18px 22px;
+    display: flex; flex-direction: column;
+    z-index: 4;
+  }
+  .info .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .info .tab {
+    padding: 5px 12px; font-size: 11px; letter-spacing: 0.16em; font-weight: 600;
+    border: 1px solid rgba(125,211,252,0.30); border-radius: 999px;
+    color: #94a3b8; background: transparent;
+  }
+  .info .tab.active {
+    color: #f0f9ff; background: rgba(56,189,248,0.18);
+    border-color: rgba(125,211,252,0.7); box-shadow: 0 0 18px rgba(56,189,248,0.5);
+  }
+  .info .rows { flex: 1; display: flex; flex-direction: column; }
+  .info .row {
+    display: flex; justify-content: space-between; padding: 12px 0;
+    border-top: 1px solid rgba(125,211,252,0.1);
+  }
+  .info .row:first-of-type { border-top: none; }
+  .info .row .name { font-size: 13px; }
+  .info .row .status { font-size: 11px; font-weight: 600; }
+  .info .footer {
+    margin-top: 16px; display: flex; gap: 10px;
+  }
+  .info .footer button {
+    padding: 7px 14px; font-size: 11px; border-radius: 999px;
+    background: rgba(56,189,248,0.18);
+    border: 1px solid rgba(125,211,252,0.5);
+    color: #e0f2fe;
+  }
+
+  /* Right chat panel */
+  .chat {
+    position: absolute; right: 16px; top: 84px; bottom: 16px;
+    width: 36%;
+    padding: 14px 16px;
+    display: flex; flex-direction: column;
+    z-index: 4;
+  }
+  .chat .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 10px; margin-bottom: 10px;
+    border-bottom: 1px solid rgba(125,211,252,0.15);
+  }
+  .chat .header .label { font-size: 11px; letter-spacing: 0.25em; color: #7dd3fc; }
+  .chat .body { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; line-height: 1.5; }
+  .chat .msg.user { align-self: flex-end; background: rgba(56,189,248,0.18); border: 1px solid rgba(125,211,252,0.3); border-radius: 14px; padding: 8px 12px; max-width: 80%; }
+  .chat .msg.agent { align-self: flex-start; color: #cbd5e1; }
+  .chat .input {
+    margin-top: 10px;
+    background: rgba(2,6,12,0.5); border: 1px solid rgba(125,211,252,0.3);
+    border-radius: 12px; padding: 8px 12px; color: #94a3b8; font-size: 12.5px;
+  }
+
+  .stage-label {
+    position: absolute; bottom: 14px; left: 16px;
+    background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 4px;
+    font-size: 10px; letter-spacing: 0.3em; color: #fff; z-index: 6;
+  }
+
+  .pick { margin-top: 18px; color: #9ca3af; font-size: 13px; }
+  .planet-explainer { color: #64748b; font-size: 12px; margin-top: -12px; margin-bottom: 18px; }
+</style>
+</head>
+<body>
+
+<h1>Focused-planet layout — entire screen HUD, planet as background</h1>
+<p class="subtitle">One layout, two stages. Planet is dimmed to ~55% brightness so glass panels stay readable. Chat is always on the right. Info tabs (features/tools/plans/description) live in the left panel.</p>
+
+<!-- Layout A: features tab visible -->
+<div class="stage" data-choice="features-view" onclick="toggleSelect(this)">
+  <div class="stars"></div>
+  <div class="planet"></div>
+
+  <div class="topbar glass">
+    <div class="left">
+      <span class="back">← system</span>
+      <span class="project">AgentYard</span>
+      <span class="path">/Users/lh/code/agentyard</span>
+    </div>
+    <div class="right">
+      <span style="color:#4ade80">● link</span>
+      <span class="wfeditor">⚙ workflow editor</span>
+      <span class="delete">✕ delete</span>
+    </div>
+  </div>
+
+  <div class="info glass">
+    <div class="tabs">
+      <button class="tab active">FEATURES</button>
+      <button class="tab">TOOLS</button>
+      <button class="tab">PLANS</button>
+      <button class="tab">DESCRIPTION</button>
+      <button class="tab">RUN</button>
+    </div>
+    <div class="rows">
+      <div class="row"><span class="name">add-payment-flow</span><span class="status" style="color:#38bdf8">● running</span></div>
+      <div class="row"><span class="name">fix-login-bug</span><span class="status" style="color:#4ade80">complete</span></div>
+      <div class="row"><span class="name">refactor-state</span><span class="status" style="color:#94a3b8">idle</span></div>
+      <div class="row"><span class="name">onboarding-v2</span><span class="status" style="color:#fb7185">failed</span></div>
+    </div>
+    <div class="footer">
+      <button>▷ new feature</button>
+    </div>
+  </div>
+
+  <div class="chat glass">
+    <div class="header">
+      <span class="label">CHAT — AGENTYARD</span>
+      <span style="color:#4ade80; font-size:11px">● connected</span>
+    </div>
+    <div class="body">
+      <div class="msg agent">Started feature add-payment-flow. Branch worktree spun up at <code style="color:#7dd3fc">.agentyard/worktrees/add-payment-flow</code>.</div>
+      <div class="msg user">Show me what the leader picked for the workflow.</div>
+      <div class="msg agent">Leader selected <strong>standard-feature.wf</strong>. Drones: planner, implementer, reviewer.</div>
+      <div class="msg agent" style="color:#fbbf24">● planner is awaiting clarification: "Should refunds be partial?"</div>
+    </div>
+    <div class="input">Type a message…</div>
+  </div>
+
+  <div class="stage-label">PLANET FOCUSED — FEATURES + CHAT</div>
+</div>
+
+<!-- Layout B: chat tab "expanded" - showing chat as the focus -->
+<div class="stage" data-choice="chat-emphasis" onclick="toggleSelect(this)">
+  <div class="stars"></div>
+  <div class="planet" style="filter: brightness(0.40) saturate(0.85);"></div>
+
+  <div class="topbar glass">
+    <div class="left">
+      <span class="back">← system</span>
+      <span class="project">AgentYard</span>
+      <span class="path">/Users/lh/code/agentyard</span>
+    </div>
+    <div class="right">
+      <span style="color:#4ade80">● link</span>
+      <span class="wfeditor">⚙ workflow editor</span>
+      <span class="delete">✕ delete</span>
+    </div>
+  </div>
+
+  <!-- Same layout but chat panel wider, info panel narrower -->
+  <div class="info glass" style="width: 28%;">
+    <div class="tabs">
+      <button class="tab active">FEATURES</button>
+      <button class="tab">TOOLS</button>
+      <button class="tab">PLANS</button>
+      <button class="tab">DESC</button>
+      <button class="tab">RUN</button>
+    </div>
+    <div class="rows">
+      <div class="row"><span class="name">add-payment-flow</span><span class="status" style="color:#38bdf8">● run</span></div>
+      <div class="row"><span class="name">fix-login-bug</span><span class="status" style="color:#4ade80">done</span></div>
+      <div class="row"><span class="name">refactor-state</span><span class="status" style="color:#94a3b8">idle</span></div>
+    </div>
+  </div>
+
+  <div class="chat glass" style="width: 45%;">
+    <div class="header">
+      <span class="label">CHAT — AGENTYARD</span>
+      <span style="color:#4ade80; font-size:11px">● connected</span>
+    </div>
+    <div class="body">
+      <div class="msg agent">Started feature add-payment-flow…</div>
+      <div class="msg user">Show me what the leader picked for the workflow.</div>
+      <div class="msg agent">Leader selected <strong>standard-feature.wf</strong>. Drones: planner, implementer, reviewer.</div>
+      <div class="msg agent" style="color:#fbbf24">● planner awaiting clarification: "Should refunds be partial?"</div>
+      <div class="msg user">Yes, partial allowed up to invoice total.</div>
+      <div class="msg agent">Acknowledged. Resuming planner.</div>
+    </div>
+    <div class="input">Type a message…</div>
+  </div>
+
+  <div class="stage-label">PLANET FOCUSED — CHAT EMPHASIS (wider right panel)</div>
+</div>
+
+<p class="pick"><strong>Is this the right shape?</strong> Chat permanently on the right; the other tabs live in the left panel; planet is the dimmed background everything sits on. The two stages just differ in panel proportions. Tell me yes/no — and: should the info panel be RESIZABLE by drag, or fixed at one width?</p>
+
+<script>
+  function toggleSelect(el) {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+</script>
+
+</body>
+</html>
