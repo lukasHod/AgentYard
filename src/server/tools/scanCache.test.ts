@@ -12,14 +12,14 @@ import {
 } from './scanCache.js'
 import { writeTool, deleteTool } from './crud.js'
 
-function makeShip() {
-  const ship = mkdtempSync(path.join(os.tmpdir(), 'ay-cache-'))
+function makePlanet() {
+  const planetDir = mkdtempSync(path.join(os.tmpdir(), 'ay-cache-'))
   clearScanCache()
   return {
-    ctx: { planetProjectPath: ship },
+    ctx: { planetProjectPath: planetDir },
     cleanup: () => {
       clearScanCache()
-      rmSync(ship, { recursive: true, force: true })
+      rmSync(planetDir, { recursive: true, force: true })
     },
   }
 }
@@ -35,7 +35,7 @@ function writeSkill(ctx: { planetProjectPath: string }, name: string, body: stri
 }
 
 test('scanCache: a second scan hits the cache, not the disk', async () => {
-  const env = makeShip()
+  const env = makePlanet()
   try {
     writeSkill(env.ctx, 'first', 'one')
 
@@ -57,7 +57,7 @@ test('scanCache: a second scan hits the cache, not the disk', async () => {
 })
 
 test('scanCache: TTL expiry forces a fresh scan', async () => {
-  const env = makeShip()
+  const env = makePlanet()
   const prevTtl = _setTtlForTests(50)
   try {
     writeSkill(env.ctx, 'one', 'a')
@@ -75,7 +75,7 @@ test('scanCache: TTL expiry forces a fresh scan', async () => {
 })
 
 test('scanCache: writeTool invalidates the matching scope/type', async () => {
-  const env = makeShip()
+  const env = makePlanet()
   try {
     writeSkill(env.ctx, 'one', 'a')
     const before = await scanScopeType('planet', 'skill', env.ctx)
@@ -94,7 +94,7 @@ test('scanCache: writeTool invalidates the matching scope/type', async () => {
 })
 
 test('scanCache: deleteTool invalidates the matching scope/type', async () => {
-  const env = makeShip()
+  const env = makePlanet()
   try {
     writeTool('planet', 'skill', { name: 'goodbye', description: '', body: 'b' }, env.ctx)
     const before = await scanScopeType('planet', 'skill', env.ctx)
@@ -110,7 +110,7 @@ test('scanCache: deleteTool invalidates the matching scope/type', async () => {
 })
 
 test('scanCache: invalidate is dimension-scoped — unrelated entries survive', async () => {
-  const env = makeShip()
+  const env = makePlanet()
   try {
     writeTool('planet', 'skill', { name: 'skill1', description: '', body: 'a' }, env.ctx)
     writeTool(
@@ -145,7 +145,7 @@ test('scanCache: invalidate is dimension-scoped — unrelated entries survive', 
 })
 
 test('scanCache: clear() drops everything', async () => {
-  const env = makeShip()
+  const env = makePlanet()
   try {
     writeTool('planet', 'skill', { name: 's', description: '', body: 'b' }, env.ctx)
     await scanScopeType('planet', 'skill', env.ctx)

@@ -163,7 +163,7 @@ export function App() {
         const msg = res.error
         // Path-missing / not-a-repo is a recoverable user-facing condition —
         // offer to remove the now-orphaned project.
-        if (msg.includes('Planet path does not exist') || msg.includes('not a git repository')) {
+        if (msg.includes('Project path does not exist') || msg.includes('not a git repository')) {
           if (
             confirm(
               `Can't create a feature on this project:\n\n${msg}\n\nThis usually means the project path has been moved or deleted on disk. Delete the project from AgentYard now?`,

@@ -1,23 +1,23 @@
 /**
  * Phase D smoke — sandbox test-run endpoint.
  *
- * Runs against the existing "smoke-ship" ship (must point at a real git repo,
- * e.g. the AgentYard repo itself). The smoke does NOT create or delete the
- * ship; pre-flight just verifies one exists.
+ * Runs against the existing "smoke-planet" planet (must point at a real git
+ * repo, e.g. the AgentYard repo itself). The smoke does NOT create or delete
+ * the planet; pre-flight just verifies one exists.
  *
  * Flow:
- *  1. Find the "smoke-ship" via /api/ships.
+ *  1. Find the "smoke-planet" via /api/planets.
  *  2. POST /api/test-runs against the default workflow's `print-context`
  *     script node, scope='node' (no real AI calls).
  *  3. Listen on socket.io for test-run:* events scoped to that testRunId.
  *  4. Wait for test-run:teardown, then verify:
  *     - test-run:started, test-run:node:started, test-run:node:complete,
  *       test-run:complete, test-run:teardown all fired
- *     - The test-worktree directory was deleted from <shipPath>/.agentyard/test-worktrees/
+ *     - The test-worktree directory was deleted from <planetPath>/.agentyard/test-worktrees/
  *     - The throwaway agentyard-test/* branch is gone from `git branch --list`
  *
  * Run with: npx tsx scripts/smoke-test-run.ts
- * (Assumes `npm run dev` is already running and a "smoke-ship" exists.)
+ * (Assumes `npm run dev` is already running and a "smoke-planet" exists.)
  */
 import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
@@ -25,7 +25,7 @@ import { simpleGit } from 'simple-git'
 import { io, type Socket } from 'socket.io-client'
 
 const BASE = 'http://localhost:4242'
-const SHIP_NAME = 'smoke-ship'
+const PLANET_NAME = 'smoke-planet'
 const TIMEOUT_MS = 60_000
 
 interface CheckResult {
@@ -34,7 +34,7 @@ interface CheckResult {
   detail?: string
 }
 
-interface Ship {
+interface Planet {
   id: number
   name: string
   projectPath: string
@@ -55,20 +55,20 @@ function fail(msg: string): never {
   throw new Error(msg)
 }
 
-// 1. Look up the existing smoke-ship.
-const ships = (await fetch(`${BASE}/api/ships`).then((r) => r.json())) as Ship[]
-const ship = ships.find((s) => s.name === SHIP_NAME)
-if (!ship) {
+// 1. Look up the existing smoke-planet.
+const planets = (await fetch(`${BASE}/api/planets`).then((r) => r.json())) as Planet[]
+const planet = planets.find((s) => s.name === PLANET_NAME)
+if (!planet) {
   fail(
-    `no ship named "${SHIP_NAME}" registered. Create one pointing at any git repo via the galaxy view first.`,
+    `no planet named "${PLANET_NAME}" registered. Create one pointing at any git repo via the galaxy view first.`,
   )
 }
-if (!ship!.pathExists) {
-  fail(`ship "${SHIP_NAME}" projectPath does not exist on disk: ${ship!.projectPath}`)
+if (!planet!.pathExists) {
+  fail(`planet "${PLANET_NAME}" projectPath does not exist on disk: ${planet!.projectPath}`)
 }
-const shipId = ship!.id
-const shipPath = ship!.projectPath
-const git = simpleGit(shipPath)
+const planetId = planet!.id
+const planetPath = planet!.projectPath
+const git = simpleGit(planetPath)
 
 // 2. Find default workflow + print-context node.
 const wfList = (await fetch(`${BASE}/api/workflows`).then((r) => r.json())) as Array<{
@@ -110,7 +110,7 @@ bind('test-run:teardown')
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      shipId,
+      planetId,
       workflowId,
       task: 'smoke',
       scope: 'node',
@@ -163,8 +163,8 @@ results.push({
   detail: seen.has('test-run:failed') ? 'unexpected test-run:failed' : undefined,
 })
 
-// 7. Worktree dir gone under the smoke-ship.
-const wtRoot = path.join(shipPath, '.agentyard', 'test-worktrees')
+// 7. Worktree dir gone under the smoke-planet.
+const wtRoot = path.join(planetPath, '.agentyard', 'test-worktrees')
 const wtChildren = existsSync(wtRoot) ? readdirSync(wtRoot) : []
 results.push({
   name: 'sandbox worktree dir removed from disk',
@@ -172,7 +172,7 @@ results.push({
   detail: wtChildren.length === 0 ? undefined : `leftover dirs: ${wtChildren.join(', ')}`,
 })
 
-// 8. Throwaway branch gone from the smoke-ship's repo.
+// 8. Throwaway branch gone from the smoke-planet's repo.
 const branchList = (await git.branch()).all
 const leftoverBranches = branchList.filter((b) => b.startsWith('agentyard-test/'))
 results.push({

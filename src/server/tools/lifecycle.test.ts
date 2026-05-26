@@ -11,21 +11,21 @@ import type { ToolEntry } from '../../core/tools.js'
 
 function makeEnv() {
   const homeRoot = mkdtempSync(path.join(os.tmpdir(), 'ay-lc-home-'))
-  const ship = mkdtempSync(path.join(os.tmpdir(), 'ay-lc-ship-'))
+  const planetDir = mkdtempSync(path.join(os.tmpdir(), 'ay-lc-planet-'))
   const prevHome = process.env.AGENTYARD_HOME
   process.env.AGENTYARD_HOME = homeRoot
   clearScanCache()
   return {
-    ctx: { planetProjectPath: ship },
+    ctx: { planetProjectPath: planetDir },
     homeRoot,
-    planetRoot: path.join(ship, '.agentyard'),
-    catalogProjectRoot: path.join(ship, '.claude'),
+    planetRoot: path.join(planetDir, '.agentyard'),
+    catalogProjectRoot: path.join(planetDir, '.claude'),
     cleanup: () => {
       if (prevHome === undefined) delete process.env.AGENTYARD_HOME
       else process.env.AGENTYARD_HOME = prevHome
       clearScanCache()
       rmSync(homeRoot, { recursive: true, force: true })
-      rmSync(ship, { recursive: true, force: true })
+      rmSync(planetDir, { recursive: true, force: true })
     },
   }
 }

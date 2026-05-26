@@ -14,20 +14,20 @@ import { clear as clearScanCache } from './scanCache.js'
  */
 function makeEnv() {
   const homeRoot = mkdtempSync(path.join(os.tmpdir(), 'ay-home-'))
-  const ship = mkdtempSync(path.join(os.tmpdir(), 'ay-ship-'))
+  const planetDir = mkdtempSync(path.join(os.tmpdir(), 'ay-planet-'))
   const prevHome = process.env.AGENTYARD_HOME
   process.env.AGENTYARD_HOME = homeRoot
   clearScanCache()
   return {
-    ctx: { planetProjectPath: ship },
+    ctx: { planetProjectPath: planetDir },
     homeRoot,
-    planetRoot: path.join(ship, '.agentyard'),
+    planetRoot: path.join(planetDir, '.agentyard'),
     cleanup: () => {
       if (prevHome === undefined) delete process.env.AGENTYARD_HOME
       else process.env.AGENTYARD_HOME = prevHome
       clearScanCache()
       rmSync(homeRoot, { recursive: true, force: true })
-      rmSync(ship, { recursive: true, force: true })
+      rmSync(planetDir, { recursive: true, force: true })
     },
   }
 }

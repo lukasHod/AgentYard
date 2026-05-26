@@ -183,7 +183,6 @@ export function TestRunModal({ request, workflow, planets, socket, onClose }: Pr
             submitError={submitError}
             onSubmit={submit}
           />
-
         ) : (
           <TestRunLive
             stage={stage}

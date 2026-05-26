@@ -128,7 +128,7 @@ export function ToolEditorModal({ mode, planetId, library, onClose, onSaved }: P
                   }`}
                   disabled={planetId === null}
                 >
-                  planet
+                  project
                 </button>
                 <button
                   onClick={() => setScope('global')}
