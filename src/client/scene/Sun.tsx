@@ -62,17 +62,18 @@ export function Sun() {
 
   const brightness = useRef(1)
   const scale = useRef(1)
-  // Time since the last focus change; gates the scale tween (brightness
-  // still starts immediately for the "click → dim" responsiveness).
+  // Multiplier on the sun's own rotation + the boiling-surface shader
+  // animation. 1.0 at LOD 0, 0.1 whenever the user is focused on anything
+  // (sun or planet) so the background motion calms down for work.
+  const speedFactor = useRef(1)
+  // Gate the scale + speed tweens until the camera dolly is ~80% complete
+  // so the user's eye arrives at the new framing before the surrounding
+  // system settles into background mode. Brightness still tweens
+  // immediately for click-responsiveness.
   const sinceFocusChange = useRef(0)
-
-  // Reset the gate whenever the "should the sun be a background element?"
-  // bit flips. Don't subscribe to the full focus object here — that would
-  // also reset on planet-A → planet-B switches, which is the wrong feel
-  // (we want the sun to keep shrinking continuously across that).
   useEffect(() => {
     sinceFocusChange.current = 0
-  }, [isOtherFocused])
+  }, [isSunFocused, isOtherFocused])
 
   const material = useMemo(
     () =>
@@ -85,8 +86,11 @@ export function Sun() {
   )
 
   useFrame((_, dt) => {
-    if (matRef.current) matRef.current.uniforms['uTime']!.value += dt
-    if (meshRef.current) meshRef.current.rotation.y += dt * 0.02
+    // Apply speedFactor to both the sun's rotation and its boiling-surface
+    // shader animation so the visual tempo slows together.
+    const sf = speedFactor.current
+    if (matRef.current) matRef.current.uniforms['uTime']!.value += dt * sf
+    if (meshRef.current) meshRef.current.rotation.y += dt * 0.02 * sf
 
     const targetBrightness = isSunFocused
       ? SUN_FOCUSED_BRIGHTNESS
@@ -102,6 +106,9 @@ export function Sun() {
       const targetScale = isOtherFocused ? BACKGROUND_SCALE : 1
       scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
       if (groupRef.current) groupRef.current.scale.setScalar(scale.current)
+
+      const targetSpeed = (isSunFocused || isOtherFocused) ? 0.1 : 1
+      speedFactor.current += (targetSpeed - speedFactor.current) * Math.min(1, dt * RESPONSE)
     }
   })
 

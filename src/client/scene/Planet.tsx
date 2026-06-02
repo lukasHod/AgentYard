@@ -46,13 +46,17 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   )
   const brightness = useRef(1)
   const scale = useRef(1)
-  // Gate the scale tween until the camera dolly is ~80% complete so
-  // background bodies don't visibly shrink while the user is still flying
-  // toward the focused one.
+  // Multiplier on orbital + self-rotation motion. 1.0 at LOD 0, 0.1 when
+  // any body is focused (calm "work mode"). Tweens together with scale.
+  const speedFactor = useRef(1)
+  // Gate the scale/speed tweens until the camera dolly is ~80% complete
+  // so background bodies don't visibly contract while the user is still
+  // flying toward the focused one. Reset on any flip of either focus
+  // condition so cross-focus (planet A → planet B) gets the same gate.
   const sinceFocusChange = useRef(0)
   useEffect(() => {
     sinceFocusChange.current = 0
-  }, [shouldDim])
+  }, [shouldDim, isAnyFocused])
 
   const features = useFeaturesMap().get(planet.id) ?? []
 
@@ -123,12 +127,15 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   )
 
   useFrame((_, dt) => {
+    // Apply speedFactor to all motion so orbital + self-rotation slow
+    // together when zoomed in.
+    const sf = speedFactor.current
     if (groupRef.current) {
       // Orbit around the sun
-      groupRef.current.rotation.y += dt * 0.05 // shared orbit speed for now
+      groupRef.current.rotation.y += dt * 0.05 * sf
     }
     if (meshRef.current) {
-      meshRef.current.rotation.y += dt * (params.rotationSpeed * 0.4)
+      meshRef.current.rotation.y += dt * (params.rotationSpeed * 0.4) * sf
     }
 
     // Brightness starts tweening immediately for click-responsiveness.
@@ -138,7 +145,8 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       materialRef.current.color.copy(baseColor).multiplyScalar(brightness.current)
     }
 
-    // Scale tween is gated: the camera dolly should be ~80% complete first.
+    // Scale + speed tweens are gated: wait until the camera dolly is
+    // ~80% complete, then settle into the new size + tempo together.
     sinceFocusChange.current += dt
     if (sinceFocusChange.current >= SCALE_DELAY) {
       const targetScale = shouldDim ? BACKGROUND_SCALE : 1
@@ -146,6 +154,9 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       if (meshRef.current) {
         meshRef.current.scale.setScalar(scale.current)
       }
+
+      const targetSpeed = isAnyFocused ? 0.1 : 1
+      speedFactor.current += (targetSpeed - speedFactor.current) * Math.min(1, dt * RESPONSE)
     }
   })
 
