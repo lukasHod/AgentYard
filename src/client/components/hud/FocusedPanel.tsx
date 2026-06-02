@@ -6,7 +6,7 @@ import { GlassSplitter } from '../glass/GlassSplitter'
 import { GlassTab } from '../glass/GlassTab'
 import { WorkflowEditorOverlay } from './WorkflowEditorOverlay'
 import { SunPanelInfo } from './SunPanel'
-import { useUiStore } from '../../state/uiStore'
+import { useUiStore, type InfoTab } from '../../state/uiStore'
 import {
   usePlanets,
   useFeaturesMap,
@@ -35,7 +35,7 @@ interface PlanetDescriptionData {
   pathExists: boolean
 }
 
-type Tab = 'features' | 'tools' | 'plans' | 'description' | 'run'
+type Tab = InfoTab
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -381,7 +381,8 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
 
 function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
   const features = useFeaturesMap().get(planet.id) ?? []
-  const [tab, setTab] = useState<Tab>('features')
+  const tab = useUiStore((s) => s.infoTab)
+  const setTab = useUiStore((s) => s.openInfoTab)
   const hasRunning = features.some((f) => f.status === 'running')
 
   return (
@@ -425,6 +426,10 @@ export function FocusedPanel() {
   const back = useUiStore((s) => s.back)
   const splitterRatio = useUiStore((s) => s.splitterRatio)
   const setSplitterRatio = useUiStore((s) => s.setSplitterRatio)
+  const infoPanelOpen = useUiStore((s) => s.infoPanelOpen)
+  const chatPanelOpen = useUiStore((s) => s.chatPanelOpen)
+  const setInfoPanelOpen = useUiStore((s) => s.setInfoPanelOpen)
+  const setChatPanelOpen = useUiStore((s) => s.setChatPanelOpen)
   const planets = usePlanets()
   const sessions = useSessionList()
   const features = useFeaturesMap()
@@ -459,65 +464,139 @@ export function FocusedPanel() {
 
   if (!isSunFocus && !planet) return null
 
+  // When the sun is focused there's no chat session — keep legacy single-panel layout.
+  // For planet/ship focus, panel visibility is now user-toggleable:
+  //   both open  → 50/50 split with draggable splitter (default)
+  //   info only  → info on the left at ~splitter width; right half clickable through to scene
+  //   chat only  → chat on the right at ~(1 - splitter) width; left half clickable through
+  //   both closed → no panels; corner icons (rendered by PanelToggleIcons) restore them
+  // The splitter is shown whenever any side panel is visible (not just both),
+  // so the user can resize the single-open panel too.
+  const showSplitter = !isSunFocus && (infoPanelOpen || chatPanelOpen)
+
+  // Outside-click "close both panels" semantics live on the R3F <Canvas>
+  // via onPointerMissed — that way clicking a ship/drone in the visible
+  // 3D area still goes to the 3D handler, and only clicks on empty space
+  // close the panels. See App.tsx.
   return (
-    <div className="absolute inset-0 p-4 pointer-events-auto">
-      {/* Top bar */}
-      <GlassPanel className="flex items-center justify-between px-4 py-2 mb-3">
-        <div className="flex items-center gap-3">
-          <GlassButton variant="ghost" onClick={() => back()}>
-            ← system
-          </GlassButton>
-          {isSunFocus ? (
-            <span className="font-semibold tracking-widest text-amber-200">SUN — GLOBAL LIBRARY</span>
-          ) : (
-            <>
-              <span className="font-semibold tracking-wide">{planet!.name}</span>
-              <span className="font-mono text-xs text-slate-400">{planet!.projectPath}</span>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <GlassChip>● link</GlassChip>
-          <GlassButton variant="ghost" onClick={() => setWfOpen(true)}>⚙ workflow editor</GlassButton>
-          {!isSunFocus && <GlassButton variant="danger">✕ delete</GlassButton>}
-        </div>
-      </GlassPanel>
-
-      {/* Body */}
-      {isSunFocus ? (
-        <div className="relative" style={{ height: 'calc(100% - 80px)' }}>
-          <div className="absolute inset-0 p-2">
-            <GlassPanel className="h-full p-4 overflow-y-auto">
-              <SunPanelInfo />
-            </GlassPanel>
+    <>
+      <div className="absolute inset-0 p-4 pointer-events-none">
+        {/* Top bar (always visible while focused; carries the hide-all eye button). */}
+        <GlassPanel className="flex items-center justify-between px-4 py-2 mb-3 pointer-events-auto">
+          <div className="flex items-center gap-3">
+            <GlassButton variant="ghost" onClick={() => back()}>
+              ← system
+            </GlassButton>
+            {isSunFocus ? (
+              <span className="font-semibold tracking-widest text-amber-200">SUN — GLOBAL LIBRARY</span>
+            ) : (
+              <>
+                <span className="font-semibold tracking-wide">{planet!.name}</span>
+                <span className="font-mono text-xs text-slate-400">{planet!.projectPath}</span>
+              </>
+            )}
           </div>
-        </div>
-      ) : (
-        <div className="relative" style={{ height: 'calc(100% - 80px)' }}>
-          <div className="absolute inset-y-0 left-0 p-2" style={{ width: `${splitterRatio * 100}%` }}>
-            <GlassPanel className="h-full p-4 overflow-y-auto">
-              {focus.lod === 2 && focusedFeature ? (
-                <ShipInfoPanel feature={focusedFeature} />
-              ) : (
-                <InfoPanelBody planet={planet!} />
-              )}
-            </GlassPanel>
+          <div className="flex items-center gap-2">
+            <GlassChip>● link</GlassChip>
+            <GlassButton variant="ghost" onClick={() => setWfOpen(true)}>⚙ workflow editor</GlassButton>
+            {!isSunFocus && <GlassButton variant="danger">✕ delete</GlassButton>}
           </div>
+        </GlassPanel>
 
-          <GlassSplitter ratio={splitterRatio} onChange={setSplitterRatio} />
-
-          <div
-            className="absolute inset-y-0 right-0 p-2"
-            style={{ left: `${splitterRatio * 100}%`, paddingLeft: 12 }}
-          >
-            <GlassPanel className="h-full p-4 overflow-hidden">
-              <ChatPanelBody planet={planet!} targetSessionId={targetSessionId} />
-            </GlassPanel>
+        {/* Body */}
+        {isSunFocus ? (
+          <div className="relative pointer-events-auto" style={{ height: 'calc(100% - 80px)' }}>
+            <div className="absolute inset-0 p-2">
+              <GlassPanel className="h-full p-4 overflow-y-auto">
+                <SunPanelInfo />
+              </GlassPanel>
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="relative" style={{ height: 'calc(100% - 80px)' }}>
+            {infoPanelOpen && (
+              <div
+                className="absolute inset-y-0 left-0 p-2 pointer-events-auto"
+                style={{ width: `${splitterRatio * 100}%` }}
+              >
+                <GlassPanel className="h-full p-4 overflow-y-auto relative">
+                  <MinimizeButton onClick={() => setInfoPanelOpen(false)} title="hide info panel" />
+                  {focus.lod === 2 && focusedFeature ? (
+                    <ShipInfoPanel feature={focusedFeature} />
+                  ) : (
+                    <InfoPanelBody planet={planet!} />
+                  )}
+                </GlassPanel>
+              </div>
+            )}
 
-      <WorkflowEditorOverlay open={wfOpen} onClose={() => setWfOpen(false)} />
-    </div>
+            {showSplitter && (
+              <div className="pointer-events-auto">
+                {/*
+                  Three splitter positions to support:
+                    both open  → handle at splitterRatio (between panels)
+                    info-only  → handle at splitterRatio (right edge of info)
+                    chat-only  → handle at (1 - splitterRatio) (left edge of chat).
+                                 In this mode the splitter's value is the
+                                 *chat-left position*, so we invert when
+                                 mapping back to splitterRatio (=info width).
+                */}
+                {!infoPanelOpen && chatPanelOpen ? (
+                  <GlassSplitter
+                    ratio={1 - splitterRatio}
+                    onChange={(next) => setSplitterRatio(1 - next)}
+                  />
+                ) : (
+                  <GlassSplitter ratio={splitterRatio} onChange={setSplitterRatio} />
+                )}
+              </div>
+            )}
+
+            {chatPanelOpen && (
+              <div
+                className="absolute inset-y-0 right-0 p-2 pointer-events-auto"
+                style={{
+                  // When info is also open, chat starts at info's right edge
+                  // (splitterRatio). When chat is alone, it sits on the right
+                  // at width = splitterRatio, so its left = 1 - splitterRatio.
+                  left: infoPanelOpen
+                    ? `${splitterRatio * 100}%`
+                    : `${(1 - splitterRatio) * 100}%`,
+                  paddingLeft: 12,
+                }}
+              >
+                <GlassPanel className="h-full p-4 overflow-hidden relative">
+                  <MinimizeButton onClick={() => setChatPanelOpen(false)} title="hide chat panel" />
+                  <ChatPanelBody planet={planet!} targetSessionId={targetSessionId} />
+                </GlassPanel>
+              </div>
+            )}
+          </div>
+        )}
+
+        <WorkflowEditorOverlay open={wfOpen} onClose={() => setWfOpen(false)} />
+      </div>
+    </>
   )
 }
+
+/**
+ * Small glass minimize chip docked in the top-right of a side panel.
+ * Closes that panel only; the corresponding corner-icon set
+ * (PanelToggleIcons) becomes the way to reopen it.
+ */
+function MinimizeButton({ onClick, title }: { onClick: () => void; title: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={title}
+      title={title}
+      onClick={onClick}
+      className="glass-chip absolute top-2 right-2 z-10 cursor-pointer hover:brightness-125 transition"
+      style={{ padding: '2px 8px', fontSize: 12, lineHeight: 1 }}
+    >
+      —
+    </button>
+  )
+}
+

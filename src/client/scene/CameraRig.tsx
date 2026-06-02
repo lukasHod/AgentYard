@@ -2,7 +2,12 @@ import { useThree, useFrame } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import { Vector3 } from 'three'
 import { useUiStore } from '../state/uiStore'
-import { cameraTargetForV2, type PlanetPositionLookup, type ShipPositionLookup } from './lib/cameraTargets'
+import {
+  cameraTargetForV2,
+  systemOverviewTarget,
+  type PlanetPositionLookup,
+  type ShipPositionLookup,
+} from './lib/cameraTargets'
 
 interface Props {
   planetLookup: PlanetPositionLookup
@@ -29,6 +34,12 @@ function easeInOutCubic(t: number) {
 export function CameraRig({ planetLookup, shipLookup }: Props) {
   const { camera } = useThree()
   const focus = useUiStore((s) => s.focus)
+  const viewYaw = useUiStore((s) => s.viewYaw)
+  const viewPitch = useUiStore((s) => s.viewPitch)
+  const viewRadius = useUiStore((s) => s.viewRadius)
+  const viewTargetX = useUiStore((s) => s.viewTargetX)
+  const viewTargetY = useUiStore((s) => s.viewTargetY)
+  const viewTargetZ = useUiStore((s) => s.viewTargetZ)
 
   const fromPos = useRef(new Vector3().copy(camera.position))
   const fromLook = useRef(new Vector3(0, 0, 0))
@@ -49,8 +60,16 @@ export function CameraRig({ planetLookup, shipLookup }: Props) {
   }, [focus, camera])
 
   useFrame((_, dt) => {
-    // Live target — re-sampled every frame so orbital motion is followed.
-    const target = cameraTargetForV2(focus, planetLookup, shipLookup)
+    // Live target — re-sampled every frame so orbital motion (and the
+    // user's right-drag orbit of the overview camera) is followed.
+    const target =
+      focus.lod === 0
+        ? systemOverviewTarget(viewYaw, viewPitch, viewRadius, {
+            x: viewTargetX,
+            y: viewTargetY,
+            z: viewTargetZ,
+          })
+        : cameraTargetForV2(focus, planetLookup, shipLookup)
     toPos.current.set(...target.position)
     toLook.current.set(...target.lookAt)
 

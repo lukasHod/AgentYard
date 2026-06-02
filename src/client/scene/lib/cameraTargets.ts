@@ -17,6 +17,28 @@ const SYSTEM_OVERVIEW: CameraTarget = {
   lookAt: [0, 0, 0],
 }
 
+/**
+ * Spherical overview position around `target`. Yaw rotates around world Y,
+ * pitch tilts up/down. With target=(0,0,0), radius=hypot(8,24), yaw=0,
+ * pitch=atan2(8,24) this reproduces SYSTEM_OVERVIEW.
+ */
+export function systemOverviewTarget(
+  yaw: number,
+  pitch: number,
+  radius: number,
+  target: { x: number; y: number; z: number },
+): CameraTarget {
+  const cp = Math.cos(pitch)
+  return {
+    position: [
+      target.x + radius * cp * Math.sin(yaw),
+      target.y + radius * Math.sin(pitch),
+      target.z + radius * cp * Math.cos(yaw),
+    ],
+    lookAt: [target.x, target.y, target.z],
+  }
+}
+
 const SUN_FOCUS: CameraTarget = {
   position: [0, 1.5, 8],
   lookAt: [0, 0, 0],
