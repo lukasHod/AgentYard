@@ -110,7 +110,7 @@ export class PlanetChatRegistry {
    *
    * We emit `session:added` for the live session (if any) AND replay history
    * under that session id, OR under a stable placeholder id when no live
-   * session exists yet. The client's PlanetDetailsPanel does its own lookup by
+   * session exists yet. The client's FocusedPanel does its own lookup by
    * label so a placeholder id wouldn't actually match — we only replay for
    * live sessions on socket connect.
    */
