@@ -1,6 +1,6 @@
 // src/client/scene/Sun.tsx
 import { useFrame } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { ShaderMaterial, Mesh, Color, PointLight, Group } from 'three'
 import { useUiStore } from '../state/uiStore'
 
@@ -42,6 +42,13 @@ const BACKGROUND_SCALE = 0.1
 const POINT_LIGHT_BASE = 3
 const RESPONSE = 4 // ~250ms tween to target
 
+// CameraRig dolly is 0.8s. Hold the scale change off until the camera is
+// 80% through its dolly so the user's gaze has already arrived at the new
+// frame before background bodies start shrinking — otherwise the shrink
+// happens mid-flight and reads as jittery.
+const DOLLY_DURATION = 0.8
+const SCALE_DELAY = DOLLY_DURATION * 0.8
+
 export function Sun() {
   const groupRef = useRef<Group>(null)
   const meshRef = useRef<Mesh>(null)
@@ -55,6 +62,17 @@ export function Sun() {
 
   const brightness = useRef(1)
   const scale = useRef(1)
+  // Time since the last focus change; gates the scale tween (brightness
+  // still starts immediately for the "click → dim" responsiveness).
+  const sinceFocusChange = useRef(0)
+
+  // Reset the gate whenever the "should the sun be a background element?"
+  // bit flips. Don't subscribe to the full focus object here — that would
+  // also reset on planet-A → planet-B switches, which is the wrong feel
+  // (we want the sun to keep shrinking continuously across that).
+  useEffect(() => {
+    sinceFocusChange.current = 0
+  }, [isOtherFocused])
 
   const material = useMemo(
     () =>
@@ -79,9 +97,12 @@ export function Sun() {
     if (matRef.current) matRef.current.uniforms['uBrightness']!.value = brightness.current
     if (lightRef.current) lightRef.current.intensity = POINT_LIGHT_BASE * brightness.current
 
-    const targetScale = isOtherFocused ? BACKGROUND_SCALE : 1
-    scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
-    if (groupRef.current) groupRef.current.scale.setScalar(scale.current)
+    sinceFocusChange.current += dt
+    if (sinceFocusChange.current >= SCALE_DELAY) {
+      const targetScale = isOtherFocused ? BACKGROUND_SCALE : 1
+      scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
+      if (groupRef.current) groupRef.current.scale.setScalar(scale.current)
+    }
   })
 
   return (

@@ -12,6 +12,10 @@ import { registerPlanetPosition } from './lib/positionRegistry'
 const BACKGROUND_SCALE = 0.1     // size of non-focused planets when something else is focused
 const BACKGROUND_BRIGHTNESS = 0.4 // colour multiplier for non-focused planets
 const RESPONSE = 4               // ~250ms smooth-step toward target
+// CameraRig dolly is 0.8s; hold the scale tween off until the camera is
+// ~80% of the way through. Brightness still tweens immediately.
+const DOLLY_DURATION = 0.8
+const SCALE_DELAY = DOLLY_DURATION * 0.8
 
 interface PlanetProps {
   planet: PlanetSummary
@@ -42,6 +46,13 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   )
   const brightness = useRef(1)
   const scale = useRef(1)
+  // Gate the scale tween until the camera dolly is ~80% complete so
+  // background bodies don't visibly shrink while the user is still flying
+  // toward the focused one.
+  const sinceFocusChange = useRef(0)
+  useEffect(() => {
+    sinceFocusChange.current = 0
+  }, [shouldDim])
 
   const features = useFeaturesMap().get(planet.id) ?? []
 
@@ -120,17 +131,21 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       meshRef.current.rotation.y += dt * (params.rotationSpeed * 0.4)
     }
 
-    // Smooth-step toward target brightness + scale based on focus state.
+    // Brightness starts tweening immediately for click-responsiveness.
     const targetBrightness = shouldDim ? BACKGROUND_BRIGHTNESS : 1
     brightness.current += (targetBrightness - brightness.current) * Math.min(1, dt * RESPONSE)
     if (materialRef.current) {
       materialRef.current.color.copy(baseColor).multiplyScalar(brightness.current)
     }
 
-    const targetScale = shouldDim ? BACKGROUND_SCALE : 1
-    scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
-    if (meshRef.current) {
-      meshRef.current.scale.setScalar(scale.current)
+    // Scale tween is gated: the camera dolly should be ~80% complete first.
+    sinceFocusChange.current += dt
+    if (sinceFocusChange.current >= SCALE_DELAY) {
+      const targetScale = shouldDim ? BACKGROUND_SCALE : 1
+      scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
+      if (meshRef.current) {
+        meshRef.current.scale.setScalar(scale.current)
+      }
     }
   })
 
