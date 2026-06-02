@@ -1,12 +1,12 @@
 /**
  * Phase 5 smoke test — full feature flow with real AI agents.
  *
- * Runs against the existing "smoke-ship" ship (must point at a real git repo,
- * e.g. the AgentYard repo itself). The smoke does NOT create or delete the
- * ship; pre-flight just verifies one exists.
+ * Runs against the existing "smoke-planet" planet (must point at a real git
+ * repo, e.g. the AgentYard repo itself). The smoke does NOT create or delete
+ * the planet; pre-flight just verifies one exists.
  *
- *  1. Look up smoke-ship.
- *  2. POST /api/ships/:id/features with a concrete file-writing task.
+ *  1. Look up smoke-planet.
+ *  2. POST /api/planets/:id/features with a concrete file-writing task.
  *  3. Wait for the feature to reach status=complete (via socket events).
  *  4. Verify the worktree exists and contains the expected file.
  *  5. Tear down: remove worktree via /teardown, delete throwaway branch.
@@ -15,7 +15,7 @@
  * take a few minutes and burn tokens.
  *
  * Run with: npx tsx scripts/smoke.ts
- * (Assumes `npm run dev` is already running and a "smoke-ship" exists.)
+ * (Assumes `npm run dev` is already running and a "smoke-planet" exists.)
  */
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -23,13 +23,13 @@ import { simpleGit } from 'simple-git'
 import { io } from 'socket.io-client'
 
 const BASE = 'http://localhost:4242'
-const SHIP_NAME = 'smoke-ship'
+const PLANET_NAME = 'smoke-planet'
 const TIMEOUT_MS = 600_000 // 10 min — three nodes with real file work.
 const SENTINEL_FILE = 'hello-agentyard.txt'
 const SENTINEL_CONTENT = 'hello, agentyard'
 const TASK = `Create a file named ${SENTINEL_FILE} at the repo root containing exactly the text "${SENTINEL_CONTENT}" (no surrounding quotes, no trailing newline required). The deploy phase must commit this change.`
 
-interface Ship {
+interface Planet {
   id: number
   name: string
   projectPath: string
@@ -41,18 +41,18 @@ function fail(msg: string): never {
   process.exit(1)
 }
 
-// 1. Find the existing smoke-ship.
-const ships = (await fetch(`${BASE}/api/ships`).then((r) => r.json())) as Ship[]
-const ship = ships.find((s) => s.name === SHIP_NAME)
-if (!ship) {
-  fail(`no ship named "${SHIP_NAME}" registered. Create one pointing at a git repo via the galaxy view first.`)
+// 1. Find the existing smoke-planet.
+const planets = (await fetch(`${BASE}/api/planets`).then((r) => r.json())) as Planet[]
+const planet = planets.find((s) => s.name === PLANET_NAME)
+if (!planet) {
+  fail(`no planet named "${PLANET_NAME}" registered. Create one pointing at a git repo via the galaxy view first.`)
 }
-if (!ship!.pathExists) {
-  fail(`ship "${SHIP_NAME}" projectPath does not exist on disk: ${ship!.projectPath}`)
+if (!planet!.pathExists) {
+  fail(`planet "${PLANET_NAME}" projectPath does not exist on disk: ${planet!.projectPath}`)
 }
-const shipId = ship!.id
-const shipPath = ship!.projectPath
-console.log(`[smoke] using smoke-ship #${shipId} at ${shipPath}`)
+const planetId = planet!.id
+const planetPath = planet!.projectPath
+console.log(`[smoke] using smoke-planet #${planetId} at ${planetPath}`)
 
 let featureId: number | null = null
 let featureBranch: string | null = null
@@ -75,7 +75,7 @@ async function cleanup() {
   await new Promise((r) => setTimeout(r, 1500))
   if (featureBranch) {
     try {
-      await simpleGit(shipPath).raw(['branch', '-D', featureBranch])
+      await simpleGit(planetPath).raw(['branch', '-D', featureBranch])
       console.log(`[smoke] deleted branch ${featureBranch}`)
     } catch (e) {
       console.warn(`[smoke] could not delete branch ${featureBranch}: ${e}`)
@@ -91,14 +91,14 @@ let worktreePath: string | null = null
 
 const done = new Promise<void>((resolve, reject) => {
   socket.on('connect', async () => {
-    const res = await fetch(`${BASE}/api/ships/${shipId}/features`, {
+    const res = await fetch(`${BASE}/api/planets/${planetId}/features`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'add-greeting', task: TASK }),
     })
     if (!res.ok) {
       const j = await res.json().catch(() => ({}))
-      reject(new Error(`POST /api/ships/${shipId}/features -> ${res.status}: ${JSON.stringify(j)}`))
+      reject(new Error(`POST /api/planets/${planetId}/features -> ${res.status}: ${JSON.stringify(j)}`))
       return
     }
     const body = await res.json()
@@ -173,5 +173,5 @@ try {
 }
 
 await cleanup()
-console.log('[smoke] PASS — Phase 5 ship+feature+worktree+file-edit verified end-to-end')
+console.log('[smoke] PASS — Phase 5 planet+feature+worktree+file-edit verified end-to-end')
 process.exit(0)

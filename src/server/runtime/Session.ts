@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events'
+import { appendFileSync, mkdirSync } from 'node:fs'
+import path from 'node:path'
 import {
   createSdkMcpServer,
   query,
@@ -69,6 +71,27 @@ export interface SessionOptions {
    * - 'claude_code' : full Claude Code toolset (Read/Edit/Write/Glob/Grep/Bash/...)
    */
   toolPreset?: ToolPreset
+  /**
+   * Which on-disk settings sources the SDK loads (defaults to none — keeps
+   * workflow drones/leaders sandboxed from the user's personal config).
+   * Set to `['user', 'project']` for planet-chat to pick up the user's
+   * installed skills and personal MCP server configs from `~/.claude/` +
+   * `<cwd>/.claude/`.
+   *
+   * Note (2026-05): empirically this does NOT make the SDK dispatch the
+   * built-in Claude Code slash commands (`/help`, `/clear`, `/mcp`, ...)
+   * via streamed user input — those are rejected with "isn't available in
+   * this environment" regardless of which systemPrompt shape we use. See
+   * src/server/planetChat.ts for the workaround surface.
+   */
+  settingSources?: ('user' | 'project' | 'local')[]
+  /**
+   * If true, log the SDK's `system/init` payload (slash_commands, tools,
+   * model, etc.) to the Fastify logger the first time the session sees it.
+   * Useful for inspecting what the Anthropic SDK actually exposes for a
+   * given options shape — leave off for production traffic.
+   */
+  logSystemInit?: boolean
 }
 
 const RUNTIME_NAMESPACE = 'ay_runtime'
@@ -122,7 +145,7 @@ export class Session extends EventEmitter implements ClarificationGateway {
     allowDangerouslySkipPermissions: true
     allowedTools?: string[]
     persistSession: false
-    settingSources: never[]
+    settingSources: ('user' | 'project' | 'local')[]
     cwd?: string
     agents?: Record<string, { description: string; prompt: string; tools?: string[] }>
     agent?: string
@@ -196,7 +219,7 @@ export class Session extends EventEmitter implements ClarificationGateway {
       allowDangerouslySkipPermissions: true,
       ...(allowedTools ? { allowedTools } : {}),
       persistSession: false,
-      settingSources: [],
+      settingSources: this.opts.settingSources ?? [],
       ...(this.opts.cwd ? { cwd: this.opts.cwd } : {}),
       ...(this.opts.systemPrompt
         ? {
@@ -273,9 +296,30 @@ export class Session extends EventEmitter implements ClarificationGateway {
     } else if (msg.type === 'result') {
       this.setState('idle')
       this.resolveAsk()
+    } else if (msg.type === 'system' && this.opts.logSystemInit) {
+      // The SDK opens each session with a system message whose subtype is
+      // 'init' — it lists slash_commands, tools, model, etc. that the SDK
+      // has actually loaded for this session. We dump it to a file so we
+      // can compare against what we *expected* to be available (built-in
+      // /help, /clear, /mcp, etc.) without needing access to the dev
+      // server's stderr. One write per session, never on chat hot paths.
+      const anyMsg = msg as unknown as { subtype?: string }
+      if (anyMsg.subtype === 'init') {
+        try {
+          const dir = path.resolve(process.cwd(), 'debug')
+          mkdirSync(dir, { recursive: true })
+          const line =
+            `\n===== ${new Date().toISOString()} session=${this.id} =====\n` +
+            JSON.stringify(msg, null, 2) +
+            '\n'
+          appendFileSync(path.join(dir, 'system-init.log'), line, 'utf8')
+        } catch {
+          // Diagnostic logging must never break a session.
+        }
+      }
     }
-    // Other message types (system, user echo, tool_result, partial) are
-    // ignored for the chat surface.
+    // Other message types (user echo, tool_result, partial, non-init system)
+    // are ignored for the chat surface.
   }
 
   /** Push a user message into the agent's input stream. */

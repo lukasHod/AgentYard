@@ -11,21 +11,21 @@ import type { ToolEntry } from '../../core/tools.js'
 
 function makeEnv() {
   const homeRoot = mkdtempSync(path.join(os.tmpdir(), 'ay-lc-home-'))
-  const ship = mkdtempSync(path.join(os.tmpdir(), 'ay-lc-ship-'))
+  const planetDir = mkdtempSync(path.join(os.tmpdir(), 'ay-lc-planet-'))
   const prevHome = process.env.AGENTYARD_HOME
   process.env.AGENTYARD_HOME = homeRoot
   clearScanCache()
   return {
-    ctx: { shipProjectPath: ship },
+    ctx: { planetProjectPath: planetDir },
     homeRoot,
-    shipRoot: path.join(ship, '.agentyard'),
-    catalogProjectRoot: path.join(ship, '.claude'),
+    planetRoot: path.join(planetDir, '.agentyard'),
+    catalogProjectRoot: path.join(planetDir, '.claude'),
     cleanup: () => {
       if (prevHome === undefined) delete process.env.AGENTYARD_HOME
       else process.env.AGENTYARD_HOME = prevHome
       clearScanCache()
       rmSync(homeRoot, { recursive: true, force: true })
-      rmSync(ship, { recursive: true, force: true })
+      rmSync(planetDir, { recursive: true, force: true })
     },
   }
 }
@@ -35,19 +35,19 @@ function writeFile(p: string, content: string): void {
   writeFileSync(p, content, 'utf8')
 }
 
-// ── elevate (ship → global) ──
+// ── elevate (planet → global) ──
 
-test('elevateTool: moves a per-ship agent file to global; ship copy disappears', async () => {
+test('elevateTool: moves a per-planet agent file to global; planet copy disappears', async () => {
   const env = makeEnv()
   try {
     writeFile(
-      path.join(env.shipRoot, 'agents', 'mover.md'),
+      path.join(env.planetRoot, 'agents', 'mover.md'),
       '---\nname: mover\ndescription: original\nrole: mover\ntoolPreset: claude_code\n---\n\nbody\n',
     )
-    const source = (await scanScopeType('ship', 'agent', env.ctx)).find(
+    const source = (await scanScopeType('planet', 'agent', env.ctx)).find(
       (e) => e.data.name === 'mover',
     )
-    assert.ok(source, 'precondition: scanner finds ship-scoped agent')
+    assert.ok(source, 'precondition: scanner finds planet-scoped agent')
 
     const { targetPath } = elevateTool(source as ToolEntry, env.ctx)
 
@@ -57,8 +57,8 @@ test('elevateTool: moves a per-ship agent file to global; ship copy disappears',
       `target should be inside global root: ${targetPath}`,
     )
     assert.ok(
-      !existsSync(path.join(env.shipRoot, 'agents', 'mover.md')),
-      'ship-scoped file removed',
+      !existsSync(path.join(env.planetRoot, 'agents', 'mover.md')),
+      'planet-scoped file removed',
     )
 
     // After elevation, resolveTool sees the global one.
@@ -69,7 +69,7 @@ test('elevateTool: moves a per-ship agent file to global; ship copy disappears',
   }
 })
 
-test('elevateTool: rejects a source that is not in ship scope', async () => {
+test('elevateTool: rejects a source that is not in planet scope', async () => {
   const env = makeEnv()
   try {
     writeFile(
@@ -80,15 +80,15 @@ test('elevateTool: rejects a source that is not in ship scope', async () => {
       (e) => e.data.name === 'wrong',
     )
     assert.ok(source)
-    assert.throws(() => elevateTool(source as ToolEntry, env.ctx), /'ship' scope/)
+    assert.throws(() => elevateTool(source as ToolEntry, env.ctx), /'planet' scope/)
   } finally {
     env.cleanup()
   }
 })
 
-// ── fork (global → ship copy) ──
+// ── fork (global → planet copy) ──
 
-test('forkTool: copies a global agent to ship; both files exist; ship wins on resolve', async () => {
+test('forkTool: copies a global agent to planet; both files exist; planet wins on resolve', async () => {
   const env = makeEnv()
   try {
     writeFile(
@@ -102,22 +102,22 @@ test('forkTool: copies a global agent to ship; both files exist; ship wins on re
 
     const { targetPath } = forkTool(source as ToolEntry, env.ctx)
 
-    assert.ok(targetPath.startsWith(env.shipRoot))
-    assert.ok(existsSync(targetPath), 'ship copy exists')
+    assert.ok(targetPath.startsWith(env.planetRoot))
+    assert.ok(existsSync(targetPath), 'planet copy exists')
     assert.ok(
       existsSync(path.join(env.homeRoot, 'agents', 'forky.md')),
       'global file is still there (fork = copy, not move)',
     )
 
-    // Resolver now returns ship scope (closer wins).
+    // Resolver now returns planet scope (closer wins).
     const resolved = await resolveTool('agent', 'forky', env.ctx)
-    assert.ok(resolved && resolved.scope === 'ship')
+    assert.ok(resolved && resolved.scope === 'planet')
   } finally {
     env.cleanup()
   }
 })
 
-test('forkTool: copies a global SKILL folder recursively to ship', async () => {
+test('forkTool: copies a global SKILL folder recursively to planet', async () => {
   const env = makeEnv()
   try {
     const srcDir = path.join(env.homeRoot, 'skills', 'forky-skill')
@@ -133,7 +133,7 @@ test('forkTool: copies a global SKILL folder recursively to ship', async () => {
     assert.ok(source)
 
     const { targetPath } = forkTool(source as ToolEntry, env.ctx)
-    assert.ok(targetPath.startsWith(env.shipRoot))
+    assert.ok(targetPath.startsWith(env.planetRoot))
     assert.ok(existsSync(path.join(targetPath, 'SKILL.md')))
     assert.ok(existsSync(path.join(targetPath, 'extra.txt')), 'recursive copy keeps sidecars')
   } finally {
@@ -145,10 +145,10 @@ test('forkTool: rejects a source that is not in global scope', async () => {
   const env = makeEnv()
   try {
     writeFile(
-      path.join(env.shipRoot, 'agents', 'shippy.md'),
+      path.join(env.planetRoot, 'agents', 'shippy.md'),
       '---\nname: shippy\ndescription: \nrole: shippy\ntoolPreset: claude_code\n---\n\nbody\n',
     )
-    const source = (await scanScopeType('ship', 'agent', env.ctx)).find(
+    const source = (await scanScopeType('planet', 'agent', env.ctx)).find(
       (e) => e.data.name === 'shippy',
     )
     assert.ok(source)
@@ -188,10 +188,10 @@ test('adoptTool: rewrites a Claude-format agent into AgentYard format', async ()
 
     const { targetPath } = adoptTool({
       source: source as ToolEntry,
-      target: 'ship',
+      target: 'planet',
       ctx: env.ctx,
     })
-    assert.ok(targetPath.startsWith(env.shipRoot))
+    assert.ok(targetPath.startsWith(env.planetRoot))
     const written = readFileSync(targetPath, 'utf8')
     // Field rename happened.
     assert.match(written, /mcps:\s*\n\s+-\s+sentry/)
@@ -207,10 +207,10 @@ test('adoptTool: rejects a source from a non-catalog scope', async () => {
   const env = makeEnv()
   try {
     writeFile(
-      path.join(env.shipRoot, 'agents', 'shippy.md'),
+      path.join(env.planetRoot, 'agents', 'shippy.md'),
       '---\nname: shippy\ndescription: \nrole: shippy\ntoolPreset: claude_code\n---\n\nbody\n',
     )
-    const source = (await scanScopeType('ship', 'agent', env.ctx)).find(
+    const source = (await scanScopeType('planet', 'agent', env.ctx)).find(
       (e) => e.data.name === 'shippy',
     )
     assert.ok(source)

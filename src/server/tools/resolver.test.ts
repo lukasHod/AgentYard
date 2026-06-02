@@ -7,27 +7,27 @@ import { resolveTool } from './resolver.js'
 import { clear as clearScanCache } from './scanCache.js'
 
 /**
- * Build an isolated environment with separate dirs for the "ship" scope and
+ * Build an isolated environment with separate dirs for the "planet" scope and
  * the "global" scope. AGENTYARD_HOME points global at a temp dir so tests
  * never touch the real ~/.agentyard. Note: AGENTYARD_HOME is the .agentyard
  * dir itself, not its parent.
  */
 function makeEnv() {
   const homeRoot = mkdtempSync(path.join(os.tmpdir(), 'ay-home-'))
-  const ship = mkdtempSync(path.join(os.tmpdir(), 'ay-ship-'))
+  const planetDir = mkdtempSync(path.join(os.tmpdir(), 'ay-planet-'))
   const prevHome = process.env.AGENTYARD_HOME
   process.env.AGENTYARD_HOME = homeRoot
   clearScanCache()
   return {
-    ctx: { shipProjectPath: ship },
+    ctx: { planetProjectPath: planetDir },
     homeRoot,
-    shipRoot: path.join(ship, '.agentyard'),
+    planetRoot: path.join(planetDir, '.agentyard'),
     cleanup: () => {
       if (prevHome === undefined) delete process.env.AGENTYARD_HOME
       else process.env.AGENTYARD_HOME = prevHome
       clearScanCache()
       rmSync(homeRoot, { recursive: true, force: true })
-      rmSync(ship, { recursive: true, force: true })
+      rmSync(planetDir, { recursive: true, force: true })
     },
   }
 }
@@ -83,15 +83,15 @@ test('resolveTool: finds a global-scoped agent', async () => {
   }
 })
 
-test('resolveTool: ship scope shadows global with the same name', async () => {
+test('resolveTool: planet scope shadows global with the same name', async () => {
   const env = makeEnv()
   try {
     writeAgentFile(env.homeRoot, 'planner', 'global-version')
-    writeAgentFile(env.shipRoot, 'planner', 'ship-version')
+    writeAgentFile(env.planetRoot, 'planner', 'planet-version')
     const r = await resolveTool('agent', 'planner', env.ctx)
     assert.ok(r)
-    assert.equal(r!.scope, 'ship')
-    assert.equal(r!.data.description, 'ship-version')
+    assert.equal(r!.scope, 'planet')
+    assert.equal(r!.data.description, 'planet-version')
   } finally {
     env.cleanup()
   }
@@ -101,11 +101,11 @@ test('resolveTool: distinct names resolve from their respective scopes', async (
   const env = makeEnv()
   try {
     writeAgentFile(env.homeRoot, 'global-only', 'g')
-    writeAgentFile(env.shipRoot, 'ship-only', 's')
+    writeAgentFile(env.planetRoot, 'planet-only', 's')
     const g = await resolveTool('agent', 'global-only', env.ctx)
-    const s = await resolveTool('agent', 'ship-only', env.ctx)
+    const s = await resolveTool('agent', 'planet-only', env.ctx)
     assert.ok(g && g.scope === 'global')
-    assert.ok(s && s.scope === 'ship')
+    assert.ok(s && s.scope === 'planet')
   } finally {
     env.cleanup()
   }
@@ -115,24 +115,24 @@ test('resolveTool: works across tool types (skill)', async () => {
   const env = makeEnv()
   try {
     writeSkillFolder(env.homeRoot, 'tone', 'global-tone')
-    writeSkillFolder(env.shipRoot, 'tone', 'ship-tone')
+    writeSkillFolder(env.planetRoot, 'tone', 'planet-tone')
     const r = await resolveTool('skill', 'tone', env.ctx)
     assert.ok(r && r.type === 'skill')
-    assert.equal(r.scope, 'ship')
-    assert.equal(r.data.description, 'ship-tone')
+    assert.equal(r.scope, 'planet')
+    assert.equal(r.data.description, 'planet-tone')
   } finally {
     env.cleanup()
   }
 })
 
-test('resolveTool: ship without a project path falls back to global only', async () => {
+test('resolveTool: planet without a project path falls back to global only', async () => {
   const homeRoot = mkdtempSync(path.join(os.tmpdir(), 'ay-home-'))
   const prev = process.env.AGENTYARD_HOME
   process.env.AGENTYARD_HOME = homeRoot
   clearScanCache()
   try {
     writeAgentFile(homeRoot, 'planner', 'global')
-    const r = await resolveTool('agent', 'planner', { shipProjectPath: null })
+    const r = await resolveTool('agent', 'planner', { planetProjectPath: null })
     assert.ok(r && r.scope === 'global')
   } finally {
     if (prev === undefined) delete process.env.AGENTYARD_HOME
@@ -143,11 +143,11 @@ test('resolveTool: ship without a project path falls back to global only', async
 })
 
 test('resolveTool: catalog scopes (.claude/) are NEVER consulted', async () => {
-  // The resolver only walks ship → global. A tool present only in a catalog
+  // The resolver only walks planet → global. A tool present only in a catalog
   // scope should remain unresolved until adopted.
   const env = makeEnv()
   try {
-    const catalogDir = path.join(env.ctx.shipProjectPath, '.claude', 'agents')
+    const catalogDir = path.join(env.ctx.planetProjectPath, '.claude', 'agents')
     mkdirSync(catalogDir, { recursive: true })
     writeFileSync(
       path.join(catalogDir, 'cataloged.md'),

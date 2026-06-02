@@ -6,14 +6,14 @@ import path from 'node:path'
 import { deleteTool, writeTool } from './crud.js'
 
 interface Tmp {
-  ctx: { shipProjectPath: string }
+  ctx: { planetProjectPath: string }
   cleanup: () => void
 }
 
 function makeTmp(): Tmp {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'ay-crud-'))
   return {
-    ctx: { shipProjectPath: dir },
+    ctx: { planetProjectPath: dir },
     cleanup: () => {
       try {
         rmSync(dir, { recursive: true, force: true })
@@ -30,7 +30,7 @@ test('writeTool rejects path-traversal name (skill)', () => {
     assert.throws(
       () =>
         writeTool(
-          'ship',
+          'planet',
           'skill',
           { name: '../escape', description: '', body: '' },
           ctx,
@@ -47,12 +47,12 @@ test('writeTool rejects names with path separators', () => {
   try {
     assert.throws(
       () =>
-        writeTool('ship', 'skill', { name: 'foo/bar', description: '', body: '' }, ctx),
+        writeTool('planet', 'skill', { name: 'foo/bar', description: '', body: '' }, ctx),
       /Invalid tool name/,
     )
     assert.throws(
       () =>
-        writeTool('ship', 'skill', { name: 'foo\\bar', description: '', body: '' }, ctx),
+        writeTool('planet', 'skill', { name: 'foo\\bar', description: '', body: '' }, ctx),
       /Invalid tool name/,
     )
   } finally {
@@ -60,17 +60,17 @@ test('writeTool rejects names with path separators', () => {
   }
 })
 
-test('writeTool accepts a valid name and writes inside the ship root', () => {
+test('writeTool accepts a valid name and writes inside the planet root', () => {
   const { ctx, cleanup } = makeTmp()
   try {
     const target = writeTool(
-      'ship',
+      'planet',
       'skill',
       { name: 'good-skill', description: 'd', body: 'b' },
       ctx,
     )
-    // Must land under the ship's .agentyard folder, NOT outside.
-    const root = path.join(ctx.shipProjectPath, '.agentyard')
+    // Must land under the planet's .agentyard folder, NOT outside.
+    const root = path.join(ctx.planetProjectPath, '.agentyard')
     assert.ok(
       target.startsWith(root + path.sep) || target === root,
       `target ${target} should be inside ${root}`,
@@ -88,7 +88,7 @@ test('deleteTool rejects path-traversal name', () => {
   const { ctx, cleanup } = makeTmp()
   try {
     assert.throws(
-      () => deleteTool('ship', 'skill', '../escape', ctx),
+      () => deleteTool('planet', 'skill', '../escape', ctx),
       /Invalid tool name/,
     )
   } finally {

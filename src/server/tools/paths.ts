@@ -3,8 +3,8 @@ import { homedir } from 'node:os'
 import type { ToolScope, ToolType } from '../../core/tools.js'
 
 export interface PathContext {
-  /** Absolute path to the ship's project root. Null when there's no ship context (galaxy library view). */
-  shipProjectPath: string | null
+  /** Absolute path to the planet's project root. Null when there's no planet context (galaxy library view). */
+  planetProjectPath: string | null
 }
 
 /**
@@ -21,12 +21,12 @@ export function agentyardHome(): string {
 /** Root directory for a (scope, ctx) tuple. Returns null if the scope is N/A for the context. */
 export function scopeRoot(scope: ToolScope, ctx: PathContext): string | null {
   switch (scope) {
-    case 'ship':
-      return ctx.shipProjectPath ? path.join(ctx.shipProjectPath, '.agentyard') : null
+    case 'planet':
+      return ctx.planetProjectPath ? path.join(ctx.planetProjectPath, '.agentyard') : null
     case 'global':
       return agentyardHome()
     case 'claude-project':
-      return ctx.shipProjectPath ? path.join(ctx.shipProjectPath, '.claude') : null
+      return ctx.planetProjectPath ? path.join(ctx.planetProjectPath, '.claude') : null
     case 'claude-user':
       return path.join(homedir(), '.claude')
   }
@@ -85,11 +85,11 @@ export function toolOnDiskPath(
 export function catalogMcpFileCandidates(scope: ToolScope, ctx: PathContext): string[] {
   const root = scopeRoot(scope, ctx)
   if (!root) return []
-  if (scope === 'claude-project' && ctx.shipProjectPath) {
+  if (scope === 'claude-project' && ctx.planetProjectPath) {
     return [
-      path.join(root, '.mcp.json'),                       // <ship>/.claude/.mcp.json
-      path.join(root, 'mcp.json'),                        // <ship>/.claude/mcp.json
-      path.join(ctx.shipProjectPath, '.mcp.json'),        // <ship>/.mcp.json (Claude's doc'd location)
+      path.join(root, '.mcp.json'),                       // <planet>/.claude/.mcp.json
+      path.join(root, 'mcp.json'),                        // <planet>/.claude/mcp.json
+      path.join(ctx.planetProjectPath, '.mcp.json'),        // <planet>/.mcp.json (Claude's doc'd location)
     ]
   }
   if (scope === 'claude-user') {

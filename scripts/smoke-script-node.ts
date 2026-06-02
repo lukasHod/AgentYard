@@ -108,7 +108,7 @@ function makeWorkflow(): Workflow {
   return WorkflowSchema.parse({ id: 1, name: 'smoke-C', graph, isTemplate: false })
 }
 
-const ctx: ScanContext = { shipProjectPath: null }
+const ctx: ScanContext = { planetProjectPath: null }
 const results: CaseResult[] = []
 const capturedUpstream = new Map<string, string>()
 let scriptSummary = ''

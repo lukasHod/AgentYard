@@ -14,13 +14,14 @@ import { seedDefaultAgentsIfMissing } from './agentsSeed.js'
 import { seedDefaultScriptsIfMissing } from './scriptsSeed.js'
 import { ensureDefaultWorkflow } from './workflows.js'
 import { RunRegistry } from './runState.js'
+import { PlanetChatRegistry } from './planetChat.js'
 import { TranscriptStore } from './transcriptStore.js'
 import { wireSocketHandlers } from './socketHandlers.js'
 import type { TypedIOServer } from './socketTypes.js'
 import { registerFeatureRoutes } from './routes/features.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerRunRoutes } from './routes/runs.js'
-import { registerShipRoutes } from './routes/ships.js'
+import { registerPlanetRoutes } from './routes/planets.js'
 import { registerTestRunRoutes } from './routes/testRuns.js'
 import { registerToolRoutes } from './routes/tools.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
@@ -88,6 +89,7 @@ export async function startServer(opts: ServerOptions) {
   const transcripts = new TranscriptStore(io)
   const runState = new RunRegistry(io)
   const testRuns = new TestRunRegistry(io)
+  const planetChats = new PlanetChatRegistry({ manager, io, runState, log: app.log })
 
   manager.on('session:added', (desc: SessionDescriptor) => transcripts.onSessionAdded(desc))
   manager.on('session:removed', (ev: { id: string }) => transcripts.onSessionRemoved(ev))
@@ -96,14 +98,23 @@ export async function startServer(opts: ServerOptions) {
     transcripts.onSessionEvent(ev)
   })
 
-  const ctx: AppContext = { app, io, manager, testRuns, runState, transcripts, apiError }
+  const ctx: AppContext = {
+    app,
+    io,
+    manager,
+    testRuns,
+    runState,
+    transcripts,
+    planetChats,
+    apiError,
+  }
   wireSocketHandlers(ctx)
   registerHealthRoutes(ctx)
   registerWorkflowRoutes(ctx)
   registerToolRoutes(ctx)
   registerRunRoutes(ctx)
   registerTestRunRoutes(ctx)
-  registerShipRoutes(ctx)
+  registerPlanetRoutes(ctx)
   registerFeatureRoutes(ctx)
 
   const address = await app.listen({ port: opts.port, host: '127.0.0.1' })

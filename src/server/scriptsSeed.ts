@@ -33,7 +33,7 @@ const SEED_SCRIPTS: ScriptTool[] = [
 
 /**
  * Write seed scripts to ~/.agentyard/scripts/<name>/manifest.yaml if not already
- * present. Per-ship overrides are unaffected.
+ * present. Per-planet overrides are unaffected.
  */
 export function seedDefaultScriptsIfMissing(): { wrote: string[] } {
   const baseDir = path.join(homedir(), '.agentyard', 'scripts')

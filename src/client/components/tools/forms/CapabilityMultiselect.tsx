@@ -17,7 +17,7 @@ export function CapabilityMultiselect({
 
   return (
     <div>
-      <Label hint={`from this ship's library — ${options.length} available`}>{label}</Label>
+      <Label hint={`from this project's library — ${options.length} available`}>{label}</Label>
       {options.length === 0 && stale.length === 0 ? (
         <EmptyMessage>none in library</EmptyMessage>
       ) : (

@@ -7,17 +7,17 @@ import {
 } from '../features.js'
 import { runWorkflowOnSessions } from '../runtime/runWorkflowOnSessions.js'
 import { createFeatureWorktree, removeFeatureWorktree } from '../runtime/worktrees.js'
-import { getShip } from '../ships.js'
+import { getPlanet } from '../planets.js'
 import { getWorkflow, listWorkflows } from '../workflows.js'
 import type { AppContext } from './context.js'
 
 export function registerFeatureRoutes(ctx: AppContext): void {
   const { app, io, manager, runState, apiError } = ctx
 
-  app.get<{ Params: { id: string } }>('/api/ships/:id/features', async (req, reply) => {
-    const ship = getShip(Number(req.params.id))
-    if (!ship) return reply.code(404).send({ error: 'ship not found' })
-    return listFeatures(ship.id)
+  app.get<{ Params: { id: string } }>('/api/planets/:id/features', async (req, reply) => {
+    const planet = getPlanet(Number(req.params.id))
+    if (!planet) return reply.code(404).send({ error: 'planet not found' })
+    return listFeatures(planet.id)
   })
 
   app.get<{ Params: { id: string } }>('/api/features/:id', async (req, reply) => {
@@ -29,9 +29,9 @@ export function registerFeatureRoutes(ctx: AppContext): void {
   app.post<{
     Params: { id: string }
     Body: { name?: string; task?: string; workflowId?: number }
-  }>('/api/ships/:id/features', async (req, reply) => {
-    const ship = getShip(Number(req.params.id))
-    if (!ship) return reply.code(404).send({ error: 'ship not found' })
+  }>('/api/planets/:id/features', async (req, reply) => {
+    const planet = getPlanet(Number(req.params.id))
+    if (!planet) return reply.code(404).send({ error: 'planet not found' })
     const task = req.body.task?.trim()
     if (!task) return reply.code(400).send({ error: 'task required' })
 
@@ -43,7 +43,7 @@ export function registerFeatureRoutes(ctx: AppContext): void {
       }
     }
 
-    const workflowId = req.body.workflowId ?? ship.workflowId ?? listWorkflows()[0]?.id
+    const workflowId = req.body.workflowId ?? planet.workflowId ?? listWorkflows()[0]?.id
     if (typeof workflowId !== 'number') {
       return reply.code(400).send({ error: 'no workflow available' })
     }
@@ -51,7 +51,7 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     if (!wf) return reply.code(404).send({ error: 'workflow not found' })
 
     const name = req.body.name?.trim() || `feature-${Date.now()}`
-    let feature: Feature = createFeature({ shipId: ship.id, name, task, workflowId })
+    let feature: Feature = createFeature({ planetId: planet.id, name, task, workflowId })
     runState.setActiveFeatureId(feature.id)
     io.emit('feature:created', feature)
 
@@ -59,7 +59,7 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     let cwd: string | undefined
     try {
       const wt = await createFeatureWorktree({
-        shipPath: ship.projectPath,
+        planetPath: planet.projectPath,
         featureId: feature.id,
         featureName: feature.name,
       })
@@ -84,7 +84,7 @@ export function registerFeatureRoutes(ctx: AppContext): void {
       workflow: wf,
       task,
       manager,
-      ctx: { shipProjectPath: ship.projectPath },
+      ctx: { planetProjectPath: planet.projectPath },
       cwd,
       signal: controller.signal,
       emit: (ev) => {
@@ -120,8 +120,8 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     const feature = getFeature(Number(req.params.id))
     if (!feature) return { ok: false }
     if (feature.worktreePath) {
-      const ship = getShip(feature.shipId)
-      if (ship) await removeFeatureWorktree(ship.projectPath, feature.worktreePath)
+      const planet = getPlanet(feature.planetId)
+      if (planet) await removeFeatureWorktree(planet.projectPath, feature.worktreePath)
     }
     return { ok: true }
   })

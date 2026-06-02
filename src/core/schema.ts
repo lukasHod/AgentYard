@@ -3,7 +3,7 @@ import { z } from 'zod/v4'
 /**
  * Two node types per the v2 design:
  *   - 'ai'     — LLM-driven. Has a system prompt, connects to agents from the
- *                ship's tool library. The leader spawns each connected agent
+ *                planet's tool library. The leader spawns each connected agent
  *                as a drone and delegates via assign_task.
  *   - 'custom' — Deterministic. customType picks the runner; first member:
  *                'script' (runs a named script tool from the library, args
@@ -32,13 +32,13 @@ export const WorkflowNodeSchema = z.object({
    *   {upstream_outputs} — concatenated summaries of reached upstream nodes
    */
   prompt: z.string().optional(),
-  /** Agent names referencing this ship's tool library (resolver walks ship → global). */
+  /** Agent names referencing this planet's tool library (resolver walks planet → global). */
   agents: z.array(z.string()).default([]).optional(),
 
   // ── type === 'custom' ──
   /** Which custom runner to use. Currently only 'script'. */
   customType: CustomNodeKindSchema.optional(),
-  /** For customType='script': the script tool's name (resolver walks ship → global). */
+  /** For customType='script': the script tool's name (resolver walks planet → global). */
   scriptName: z.string().optional(),
   /**
    * For customType='script': arg values keyed by the script's declared arg names.

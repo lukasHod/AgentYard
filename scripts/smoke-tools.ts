@@ -1,30 +1,30 @@
 /**
  * Phase A smoke test — tool library lifecycle.
  *
- * Runs against the existing "smoke-ship" ship (must point at a real git repo
- * — by default the AgentYard repo itself). The smoke does NOT create or
- * delete the ship; pre-flight just verifies one exists.
+ * Runs against the existing "smoke-planet" planet (must point at a real git
+ * repo — by default the AgentYard repo itself). The smoke does NOT create or
+ * delete the planet; pre-flight just verifies one exists.
  *
  * Exercises:
- *  1. Create per-ship skill via API, verify on disk
+ *  1. Create per-planet skill via API, verify on disk
  *  2. Edit it, verify changes persist
- *  3. Elevate (ship → global), verify move
- *  4. Fork (global → ship), verify copy
- *  5. Delete per-ship + delete global
+ *  3. Elevate (planet → global), verify move
+ *  4. Fork (global → planet), verify copy
+ *  5. Delete per-planet + delete global
  *  6. Adopt a .claude/agents/ entry, verify transform (mcpServers → mcps, etc.)
  *     and that the .claude/ original is left untouched
- *  7. Create per-ship MCP with ${env:VAR} placeholder, verify stored as-is
- *  8. Create per-ship Script, verify manifest.yaml on disk
+ *  7. Create per-planet MCP with ${env:VAR} placeholder, verify stored as-is
+ *  8. Create per-planet Script, verify manifest.yaml on disk
  *
  * Run with: npx tsx scripts/smoke-tools.ts
- * (Assumes `npm run dev` is already running and a "smoke-ship" exists.)
+ * (Assumes `npm run dev` is already running and a "smoke-planet" exists.)
  */
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 
 const BASE = 'http://localhost:4242'
-const SHIP_NAME = 'smoke-ship'
+const PLANET_NAME = 'smoke-planet'
 const STAMP = Date.now()
 // Timestamped names so concurrent / repeated runs don't collide with each other.
 const SKILL_NAME = `smoke-skill-${STAMP}`
@@ -32,15 +32,15 @@ const AGENT_NAME = `smoke-claude-agent-${STAMP}`
 const MCP_NAME = `smoke-mcp-${STAMP}`
 const SCRIPT_NAME = `smoke-script-${STAMP}`
 
-interface Ship {
+interface Planet {
   id: number
   name: string
   projectPath: string
   pathExists: boolean
 }
 
-let shipId: number | null = null
-let shipPath: string | null = null
+let planetId: number | null = null
+let planetPath: string | null = null
 
 function fail(msg: string): never {
   console.error(`[smoke] FAIL: ${msg}`)
@@ -68,16 +68,16 @@ async function api(
 }
 
 async function cleanup(): Promise<void> {
-  if (shipId === null || shipPath === null) return
-  // Restore the smoke-ship's filesystem to pre-test state. Best-effort —
+  if (planetId === null || planetPath === null) return
+  // Restore the smoke-planet's filesystem to pre-test state. Best-effort —
   // a failed test may have left a partial state; each DELETE is independent.
-  await api('DELETE', `/api/ships/${shipId}/tools/skill/${SKILL_NAME}`).catch(() => {})
+  await api('DELETE', `/api/planets/${planetId}/tools/skill/${SKILL_NAME}`).catch(() => {})
   await api('DELETE', `/api/global-tools/skill/${SKILL_NAME}`).catch(() => {})
-  await api('DELETE', `/api/ships/${shipId}/tools/agent/${AGENT_NAME}`).catch(() => {})
-  await api('DELETE', `/api/ships/${shipId}/tools/mcp/${MCP_NAME}`).catch(() => {})
-  await api('DELETE', `/api/ships/${shipId}/tools/script/${SCRIPT_NAME}`).catch(() => {})
+  await api('DELETE', `/api/planets/${planetId}/tools/agent/${AGENT_NAME}`).catch(() => {})
+  await api('DELETE', `/api/planets/${planetId}/tools/mcp/${MCP_NAME}`).catch(() => {})
+  await api('DELETE', `/api/planets/${planetId}/tools/script/${SCRIPT_NAME}`).catch(() => {})
   // Remove the .claude fixture we seeded.
-  const fixture = path.join(shipPath, '.claude', 'agents', `${AGENT_NAME}.md`)
+  const fixture = path.join(planetPath, '.claude', 'agents', `${AGENT_NAME}.md`)
   if (existsSync(fixture)) {
     try {
       rmSync(fixture, { force: true })
@@ -97,24 +97,24 @@ async function step(label: string, fn: () => Promise<void>): Promise<void> {
 }
 
 // -------------------------------------------------------------
-// Setup — locate smoke-ship, seed Claude-format agent fixture
+// Setup — locate smoke-planet, seed Claude-format agent fixture
 // -------------------------------------------------------------
-const ships = (await fetch(`${BASE}/api/ships`).then((r) => r.json())) as Ship[]
-const ship = ships.find((s) => s.name === SHIP_NAME)
-if (!ship) {
+const planets = (await fetch(`${BASE}/api/planets`).then((r) => r.json())) as Planet[]
+const planet = planets.find((s) => s.name === PLANET_NAME)
+if (!planet) {
   fail(
-    `no ship named "${SHIP_NAME}" registered. Create one pointing at any git repo via the galaxy view first.`,
+    `no planet named "${PLANET_NAME}" registered. Create one pointing at any git repo via the galaxy view first.`,
   )
 }
-if (!ship!.pathExists) {
-  fail(`ship "${SHIP_NAME}" projectPath does not exist on disk: ${ship!.projectPath}`)
+if (!planet!.pathExists) {
+  fail(`planet "${PLANET_NAME}" projectPath does not exist on disk: ${planet!.projectPath}`)
 }
-shipId = ship!.id
-shipPath = ship!.projectPath
-console.log(`[smoke] using smoke-ship #${shipId} at ${shipPath}`)
+planetId = planet!.id
+planetPath = planet!.projectPath
+console.log(`[smoke] using smoke-planet #${planetId} at ${planetPath}`)
 
 // Seed a Claude-format agent in .claude/ so we can test adoption + transform.
-const claudeAgentFile = path.join(shipPath, '.claude', 'agents', `${AGENT_NAME}.md`)
+const claudeAgentFile = path.join(planetPath, '.claude', 'agents', `${AGENT_NAME}.md`)
 mkdirSync(path.dirname(claudeAgentFile), { recursive: true })
 writeFileSync(
   claudeAgentFile,
@@ -130,70 +130,70 @@ You are a smoke-test agent.
 )
 
 // -------------------------------------------------------------
-// 1. Create per-ship skill
+// 1. Create per-planet skill
 // -------------------------------------------------------------
-const shipSkillFile = path.join(shipPath, '.agentyard', 'skills', SKILL_NAME, 'SKILL.md')
+const planetSkillFile = path.join(planetPath, '.agentyard', 'skills', SKILL_NAME, 'SKILL.md')
 const globalSkillFile = path.join(homedir(), '.agentyard', 'skills', SKILL_NAME, 'SKILL.md')
 
-await step('create per-ship skill', async () => {
-  const r = await api('POST', `/api/ships/${shipId}/tools/skill`, {
+await step('create per-planet skill', async () => {
+  const r = await api('POST', `/api/planets/${planetId}/tools/skill`, {
     data: { name: SKILL_NAME, description: 'initial', body: '# initial body' },
   })
   if (!r.ok) throw new Error(`POST -> ${r.status} ${r.text}`)
-  if (!existsSync(shipSkillFile)) throw new Error(`missing on disk: ${shipSkillFile}`)
-  if (!readFileSync(shipSkillFile, 'utf8').includes('# initial body')) {
+  if (!existsSync(planetSkillFile)) throw new Error(`missing on disk: ${planetSkillFile}`)
+  if (!readFileSync(planetSkillFile, 'utf8').includes('# initial body')) {
     throw new Error('initial body not in file')
   }
 })
 
-await step('list endpoint surfaces it with scope=ship', async () => {
-  const r = await api('GET', `/api/ships/${shipId}/tools`)
+await step('list endpoint surfaces it with scope=planet', async () => {
+  const r = await api('GET', `/api/planets/${planetId}/tools`)
   if (!r.ok) throw new Error(`GET -> ${r.status}`)
   const list = r.data as Array<{ type: string; name: string; scope: string }>
-  const found = list.find((t) => t.type === 'skill' && t.name === SKILL_NAME && t.scope === 'ship')
-  if (!found) throw new Error('not in list with scope=ship')
+  const found = list.find((t) => t.type === 'skill' && t.name === SKILL_NAME && t.scope === 'planet')
+  if (!found) throw new Error('not in list with scope=planet')
 })
 
 // -------------------------------------------------------------
 // 2. Edit
 // -------------------------------------------------------------
 await step('edit skill', async () => {
-  const r = await api('PUT', `/api/ships/${shipId}/tools/skill/${SKILL_NAME}`, {
+  const r = await api('PUT', `/api/planets/${planetId}/tools/skill/${SKILL_NAME}`, {
     data: { name: SKILL_NAME, description: 'EDITED', body: '# edited body' },
   })
   if (!r.ok) throw new Error(`PUT -> ${r.status} ${r.text}`)
-  const content = readFileSync(shipSkillFile, 'utf8')
+  const content = readFileSync(planetSkillFile, 'utf8')
   if (!content.includes('# edited body')) throw new Error('edited body not in file')
   if (!content.includes('EDITED')) throw new Error('edited description not in file')
 })
 
 // -------------------------------------------------------------
-// 3. Elevate (ship → global)
+// 3. Elevate (planet → global)
 // -------------------------------------------------------------
-await step('elevate ship → global', async () => {
-  const r = await api('POST', `/api/ships/${shipId}/tools/skill/${SKILL_NAME}/elevate`)
+await step('elevate planet → global', async () => {
+  const r = await api('POST', `/api/planets/${planetId}/tools/skill/${SKILL_NAME}/elevate`)
   if (!r.ok) throw new Error(`POST -> ${r.status} ${r.text}`)
   if (!existsSync(globalSkillFile)) throw new Error(`global file missing: ${globalSkillFile}`)
-  if (existsSync(shipSkillFile)) throw new Error('per-ship file still present after elevate (should be moved)')
+  if (existsSync(planetSkillFile)) throw new Error('per-planet file still present after elevate (should be moved)')
 })
 
 // -------------------------------------------------------------
-// 4. Fork (global → ship)
+// 4. Fork (global → planet)
 // -------------------------------------------------------------
-await step('fork global → ship', async () => {
-  const r = await api('POST', `/api/ships/${shipId}/tools/skill/${SKILL_NAME}/fork-from-global`)
+await step('fork global → planet', async () => {
+  const r = await api('POST', `/api/planets/${planetId}/tools/skill/${SKILL_NAME}/fork-from-global`)
   if (!r.ok) throw new Error(`POST -> ${r.status} ${r.text}`)
-  if (!existsSync(shipSkillFile)) throw new Error('per-ship file not recreated after fork')
+  if (!existsSync(planetSkillFile)) throw new Error('per-planet file not recreated after fork')
   if (!existsSync(globalSkillFile)) throw new Error('global file removed after fork (should remain)')
 })
 
 // -------------------------------------------------------------
-// 5. Delete per-ship + global
+// 5. Delete per-planet + global
 // -------------------------------------------------------------
-await step('delete per-ship', async () => {
-  const r = await api('DELETE', `/api/ships/${shipId}/tools/skill/${SKILL_NAME}`)
+await step('delete per-planet', async () => {
+  const r = await api('DELETE', `/api/planets/${planetId}/tools/skill/${SKILL_NAME}`)
   if (!r.ok) throw new Error(`DELETE -> ${r.status}`)
-  if (existsSync(shipSkillFile)) throw new Error('per-ship file still present after delete')
+  if (existsSync(planetSkillFile)) throw new Error('per-planet file still present after delete')
 })
 
 await step('delete global', async () => {
@@ -205,10 +205,10 @@ await step('delete global', async () => {
 // -------------------------------------------------------------
 // 6. Adopt .claude/agents/* with format transform
 // -------------------------------------------------------------
-const adoptedAgentFile = path.join(shipPath, '.agentyard', 'agents', `${AGENT_NAME}.md`)
+const adoptedAgentFile = path.join(planetPath, '.agentyard', 'agents', `${AGENT_NAME}.md`)
 
 await step('catalog list shows .claude agent', async () => {
-  const r = await api('GET', `/api/ships/${shipId}/tools`)
+  const r = await api('GET', `/api/planets/${planetId}/tools`)
   if (!r.ok) throw new Error(`GET -> ${r.status}`)
   const list = r.data as Array<{ type: string; name: string; scope: string }>
   const found = list.find(
@@ -218,11 +218,11 @@ await step('catalog list shows .claude agent', async () => {
 })
 
 await step('adopt .claude agent transforms format and leaves origin untouched', async () => {
-  const r = await api('POST', `/api/ships/${shipId}/tools/adopt`, {
+  const r = await api('POST', `/api/planets/${planetId}/tools/adopt`, {
     sourceScope: 'claude-project',
     type: 'agent',
     name: AGENT_NAME,
-    target: 'ship',
+    target: 'planet',
   })
   if (!r.ok) throw new Error(`POST -> ${r.status} ${r.text}`)
   if (!existsSync(adoptedAgentFile)) throw new Error(`adopted file missing: ${adoptedAgentFile}`)
@@ -240,12 +240,12 @@ await step('adopt .claude agent transforms format and leaves origin untouched', 
 })
 
 // -------------------------------------------------------------
-// 7. Create per-ship MCP with ${env:VAR} placeholder
+// 7. Create per-planet MCP with ${env:VAR} placeholder
 // -------------------------------------------------------------
-const mcpFile = path.join(shipPath, '.agentyard', 'mcps', `${MCP_NAME}.json`)
+const mcpFile = path.join(planetPath, '.agentyard', 'mcps', `${MCP_NAME}.json`)
 
-await step('create per-ship MCP with ${env:VAR} placeholder', async () => {
-  const r = await api('POST', `/api/ships/${shipId}/tools/mcp`, {
+await step('create per-planet MCP with ${env:VAR} placeholder', async () => {
+  const r = await api('POST', `/api/planets/${planetId}/tools/mcp`, {
     data: {
       name: MCP_NAME,
       description: 'smoke test mcp',
@@ -264,12 +264,12 @@ await step('create per-ship MCP with ${env:VAR} placeholder', async () => {
 })
 
 // -------------------------------------------------------------
-// 8. Create per-ship Script
+// 8. Create per-planet Script
 // -------------------------------------------------------------
-const scriptManifestFile = path.join(shipPath, '.agentyard', 'scripts', SCRIPT_NAME, 'manifest.yaml')
+const scriptManifestFile = path.join(planetPath, '.agentyard', 'scripts', SCRIPT_NAME, 'manifest.yaml')
 
-await step('create per-ship script', async () => {
-  const r = await api('POST', `/api/ships/${shipId}/tools/script`, {
+await step('create per-planet script', async () => {
+  const r = await api('POST', `/api/planets/${planetId}/tools/script`, {
     data: {
       name: SCRIPT_NAME,
       description: 'smoke test script',

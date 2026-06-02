@@ -11,7 +11,7 @@ const ToolEditorModal = lazy(() =>
 
 interface Props {
   /** Null when used in the galaxy library view — list endpoint switches to /api/global-tools. */
-  shipId: number | null
+  planetId: number | null
 }
 
 interface CLIInfo {
@@ -30,20 +30,20 @@ const TYPE_LABEL: Record<ToolType, string> = {
 }
 
 const SCOPE_LABEL: Record<ToolScope, string> = {
-  ship: 'agentyard',
+  planet: 'agentyard',
   global: 'global',
   'claude-project': '.claude project',
   'claude-user': '.claude user',
 }
 
 const SCOPE_CLASS: Record<ToolScope, string> = {
-  ship: 'border-cyan-500/60 text-cyan-200',
+  planet: 'border-cyan-500/60 text-cyan-200',
   global: 'border-emerald-500/60 text-emerald-200',
   'claude-project': 'border-zinc-500/60 text-zinc-300',
   'claude-user': 'border-zinc-500/60 text-zinc-300',
 }
 
-export function ToolsTabContent({ shipId }: Props) {
+export function ToolsTabContent({ planetId }: Props) {
   const [tools, setTools] = useState<ToolSummary[] | null>(null)
   const [clis, setClis] = useState<CLIInfo[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +51,7 @@ export function ToolsTabContent({ shipId }: Props) {
   const [editor, setEditor] = useState<EditorMode | null>(null)
 
   const refetch = useCallback(async () => {
-    const url = shipId === null ? '/api/global-tools' : `/api/ships/${shipId}/tools`
+    const url = planetId === null ? '/api/global-tools' : `/api/planets/${planetId}/tools`
     const res = await apiGet<ToolSummary[]>(url)
     if (res.ok) {
       setTools(res.data)
@@ -59,14 +59,14 @@ export function ToolsTabContent({ shipId }: Props) {
     } else {
       setError(res.error)
     }
-  }, [shipId])
+  }, [planetId])
 
   useEffect(() => {
     void refetch()
     if (clis === null) {
       void apiGet<CLIInfo[]>('/api/clis').then((r) => setClis(r.ok ? r.data : []))
     }
-  }, [shipId, refetch, clis])
+  }, [planetId, refetch, clis])
 
   // Group by type, preserving the order in TYPE_ORDER.
   const byType = useMemo(() => {
@@ -85,14 +85,14 @@ export function ToolsTabContent({ shipId }: Props) {
     setBusy(null)
   }
 
-  function adopt(t: ToolSummary, target: 'ship' | 'global') {
-    if (target === 'ship' && shipId === null) return
+  function adopt(t: ToolSummary, target: 'planet' | 'global') {
+    if (target === 'planet' && planetId === null) return
     void runAction(keyOf(t), () => {
       // In galaxy library view: only claude-user → global is supported, via a different endpoint.
-      if (shipId === null) {
+      if (planetId === null) {
         return apiPost(`/api/global-tools/adopt`, { type: t.type, name: t.name })
       }
-      return apiPost(`/api/ships/${shipId}/tools/adopt`, {
+      return apiPost(`/api/planets/${planetId}/tools/adopt`, {
         sourceScope: t.scope,
         type: t.type,
         name: t.name,
@@ -102,16 +102,16 @@ export function ToolsTabContent({ shipId }: Props) {
   }
 
   function elevate(t: ToolSummary) {
-    if (shipId === null) return
+    if (planetId === null) return
     void runAction(keyOf(t), () =>
-      apiPost(`/api/ships/${shipId}/tools/${t.type}/${t.name}/elevate`),
+      apiPost(`/api/planets/${planetId}/tools/${t.type}/${t.name}/elevate`),
     )
   }
 
   function fork(t: ToolSummary) {
-    if (shipId === null) return
+    if (planetId === null) return
     void runAction(keyOf(t), () =>
-      apiPost(`/api/ships/${shipId}/tools/${t.type}/${t.name}/fork-from-global`),
+      apiPost(`/api/planets/${planetId}/tools/${t.type}/${t.name}/fork-from-global`),
     )
   }
 
@@ -121,22 +121,22 @@ export function ToolsTabContent({ shipId }: Props) {
       const url =
         t.scope === 'global'
           ? `/api/global-tools/${t.type}/${t.name}`
-          : `/api/ships/${shipId}/tools/${t.type}/${t.name}`
+          : `/api/planets/${planetId}/tools/${t.type}/${t.name}`
       return apiDelete(url)
     })
   }
 
   function createNew(type: ToolType) {
-    setEditor({ kind: 'create', type, scope: shipId === null ? 'global' : 'ship' })
+    setEditor({ kind: 'create', type, scope: planetId === null ? 'global' : 'planet' })
   }
 
   async function edit(t: ToolSummary) {
-    if (t.scope !== 'ship' && t.scope !== 'global') return
+    if (t.scope !== 'planet' && t.scope !== 'global') return
     // Fetch full ToolEntry to populate the form.
     const url =
       t.scope === 'global'
         ? `/api/global-tools/${t.type}/${t.name}`
-        : `/api/ships/${shipId}/tools/${t.scope}/${t.type}/${t.name}`
+        : `/api/planets/${planetId}/tools/${t.scope}/${t.type}/${t.name}`
     const res = await apiGet<{ data: AnyToolData }>(url)
     if (!res.ok) {
       pushToast('error', `Could not load ${t.name}: ${res.error}`)
@@ -206,7 +206,7 @@ export function ToolsTabContent({ shipId }: Props) {
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0 text-[10px]">
-                        {(t.scope === 'ship' || t.scope === 'global') && (
+                        {(t.scope === 'planet' || t.scope === 'global') && (
                           <button
                             disabled={isBusy}
                             onClick={() => void edit(t)}
@@ -215,12 +215,12 @@ export function ToolsTabContent({ shipId }: Props) {
                             edit
                           </button>
                         )}
-                        {actionsForScope(t.scope, shipId !== null).map((action) => (
+                        {actionsForScope(t.scope, planetId !== null).map((action) => (
                           <button
                             key={action}
                             disabled={isBusy}
                             onClick={() => {
-                              if (action === 'adopt → ship') adopt(t, 'ship')
+                              if (action === 'adopt → planet') adopt(t, 'planet')
                               else if (action === 'adopt → global') adopt(t, 'global')
                               else if (action === '↑ elevate') elevate(t)
                               else if (action === '↓ fork') fork(t)
@@ -269,7 +269,7 @@ export function ToolsTabContent({ shipId }: Props) {
         <Suspense fallback={null}>
           <ToolEditorModal
             mode={editor}
-            shipId={shipId}
+            planetId={planetId}
             library={tools ?? []}
             onClose={() => setEditor(null)}
             onSaved={() => void refetch()}
@@ -280,15 +280,15 @@ export function ToolsTabContent({ shipId }: Props) {
   )
 }
 
-function actionsForScope(scope: ToolScope, hasShip: boolean): string[] {
+function actionsForScope(scope: ToolScope, hasPlanet: boolean): string[] {
   switch (scope) {
     case 'claude-project':
-      return hasShip ? ['adopt → ship'] : []
+      return hasPlanet ? ['adopt → planet'] : []
     case 'claude-user':
       return ['adopt → global']
-    case 'ship':
-      return hasShip ? ['↑ elevate', 'delete'] : []
+    case 'planet':
+      return hasPlanet ? ['↑ elevate', 'delete'] : []
     case 'global':
-      return hasShip ? ['↓ fork', 'delete'] : ['delete']
+      return hasPlanet ? ['↓ fork', 'delete'] : ['delete']
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Socket } from 'socket.io-client'
-import type { ShipSummary } from '../../core/types'
+import type { PlanetSummary } from '../../core/types'
 import type { Workflow, WorkflowNode } from '../../core/schema'
 import { apiPost } from '../api'
 import { useDismissable } from '../hooks/useDismissable'
@@ -14,12 +14,12 @@ export type { TestRunRequest } from './testRun/types'
 interface Props {
   request: TestRunRequest
   workflow: Workflow
-  ships: ShipSummary[]
+  planets: PlanetSummary[]
   socket: Socket | null
   onClose: () => void
 }
 
-export function TestRunModal({ request, workflow, ships, socket, onClose }: Props) {
+export function TestRunModal({ request, workflow, planets, socket, onClose }: Props) {
   const targetNode: WorkflowNode | null =
     request.scope === 'node' && request.nodeId
       ? workflow.graph.nodes.find((n) => n.id === request.nodeId) ?? null
@@ -29,7 +29,7 @@ export function TestRunModal({ request, workflow, ships, socket, onClose }: Prop
     [workflow.graph.nodes],
   )
 
-  const [shipId, setShipId] = useState<number | null>(ships[0]?.id ?? null)
+  const [planetId, setPlanetId] = useState<number | null>(planets[0]?.id ?? null)
   const [task, setTask] = useState('')
   const [upstreamOutputs, setUpstreamOutputs] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -67,8 +67,8 @@ export function TestRunModal({ request, workflow, ships, socket, onClose }: Prop
   }, [sessions, selectedTab, stage])
 
   async function submit() {
-    if (!shipId) {
-      setSubmitError('Select a ship')
+    if (!planetId) {
+      setSubmitError('Select a project')
       return
     }
     if (task.trim().length === 0) {
@@ -78,7 +78,7 @@ export function TestRunModal({ request, workflow, ships, socket, onClose }: Prop
     setSubmitError(null)
     setSubmitting(true)
     const res = await apiPost<{ testRunId: string }>('/api/test-runs', {
-      shipId,
+      planetId,
       workflowId: workflow.id,
       task,
       scope: request.scope,
@@ -169,9 +169,9 @@ export function TestRunModal({ request, workflow, ships, socket, onClose }: Prop
 
         {stage === 'form' ? (
           <TestRunForm
-            ships={ships}
-            shipId={shipId}
-            setShipId={setShipId}
+            planets={planets}
+            planetId={planetId}
+            setPlanetId={setPlanetId}
             task={task}
             setTask={setTask}
             request={request}

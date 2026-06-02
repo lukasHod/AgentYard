@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Glass HUD styles</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #050505; color: #e5e7eb; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { padding: 32px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: #9ca3af; margin-bottom: 28px; font-size: 14px; }
+
+  .stage {
+    position: relative;
+    height: 460px;
+    background: #000;
+    overflow: hidden;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    margin-bottom: 28px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .stage:hover { border-color: #38bdf8; }
+  .stage.selected { border-color: #f59e0b; border-width: 2px; }
+
+  /* Starfield common */
+  .stage .stars {
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 10% 20%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 24% 70%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 38% 33%, #fff, transparent 60%),
+      radial-gradient(1px 1px at 52% 88%, #fff, transparent 60%),
+      radial-gradient(2px 2px at 18% 55%, rgba(255,255,255,0.7), transparent 60%),
+      radial-gradient(1px 1px at 44% 10%, #fff, transparent 60%);
+    opacity: 0.55;
+  }
+
+  /* Planet sits at right edge of the stage */
+  .stage .planet {
+    position: absolute;
+    right: -180px; top: 50%; transform: translateY(-50%);
+    width: 460px; height: 460px;
+    border-radius: 50%;
+    box-shadow: 0 0 120px rgba(56,189,248,0.25), inset -70px -40px 130px rgba(0,0,0,0.7);
+  }
+  .planet.cyan {
+    background: radial-gradient(circle at 30% 30%, #67e8f9 0%, #0891b2 25%, #134e4a 60%, #042f2e 90%, #000 100%);
+  }
+  .planet.purple {
+    background: radial-gradient(circle at 32% 32%, #f0abfc 0%, #a855f7 25%, #581c87 60%, #1e1b4b 90%, #000 100%);
+    box-shadow: 0 0 120px rgba(168,85,247,0.25), inset -70px -40px 130px rgba(0,0,0,0.7);
+  }
+  .planet.amber {
+    background: radial-gradient(circle at 30% 30%, #fde68a 0%, #f59e0b 25%, #7c2d12 60%, #292524 90%, #000 100%);
+    box-shadow: 0 0 120px rgba(245,158,11,0.25), inset -70px -40px 130px rgba(0,0,0,0.7);
+  }
+
+  .stage .panel {
+    position: absolute;
+    left: 28px; top: 36px; bottom: 36px;
+    width: 48%;
+    padding: 18px 22px;
+    display: flex; flex-direction: column;
+    z-index: 2;
+  }
+  .panel .label { font-size: 10px; letter-spacing: 0.3em; }
+  .panel h4 { font-size: 14px; letter-spacing: 0.15em; margin: 6px 0 16px; }
+  .panel .rows { display: flex; flex-direction: column; }
+  .panel .row { display: flex; justify-content: space-between; padding: 10px 0; font-size: 12px; }
+  .panel .btn {
+    margin-top: auto;
+    align-self: flex-start;
+    padding: 7px 14px;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    cursor: pointer;
+  }
+  .stage-label {
+    position: absolute; top: 12px; right: 16px;
+    font-size: 10px; letter-spacing: 0.3em; color: #fff;
+    background: rgba(0,0,0,0.55); padding: 4px 10px; border-radius: 3px;
+    z-index: 3; font-weight: 600;
+  }
+
+  /* ============== A — Minimal angular HUD ============== */
+  .a .panel {
+    background: rgba(0, 12, 18, 0.55);
+    border: 1px solid rgba(34,211,238,0.65);
+    clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px));
+    color: #67e8f9;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .a .panel .label { color: #0891b2; }
+  .a .panel h4 { color: #a5f3fc; }
+  .a .panel .row { border-top: 1px solid rgba(34,211,238,0.18); }
+  .a .panel .row:first-child { border-top: none; }
+  .a .panel .row .status-run { color: #67e8f9; }
+  .a .panel .row .status-ok { color: #34d399; }
+  .a .panel .row .status-idle { color: #64748b; }
+  .a .panel .row .status-fail { color: #f43f5e; }
+  .a .panel .btn { background: transparent; border: 1px solid #67e8f9; color: #a5f3fc; }
+
+  /* ============== B — Frosted glass + soft glow ============== */
+  .b .panel {
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(18px) saturate(1.15);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15);
+    border: 1px solid rgba(125,211,252,0.3);
+    border-radius: 16px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.10),
+      inset 0 0 60px rgba(125,211,252,0.04),
+      0 8px 32px rgba(0,0,0,0.5),
+      0 0 40px rgba(56,189,248,0.12);
+    color: #e0f2fe;
+  }
+  .b .panel .label { color: #7dd3fc; opacity: 0.75; font-weight: 600; font-size: 11px; }
+  .b .panel h4 { color: #f0f9ff; font-weight: 700; letter-spacing: 0.06em; font-size: 18px; }
+  .b .panel .row { border-top: 1px solid rgba(125,211,252,0.10); }
+  .b .panel .row:first-child { border-top: none; }
+  .b .panel .row .status-run { color: #38bdf8; }
+  .b .panel .row .status-ok { color: #4ade80; }
+  .b .panel .row .status-idle { color: #94a3b8; }
+  .b .panel .row .status-fail { color: #fb7185; }
+  .b .panel .btn {
+    background: rgba(56,189,248,0.18); border: 1px solid rgba(56,189,248,0.5);
+    border-radius: 999px; color: #e0f2fe; backdrop-filter: blur(8px);
+  }
+
+  /* ============== C — Holographic projection ============== */
+  .c .panel {
+    background:
+      linear-gradient(180deg, rgba(45,212,191,0.10), rgba(45,212,191,0.03)),
+      rgba(2,12,18,0.35);
+    border: 1px solid rgba(94,234,212,0.65);
+    box-shadow:
+      0 0 0 1px rgba(94,234,212,0.18) inset,
+      0 0 40px rgba(94,234,212,0.45),
+      0 0 80px rgba(94,234,212,0.2);
+    color: #ccfbf1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+  }
+  .c .panel::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg, rgba(94,234,212,0.10) 0 1px, transparent 1px 4px);
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+  .c .panel::after {
+    /* faux chromatic aberration on the right edge */
+    content: '';
+    position: absolute; right: -1px; top: 0; bottom: 0; width: 1px;
+    background: #f472b6; opacity: 0.6; box-shadow: -2px 0 4px rgba(244,114,182,0.4);
+  }
+  .c .panel > * { position: relative; z-index: 1; }
+  .c .panel .label { color: #5eead4; text-shadow: 0 0 8px #2dd4bf; }
+  .c .panel h4 { color: #99f6e4; text-shadow: 0 0 10px #2dd4bf; }
+  .c .panel .row { border-top: 1px dashed rgba(94,234,212,0.3); }
+  .c .panel .row:first-child { border-top: none; }
+  .c .panel .row .status-run { color: #5eead4; text-shadow: 0 0 6px #2dd4bf; }
+  .c .panel .row .status-ok { color: #86efac; text-shadow: 0 0 6px #22c55e; }
+  .c .panel .row .status-idle { color: #94a3b8; }
+  .c .panel .row .status-fail { color: #fda4af; text-shadow: 0 0 6px #f43f5e; }
+  .c .panel .btn {
+    background: rgba(94,234,212,0.15); border: 1px solid #5eead4; color: #ccfbf1;
+    text-shadow: 0 0 6px #2dd4bf; box-shadow: 0 0 12px rgba(94,234,212,0.5);
+  }
+
+  .pick {
+    margin-top: 24px;
+    color: #9ca3af;
+    font-size: 13px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>Which glass HUD feel?</h1>
+<p class="subtitle">Same panel content (project + features list) over a faux planet on the right. Click a stage to mark your pick, or tell me in chat.</p>
+
+<!-- A -->
+<div class="stage a" data-choice="a" onclick="toggleSelect(this)">
+  <div class="stars"></div>
+  <div class="planet cyan"></div>
+  <div class="stage-label">A — MINIMAL ANGULAR HUD</div>
+  <div class="panel">
+    <div class="label">PROJECT</div>
+    <h4>AGENTYARD</h4>
+    <div class="rows">
+      <div class="row"><span>add-payment-flow</span><span class="status-run">● running</span></div>
+      <div class="row"><span>fix-login-bug</span><span class="status-ok">complete</span></div>
+      <div class="row"><span>refactor-state</span><span class="status-idle">idle</span></div>
+      <div class="row"><span>onboarding-v2</span><span class="status-fail">failed</span></div>
+    </div>
+    <button class="btn">▶ NEW FEATURE</button>
+  </div>
+</div>
+
+<!-- B -->
+<div class="stage b" data-choice="b" onclick="toggleSelect(this)">
+  <div class="stars"></div>
+  <div class="planet purple"></div>
+  <div class="stage-label">B — FROSTED GLASS</div>
+  <div class="panel">
+    <div class="label">PROJECT</div>
+    <h4>AgentYard</h4>
+    <div class="rows">
+      <div class="row"><span>add-payment-flow</span><span class="status-run">● running</span></div>
+      <div class="row"><span>fix-login-bug</span><span class="status-ok">complete</span></div>
+      <div class="row"><span>refactor-state</span><span class="status-idle">idle</span></div>
+      <div class="row"><span>onboarding-v2</span><span class="status-fail">failed</span></div>
+    </div>
+    <button class="btn">+ New feature</button>
+  </div>
+</div>
+
+<!-- C -->
+<div class="stage c" data-choice="c" onclick="toggleSelect(this)">
+  <div class="stars"></div>
+  <div class="planet amber"></div>
+  <div class="stage-label">C — HOLOGRAPHIC PROJECTION</div>
+  <div class="panel">
+    <div class="label">PROJECT</div>
+    <h4>AGENTYARD</h4>
+    <div class="rows">
+      <div class="row"><span>add-payment-flow</span><span class="status-run">● running</span></div>
+      <div class="row"><span>fix-login-bug</span><span class="status-ok">complete</span></div>
+      <div class="row"><span>refactor-state</span><span class="status-idle">idle</span></div>
+      <div class="row"><span>onboarding-v2</span><span class="status-fail">failed</span></div>
+    </div>
+    <button class="btn">▶ NEW FEATURE</button>
+  </div>
+</div>
+
+<p class="pick">Differences you should now see: A is sharp angular lines on dark, no blur. B is rounded, blurred backdrop, sans-serif. C glows with scanlines + chromatic edge. Different planet colors are just to keep the comparison interesting.</p>
+
+<script>
+  function toggleSelect(el) {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+</script>
+
+</body>
+</html>

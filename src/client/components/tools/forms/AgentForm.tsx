@@ -9,10 +9,10 @@ import {
   textareaCls,
 } from './formChrome'
 
-/** Library narrowing — only ship- or global-scoped items of the given type are usable. */
+/** Library narrowing — only planet- or global-scoped items of the given type are usable. */
 function useAvailable(library: ToolSummary[], type: ToolType) {
   return useMemo(
-    () => library.filter((t) => t.type === type && (t.scope === 'ship' || t.scope === 'global')),
+    () => library.filter((t) => t.type === type && (t.scope === 'planet' || t.scope === 'global')),
     [library, type],
   )
 }

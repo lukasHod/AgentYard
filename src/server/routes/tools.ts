@@ -12,7 +12,7 @@ import {
   type ToolSummary,
   type ToolType,
 } from '../../core/tools.js'
-import { getShip } from '../ships.js'
+import { getPlanet } from '../planets.js'
 import { writeTool, deleteTool, readToolBody } from '../tools/crud.js'
 import { adoptTool, elevateTool, forkTool } from '../tools/lifecycle.js'
 import type { PathContext } from '../tools/paths.js'
@@ -58,17 +58,17 @@ function parseToolData(type: ToolType, data: unknown, reply: FastifyReply) {
 
 export function registerToolRoutes({ app, apiError }: AppContext): void {
   // --- Lists ---
-  app.get<{ Params: { id: string } }>('/api/ships/:id/tools', async (req, reply) => {
-    const ship = getShip(Number(req.params.id))
-    if (!ship) return reply.code(404).send({ error: 'ship not found' })
-    const ctx: PathContext = { shipProjectPath: ship.projectPath }
+  app.get<{ Params: { id: string } }>('/api/planets/:id/tools', async (req, reply) => {
+    const planet = getPlanet(Number(req.params.id))
+    if (!planet) return reply.code(404).send({ error: 'planet not found' })
+    const ctx: PathContext = { planetProjectPath: planet.projectPath }
     const entries = await scanAllTools(ctx)
     return entries.map(toolEntryToSummary) as ToolSummary[]
   })
 
   app.get('/api/global-tools', async () => {
-    const ctx: PathContext = { shipProjectPath: null }
-    // Global-only view: include global (~/.agentyard) + user catalog (~/.claude). Skip ship + claude-project.
+    const ctx: PathContext = { planetProjectPath: null }
+    // Global-only view: include global (~/.agentyard) + user catalog (~/.claude). Skip planet + claude-project.
     const buckets = await Promise.all(
       (['global', 'claude-user'] as const).flatMap((scope) =>
         (['skill', 'mcp', 'script', 'agent'] as const).map((type) =>
@@ -81,14 +81,14 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
 
   // --- Detail (with full data) ---
   app.get<{ Params: { id: string; scope: string; type: string; name: string } }>(
-    '/api/ships/:id/tools/:scope/:type/:name',
+    '/api/planets/:id/tools/:scope/:type/:name',
     async (req, reply) => {
-      const ship = getShip(Number(req.params.id))
-      if (!ship) return reply.code(404).send({ error: 'ship not found' })
+      const planet = getPlanet(Number(req.params.id))
+      if (!planet) return reply.code(404).send({ error: 'planet not found' })
       const scope = parseToolScope(req.params.scope, reply)
       const type = parseToolType(req.params.type, reply)
       if (!scope || !type) return
-      const ctx: PathContext = { shipProjectPath: ship.projectPath }
+      const ctx: PathContext = { planetProjectPath: planet.projectPath }
       const entry = (await scanScopeType(scope, type, ctx)).find(
         (e) => e.data.name === req.params.name,
       )
@@ -109,7 +109,7 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
     async (req, reply) => {
       const type = parseToolType(req.params.type, reply)
       if (!type) return
-      const ctx: PathContext = { shipProjectPath: null }
+      const ctx: PathContext = { planetProjectPath: null }
       const entry = (await scanScopeType('global', type, ctx)).find(
         (e) => e.data.name === req.params.name,
       )
@@ -124,16 +124,16 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
 
   // --- Create / update ---
   app.post<{ Params: { id: string; type: string }; Body: { data: unknown } }>(
-    '/api/ships/:id/tools/:type',
+    '/api/planets/:id/tools/:type',
     async (req, reply) => {
-      const ship = getShip(Number(req.params.id))
-      if (!ship) return reply.code(404).send({ error: 'ship not found' })
+      const planet = getPlanet(Number(req.params.id))
+      if (!planet) return reply.code(404).send({ error: 'planet not found' })
       const type = parseToolType(req.params.type, reply)
       if (!type) return
       const data = parseToolData(type, req.body?.data, reply)
       if (!data) return
-      const ctx: PathContext = { shipProjectPath: ship.projectPath }
-      const targetPath = writeTool('ship', type, data, ctx)
+      const ctx: PathContext = { planetProjectPath: planet.projectPath }
+      const targetPath = writeTool('planet', type, data, ctx)
       return { ok: true, path: targetPath }
     },
   )
@@ -145,16 +145,16 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
       if (!type) return
       const data = parseToolData(type, req.body?.data, reply)
       if (!data) return
-      const targetPath = writeTool('global', type, data, { shipProjectPath: null })
+      const targetPath = writeTool('global', type, data, { planetProjectPath: null })
       return { ok: true, path: targetPath }
     },
   )
 
   app.put<{ Params: { id: string; type: string; name: string }; Body: { data: unknown } }>(
-    '/api/ships/:id/tools/:type/:name',
+    '/api/planets/:id/tools/:type/:name',
     async (req, reply) => {
-      const ship = getShip(Number(req.params.id))
-      if (!ship) return reply.code(404).send({ error: 'ship not found' })
+      const planet = getPlanet(Number(req.params.id))
+      if (!planet) return reply.code(404).send({ error: 'planet not found' })
       const type = parseToolType(req.params.type, reply)
       if (!type) return
       const data = parseToolData(type, req.body?.data, reply)
@@ -163,8 +163,8 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
       if (data.name !== req.params.name) {
         return reply.code(400).send({ error: 'cannot rename via PUT; name must match URL' })
       }
-      const ctx: PathContext = { shipProjectPath: ship.projectPath }
-      const targetPath = writeTool('ship', type, data, ctx)
+      const ctx: PathContext = { planetProjectPath: planet.projectPath }
+      const targetPath = writeTool('planet', type, data, ctx)
       return { ok: true, path: targetPath }
     },
   )
@@ -179,21 +179,21 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
       if (data.name !== req.params.name) {
         return reply.code(400).send({ error: 'cannot rename via PUT; name must match URL' })
       }
-      const targetPath = writeTool('global', type, data, { shipProjectPath: null })
+      const targetPath = writeTool('global', type, data, { planetProjectPath: null })
       return { ok: true, path: targetPath }
     },
   )
 
   // --- Delete ---
   app.delete<{ Params: { id: string; type: string; name: string } }>(
-    '/api/ships/:id/tools/:type/:name',
+    '/api/planets/:id/tools/:type/:name',
     async (req, reply) => {
-      const ship = getShip(Number(req.params.id))
-      if (!ship) return reply.code(404).send({ error: 'ship not found' })
+      const planet = getPlanet(Number(req.params.id))
+      if (!planet) return reply.code(404).send({ error: 'planet not found' })
       const type = parseToolType(req.params.type, reply)
       if (!type) return
-      const ctx: PathContext = { shipProjectPath: ship.projectPath }
-      deleteTool('ship', type, req.params.name, ctx)
+      const ctx: PathContext = { planetProjectPath: planet.projectPath }
+      deleteTool('planet', type, req.params.name, ctx)
       return { ok: true }
     },
   )
@@ -203,7 +203,7 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
     async (req, reply) => {
       const type = parseToolType(req.params.type, reply)
       if (!type) return
-      deleteTool('global', type, req.params.name, { shipProjectPath: null })
+      deleteTool('global', type, req.params.name, { planetProjectPath: null })
       return { ok: true }
     },
   )
@@ -212,9 +212,9 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
   app.post<{
     Params: { id: string }
     Body: { sourceScope: string; type: string; name: string; target: string }
-  }>('/api/ships/:id/tools/adopt', async (req, reply) => {
-    const ship = getShip(Number(req.params.id))
-    if (!ship) return reply.code(404).send({ error: 'ship not found' })
+  }>('/api/planets/:id/tools/adopt', async (req, reply) => {
+    const planet = getPlanet(Number(req.params.id))
+    if (!planet) return reply.code(404).send({ error: 'planet not found' })
     const body = req.body ?? ({} as Record<string, string>)
     const sourceScope = parseToolScope(body.sourceScope, reply)
     const type = parseToolType(body.type, reply)
@@ -222,8 +222,8 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
     if (sourceScope !== 'claude-project' && sourceScope !== 'claude-user') {
       return reply.code(400).send({ error: 'adopt: sourceScope must be a claude-* catalog scope' })
     }
-    const target = body.target === 'global' ? 'global' : 'ship'
-    const ctx: PathContext = { shipProjectPath: ship.projectPath }
+    const target = body.target === 'global' ? 'global' : 'planet'
+    const ctx: PathContext = { planetProjectPath: planet.projectPath }
     const entries = await scanScopeType(sourceScope, type, ctx)
     const source = entries.find((e) => e.data.name === body.name)
     if (!source) return reply.code(404).send({ error: 'source tool not found in catalog' })
@@ -241,7 +241,7 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
       const body = req.body ?? ({} as Record<string, string>)
       const type = parseToolType(body.type, reply)
       if (!type) return
-      const ctx: PathContext = { shipProjectPath: null }
+      const ctx: PathContext = { planetProjectPath: null }
       const entries = await scanScopeType('claude-user', type, ctx)
       const source = entries.find((e) => e.data.name === body.name)
       if (!source) return reply.code(404).send({ error: 'source not found in user catalog' })
@@ -255,17 +255,17 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
   )
 
   app.post<{ Params: { id: string; type: string; name: string } }>(
-    '/api/ships/:id/tools/:type/:name/elevate',
+    '/api/planets/:id/tools/:type/:name/elevate',
     async (req, reply) => {
-      const ship = getShip(Number(req.params.id))
-      if (!ship) return reply.code(404).send({ error: 'ship not found' })
+      const planet = getPlanet(Number(req.params.id))
+      if (!planet) return reply.code(404).send({ error: 'planet not found' })
       const type = parseToolType(req.params.type, reply)
       if (!type) return
-      const ctx: PathContext = { shipProjectPath: ship.projectPath }
-      const source = (await scanScopeType('ship', type, ctx)).find(
+      const ctx: PathContext = { planetProjectPath: planet.projectPath }
+      const source = (await scanScopeType('planet', type, ctx)).find(
         (e) => e.data.name === req.params.name,
       )
-      if (!source) return reply.code(404).send({ error: 'tool not found in per-ship scope' })
+      if (!source) return reply.code(404).send({ error: 'tool not found in per-planet scope' })
       try {
         const { targetPath } = elevateTool(source, ctx)
         return { ok: true, path: targetPath }
@@ -276,13 +276,13 @@ export function registerToolRoutes({ app, apiError }: AppContext): void {
   )
 
   app.post<{ Params: { id: string; type: string; name: string } }>(
-    '/api/ships/:id/tools/:type/:name/fork-from-global',
+    '/api/planets/:id/tools/:type/:name/fork-from-global',
     async (req, reply) => {
-      const ship = getShip(Number(req.params.id))
-      if (!ship) return reply.code(404).send({ error: 'ship not found' })
+      const planet = getPlanet(Number(req.params.id))
+      if (!planet) return reply.code(404).send({ error: 'planet not found' })
       const type = parseToolType(req.params.type, reply)
       if (!type) return
-      const ctx: PathContext = { shipProjectPath: ship.projectPath }
+      const ctx: PathContext = { planetProjectPath: planet.projectPath }
       const source = (await scanScopeType('global', type, ctx)).find(
         (e) => e.data.name === req.params.name,
       )

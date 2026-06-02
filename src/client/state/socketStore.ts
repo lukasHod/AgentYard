@@ -7,7 +7,7 @@ import type {
   RunSnapshot,
   ServerEvents,
   SessionDescriptor,
-  ShipSummary,
+  PlanetSummary,
 } from '../../core/types'
 
 export interface ChatMessage {
@@ -36,7 +36,7 @@ interface State {
   transcripts: Map<string, ChatMessage[]>
   pendings: Map<string, PendingClarification>
   activeRun: RunSnapshot | null
-  ships: ShipSummary[]
+  planets: PlanetSummary[]
   features: Map<number, FeatureSummary[]>
 }
 
@@ -55,11 +55,11 @@ interface Actions {
   applyNodeComplete: (ev: ServerEvents['node:complete']) => void
   applyRunComplete: (ev: ServerEvents['run:complete']) => void
   applyRunFailed: (ev: ServerEvents['run:failed']) => void
-  applyShipCreated: (s: ServerEvents['ship:created']) => void
-  applyShipDeleted: (ev: ServerEvents['ship:deleted']) => void
+  applyPlanetCreated: (s: ServerEvents['planet:created']) => void
+  applyPlanetDeleted: (ev: ServerEvents['planet:deleted']) => void
   applyFeatureCreated: (f: ServerEvents['feature:created']) => void
   applyFeatureUpdated: (f: ServerEvents['feature:updated']) => void
-  setShips: (ships: ShipSummary[]) => void
+  setPlanets: (planets: PlanetSummary[]) => void
   setFeatures: (features: Map<number, FeatureSummary[]>) => void
   resetRun: () => void
 }
@@ -70,7 +70,7 @@ export const useSocketStore = create<State & Actions>((set) => ({
   transcripts: new Map(),
   pendings: new Map(),
   activeRun: null,
-  ships: [],
+  planets: [],
   features: new Map(),
 
   setConnected: (b) => set({ connected: b }),
@@ -198,33 +198,33 @@ export const useSocketStore = create<State & Actions>((set) => ({
         : prev,
     ),
 
-  applyShipCreated: (s) => set((prev) => ({ ships: [s, ...prev.ships] })),
+  applyPlanetCreated: (s) => set((prev) => ({ planets: [s, ...prev.planets] })),
 
-  applyShipDeleted: (ev) =>
+  applyPlanetDeleted: (ev) =>
     set((prev) => {
-      const ships = prev.ships.filter((s) => s.id !== ev.id)
-      if (ships.length === prev.ships.length && !prev.features.has(ev.id)) return prev
+      const planets = prev.planets.filter((s) => s.id !== ev.id)
+      if (planets.length === prev.planets.length && !prev.features.has(ev.id)) return prev
       const features = new Map(prev.features)
       features.delete(ev.id)
-      return { ships, features }
+      return { planets, features }
     }),
 
   applyFeatureCreated: (f) =>
     set((prev) => {
       const features = new Map(prev.features)
-      features.set(f.shipId, [f, ...(features.get(f.shipId) ?? [])])
+      features.set(f.planetId, [f, ...(features.get(f.planetId) ?? [])])
       return { features }
     }),
 
   applyFeatureUpdated: (f) =>
     set((prev) => {
-      const list = (prev.features.get(f.shipId) ?? []).map((x) => (x.id === f.id ? f : x))
+      const list = (prev.features.get(f.planetId) ?? []).map((x) => (x.id === f.id ? f : x))
       const features = new Map(prev.features)
-      features.set(f.shipId, list)
+      features.set(f.planetId, list)
       return { features }
     }),
 
-  setShips: (ships) => set({ ships }),
+  setPlanets: (planets) => set({ planets }),
   setFeatures: (features) => set({ features }),
 
   resetRun: () =>
@@ -239,7 +239,7 @@ export const useSocketStore = create<State & Actions>((set) => ({
 // ── Selector hooks ──────────────────────────────────────────────────────
 //
 // Each hook subscribes to the minimum slice a consumer needs. Leaf
-// components that only read one transcript / one ship's features avoid
+// components that only read one transcript / one planet's features avoid
 // re-rendering on unrelated socket traffic.
 
 export const useConnected = () => useSocketStore((s) => s.connected)
@@ -264,10 +264,10 @@ export const usePending = (agentRunId: string): PendingClarification | null =>
 
 export const useActiveRun = () => useSocketStore((s) => s.activeRun)
 
-export const useShips = () => useSocketStore((s) => s.ships)
+export const usePlanets = () => useSocketStore((s) => s.planets)
 
 export const useFeaturesMap = () => useSocketStore((s) => s.features)
 
-/** Subscribe to a single ship's features — only re-renders for that ship. */
-export const useFeaturesByShip = (shipId: number): FeatureSummary[] =>
-  useSocketStore((s) => s.features.get(shipId) ?? EMPTY_FEATURES)
+/** Subscribe to a single planet's features — only re-renders for that planet. */
+export const useFeaturesByPlanet = (planetId: number): FeatureSummary[] =>
+  useSocketStore((s) => s.features.get(planetId) ?? EMPTY_FEATURES)

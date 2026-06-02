@@ -17,7 +17,7 @@ export function CustomNodeFields({
 }) {
   const selectedScript = node.scriptName ? scripts.find((s) => s.name === node.scriptName) : null
   const selectedScriptEditable =
-    selectedScript && (selectedScript.scope === 'global' || selectedScript.scope === 'ship')
+    selectedScript && (selectedScript.scope === 'global' || selectedScript.scope === 'planet')
   const [scriptArgs, setScriptArgs] = useState<ScriptTool['args']>([])
   const [loadingArgs, setLoadingArgs] = useState(false)
 
@@ -85,7 +85,7 @@ export function CustomNodeFields({
         {scripts.length === 0 && (
           <p className="text-[10px] text-zinc-600 mt-1">
             // no scripts in the global library. create one from{' '}
-            <span className="text-cyan-400">ships → tools</span>.
+            <span className="text-cyan-400">planets → tools</span>.
           </p>
         )}
       </div>

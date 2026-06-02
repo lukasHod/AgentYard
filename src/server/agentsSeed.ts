@@ -72,8 +72,8 @@ When the leader delegates to you, run \`git status\` to see what changed. If the
 
 /**
  * Write a seed agent to ~/.agentyard/agents/<name>.md if and only if no file
- * with that name exists in either ship or global scope. We don't have a ship
- * here, so we only check global; per-ship overrides are unaffected.
+ * with that name exists in either planet or global scope. We don't have a planet
+ * here, so we only check global; per-planet overrides are unaffected.
  */
 export function seedDefaultAgentsIfMissing(): { wrote: string[] } {
   const dir = path.join(homedir(), '.agentyard', 'agents')
