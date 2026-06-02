@@ -1,14 +1,17 @@
 import { useFrame } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Group, Vector3 } from 'three'
+import { Color, Group, MeshStandardMaterial, Vector3 } from 'three'
 import { derivePlanetParams } from './lib/planetParams'
-import { PlanetMaterial } from './PlanetMaterial'
 import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
 import { useFeaturesMap, useSessionList, usePendingsMap } from '../state/socketStore'
 import { Ship } from './Ship'
 import { ringAngles } from './lib/orbits'
 import { registerPlanetPosition } from './lib/positionRegistry'
+
+const BACKGROUND_SCALE = 0.1     // size of non-focused planets when something else is focused
+const BACKGROUND_BRIGHTNESS = 0.4 // colour multiplier for non-focused planets
+const RESPONSE = 4               // ~250ms smooth-step toward target
 
 interface PlanetProps {
   planet: PlanetSummary
@@ -20,7 +23,25 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const params = useMemo(() => derivePlanetParams(planet.name), [planet.name])
   const groupRef = useRef<Group>(null)
   const meshRef = useRef<Group>(null)
+  const materialRef = useRef<MeshStandardMaterial>(null)
   const focusPlanet = useUiStore((s) => s.focusPlanet)
+
+  // Focus-derived "is this planet the centre of attention or a background
+  // element?" — drives the scale + brightness tween below.
+  const isThisFocused = useUiStore(
+    (s) =>
+      (s.focus.lod === 1 && 'planetId' in s.focus && s.focus.planetId === planet.id) ||
+      (s.focus.lod === 2 && s.focus.planetId === planet.id),
+  )
+  const isAnyFocused = useUiStore((s) => s.focus.lod >= 1)
+  const shouldDim = isAnyFocused && !isThisFocused
+
+  const baseColor = useMemo(
+    () => new Color().setHSL(params.paletteHue / 360, 0.55, 0.45),
+    [params.paletteHue],
+  )
+  const brightness = useRef(1)
+  const scale = useRef(1)
 
   const features = useFeaturesMap().get(planet.id) ?? []
 
@@ -98,6 +119,19 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
     if (meshRef.current) {
       meshRef.current.rotation.y += dt * (params.rotationSpeed * 0.4)
     }
+
+    // Smooth-step toward target brightness + scale based on focus state.
+    const targetBrightness = shouldDim ? BACKGROUND_BRIGHTNESS : 1
+    brightness.current += (targetBrightness - brightness.current) * Math.min(1, dt * RESPONSE)
+    if (materialRef.current) {
+      materialRef.current.color.copy(baseColor).multiplyScalar(brightness.current)
+    }
+
+    const targetScale = shouldDim ? BACKGROUND_SCALE : 1
+    scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
+    if (meshRef.current) {
+      meshRef.current.scale.setScalar(scale.current)
+    }
   })
 
   // Expose the planet's live world position so the camera rig can track it
@@ -117,7 +151,7 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       <group ref={meshRef} position={[orbitRadius, 0, 0]} onClick={(e) => { e.stopPropagation(); focusPlanet(planet.id) }}>
         <mesh>
           <sphereGeometry args={[params.radius, 48, 48]} />
-          <PlanetMaterial params={params} />
+          <meshStandardMaterial ref={materialRef} color={baseColor} roughness={0.6} metalness={0.05} />
         </mesh>
         {params.hasRing && (
           <mesh rotation={[Math.PI / 2.3, 0, 0]}>

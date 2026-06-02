@@ -1,7 +1,7 @@
 // src/client/scene/Sun.tsx
 import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
-import { ShaderMaterial, Mesh, Color, PointLight } from 'three'
+import { ShaderMaterial, Mesh, Color, PointLight, Group } from 'three'
 import { useUiStore } from '../state/uiStore'
 
 const vert = `
@@ -27,18 +27,34 @@ const frag = `
   }
 `
 
-const FOCUSED_BRIGHTNESS = 0.45
+// Brightness multiplier on the sun's shader output + corona point light.
+// 1.0 at LOD 0 (default solar-system overview).
+// 0.45 when the user has focused the sun itself — softens it so glass panels read.
+// 0.3 when a planet or ship is focused — sun is just a background element.
+const NORMAL_BRIGHTNESS = 1
+const SUN_FOCUSED_BRIGHTNESS = 0.45
+const BACKGROUND_BRIGHTNESS = 0.3
+
+// When a planet/ship is focused the sun shrinks to a small backdrop so its
+// motion across the field of view doesn't pull attention away from the work.
+const BACKGROUND_SCALE = 0.1
+
 const POINT_LIGHT_BASE = 3
-const BRIGHTNESS_RESPONSE = 4 // higher = faster tween (~250ms to 50% on focus change)
+const RESPONSE = 4 // ~250ms tween to target
 
 export function Sun() {
+  const groupRef = useRef<Group>(null)
   const meshRef = useRef<Mesh>(null)
   const matRef = useRef<ShaderMaterial>(null)
   const lightRef = useRef<PointLight>(null)
   const focusSun = useUiStore((s) => s.focusSun)
-  // Boolean selector — Zustand only re-renders when the boolean flips.
   const isSunFocused = useUiStore((s) => s.focus.lod === 1 && 'sun' in s.focus && s.focus.sun === true)
+  const isOtherFocused = useUiStore(
+    (s) => s.focus.lod === 2 || (s.focus.lod === 1 && 'planetId' in s.focus),
+  )
+
   const brightness = useRef(1)
+  const scale = useRef(1)
 
   const material = useMemo(
     () =>
@@ -54,30 +70,38 @@ export function Sun() {
     if (matRef.current) matRef.current.uniforms['uTime']!.value += dt
     if (meshRef.current) meshRef.current.rotation.y += dt * 0.02
 
-    // Smooth-step brightness toward the target value.
-    const target = isSunFocused ? FOCUSED_BRIGHTNESS : 1
-    const next = brightness.current + (target - brightness.current) * Math.min(1, dt * BRIGHTNESS_RESPONSE)
-    brightness.current = next
-    if (matRef.current) matRef.current.uniforms['uBrightness']!.value = next
-    if (lightRef.current) lightRef.current.intensity = POINT_LIGHT_BASE * next
+    const targetBrightness = isSunFocused
+      ? SUN_FOCUSED_BRIGHTNESS
+      : isOtherFocused
+        ? BACKGROUND_BRIGHTNESS
+        : NORMAL_BRIGHTNESS
+    brightness.current += (targetBrightness - brightness.current) * Math.min(1, dt * RESPONSE)
+    if (matRef.current) matRef.current.uniforms['uBrightness']!.value = brightness.current
+    if (lightRef.current) lightRef.current.intensity = POINT_LIGHT_BASE * brightness.current
+
+    const targetScale = isOtherFocused ? BACKGROUND_SCALE : 1
+    scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
+    if (groupRef.current) groupRef.current.scale.setScalar(scale.current)
   })
 
   return (
-    <mesh
-      ref={meshRef}
-      position={[0, 0, 0]}
-      onClick={(e) => { e.stopPropagation(); focusSun() }}
-    >
-      <sphereGeometry args={[2.4, 64, 64]} />
-      <primitive ref={matRef} object={material} attach="material" />
-      {/* Corona — additive, larger sphere with a soft glow material */}
-      <pointLight
-        ref={lightRef}
-        intensity={POINT_LIGHT_BASE}
-        distance={120}
-        decay={1.5}
-        color={new Color('#fbbf24')}
-      />
-    </mesh>
+    <group ref={groupRef}>
+      <mesh
+        ref={meshRef}
+        position={[0, 0, 0]}
+        onClick={(e) => { e.stopPropagation(); focusSun() }}
+      >
+        <sphereGeometry args={[2.4, 64, 64]} />
+        <primitive ref={matRef} object={material} attach="material" />
+        {/* Corona — additive, larger sphere with a soft glow material */}
+        <pointLight
+          ref={lightRef}
+          intensity={POINT_LIGHT_BASE}
+          distance={120}
+          decay={1.5}
+          color={new Color('#fbbf24')}
+        />
+      </mesh>
+    </group>
   )
 }

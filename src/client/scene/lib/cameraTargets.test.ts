@@ -10,26 +10,24 @@ describe('cameraTargetFor', () => {
     expect(t.lookAt).toEqual([0, 0, 0])
   })
 
-  it('LOD 1 positions the camera radially outward from the sun, looking at the planet', () => {
+  it('LOD 1 places the camera at a fixed offset behind+above the planet (parallel follow)', () => {
     const t = cameraTargetFor({ lod: 1, planetId: 1 }, () => planetPos)
     expect(t.lookAt).toEqual([6, 0, 0])
-    // Planet at (6,0,0) → sun direction is +X, so camera should be further along +X.
-    expect(t.position[0]).toBeGreaterThan(6)
-    expect(t.position[2]).toBeCloseTo(0)
-    // Camera should be within ~4 units of the planet (close framing).
+    expect(t.position[0]).toBeCloseTo(6)
+    expect(t.position[1]).toBeGreaterThan(0) // slight elevation
+    expect(t.position[2]).toBeGreaterThan(0) // pulled back along +z
+    // Camera should be close to the planet (cinematic frame).
     const dx = t.position[0] - 6
     const dy = t.position[1]
     const dz = t.position[2]
     expect(Math.hypot(dx, dy, dz)).toBeLessThan(4)
   })
 
-  it('LOD 1 keeps camera on the far side of the sun (no clipping through sun)', () => {
-    // Planet at (-6,0,0): camera should be at (-X further), not between sun and planet.
-    const t = cameraTargetFor({ lod: 1, planetId: 1 }, () => ({ x: -6, y: 0, z: 0 }))
-    expect(t.lookAt).toEqual([-6, 0, 0])
-    expect(t.position[0]).toBeLessThan(-6) // camera is farther from origin than planet
-    // Distance from origin (sun) must exceed planet's sun-distance.
-    expect(Math.hypot(t.position[0], t.position[2])).toBeGreaterThan(6)
+  it('LOD 1 camera stays clear of the sun even at the worst orbital phase', () => {
+    // Planet at (0,0,-6) puts the camera at roughly (0,1.5,-3.5). Origin-distance
+    // must remain comfortably greater than the sun's radius (~2.4).
+    const t = cameraTargetFor({ lod: 1, planetId: 1 }, () => ({ x: 0, y: 0, z: -6 }))
+    expect(Math.hypot(t.position[0], t.position[1], t.position[2])).toBeGreaterThan(2.5)
   })
 
   it('LOD 1 sun returns sun-focused position', () => {

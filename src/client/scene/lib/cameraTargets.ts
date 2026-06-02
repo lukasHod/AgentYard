@@ -22,26 +22,24 @@ const SUN_FOCUS: CameraTarget = {
   lookAt: [0, 0, 0],
 }
 
-// Planet follow camera: position radially OUTWARD from the sun along the
-// sun→planet line, slightly elevated. This keeps the camera in safe space
-// (always farther from the sun than its planet, never on the sun side) so
-// it can't drift through the sun or near-orbit planets as the focused
-// planet sweeps around.
+// Planet follow camera: a fixed offset in WORLD coordinates applied to the
+// planet's live position. As the planet orbits the sun, the camera moves
+// in parallel with it — so the planet stays stationary in screen space
+// (centre of view) but the sun is NOT stationary; it drifts across the
+// view as the planet+camera pair sweep around their shared orbit. This
+// gives the "co-orbiting alongside the planet" cinematic feel and avoids
+// the lockstep-with-sun feel a radial-outward camera produces.
 //
-// FOLLOW_DIST controls apparent planet size on screen. Smaller = bigger
-// planet. With camera fov=45° and an average planet radius ~1, a distance
-// of 3 puts the planet at roughly a third of the viewport width.
-const PLANET_FOLLOW_DIST = 3.0
-const PLANET_FOLLOW_HEIGHT = 0.8
+// Tight offset for a close cinematic frame. The z offset is intentionally
+// positive so the camera sits "behind" the planet relative to the world
+// +Z direction; lookAt is the planet itself.
+const PLANET_FOLLOW_OFFSET = { x: 0, y: 1.5, z: 2.5 }
 
 function planetCameraPosition(p: { x: number; y: number; z: number }): [number, number, number] {
-  const sunPlane = Math.hypot(p.x, p.z) || 1
-  const dirX = p.x / sunPlane
-  const dirZ = p.z / sunPlane
   return [
-    p.x + dirX * PLANET_FOLLOW_DIST,
-    p.y + PLANET_FOLLOW_HEIGHT,
-    p.z + dirZ * PLANET_FOLLOW_DIST,
+    p.x + PLANET_FOLLOW_OFFSET.x,
+    p.y + PLANET_FOLLOW_OFFSET.y,
+    p.z + PLANET_FOLLOW_OFFSET.z,
   ]
 }
 
