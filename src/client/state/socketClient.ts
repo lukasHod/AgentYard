@@ -46,9 +46,31 @@ export function getSocket(): Socket | null {
 }
 
 export function sendAgentMessage(agentRunId: string, content: string) {
-  socket?.emit('agent:send', { agentRunId, content })
+  if (socket) {
+    socket.emit('agent:send', { agentRunId, content })
+    return
+  }
+  // No socket → mock/offline mode. Push the user message straight into the
+  // transcript so the chat UI is exercisable without a backend.
+  useSocketStore.getState().applyAgentMessage({
+    agentRunId,
+    role: 'user',
+    content,
+    timestamp: Date.now(),
+  })
 }
 
 export function replyClarification(agentRunId: string, toolUseId: string, answer: string) {
-  socket?.emit('clarification:reply', { agentRunId, toolUseId, answer })
+  if (socket) {
+    socket.emit('clarification:reply', { agentRunId, toolUseId, answer })
+    return
+  }
+  const store = useSocketStore.getState()
+  store.applyAgentMessage({
+    agentRunId,
+    role: 'user',
+    content: answer,
+    timestamp: Date.now(),
+  })
+  store.applyClarificationResolved({ agentRunId, toolUseId })
 }

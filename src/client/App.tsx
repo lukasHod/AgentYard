@@ -7,6 +7,7 @@ import {
 import { initSocketClient } from './state/socketClient'
 import { apiGet } from './api'
 import type { FeatureSummary, PlanetSummary } from '../core/types'
+import { MOCK_ENABLED, installMockData } from './state/mockSeed'
 import { Toasts } from './components/Toasts'
 import { SolarSystemScene } from './scene/SolarSystemScene'
 import { BackOutHandler } from './components/hud/BackOutHandler'
@@ -29,10 +30,15 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    if (MOCK_ENABLED) {
+      installMockData()
+      return
+    }
     initSocketClient()
   }, [])
 
   useEffect(() => {
+    if (MOCK_ENABLED) return
     void (async () => {
       const planetsRes = await apiGet<PlanetSummary[]>('/api/planets')
       if (!planetsRes.ok) return

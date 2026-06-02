@@ -1,5 +1,5 @@
 // src/client/scene/Ship.tsx
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { GlbErrorBoundary } from './ErrorBoundaries'
@@ -120,17 +120,8 @@ function ShipImpl({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds, o
     return c
   }, [gltf.scene, params.hueShift])
 
-  // Play the baked animation if present. drei's useAnimations needs the cloned
-  // scene as the root so the action references our local nodes, not the source.
-  const { actions, names } = useAnimations(gltf.animations, cloned)
-  useEffect(() => {
-    if (names.length === 0) return
-    const first = actions[names[0]!]
-    first?.reset().play()
-    return () => {
-      first?.stop()
-    }
-  }, [actions, names])
+  // Baked GLB animation intentionally left unplayed: a ship "under
+  // construction" should sit still while drones swarm around it.
 
   // Drive lifecycle animation each frame.
   useFrame(({ clock }) => {

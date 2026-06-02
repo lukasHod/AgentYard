@@ -21,7 +21,8 @@ import { AgentChat } from '../AgentChat'
 import { EmptyMessage } from '../ui/EmptyMessage'
 import { apiGet, apiPost } from '../../api'
 import { pushToast } from '../../state/toastStore'
-import type { PlanetSummary, FeatureSummary } from '../../../core/types'
+import { getMockAgentDescription } from '../../state/mockSeed'
+import type { PlanetSummary, FeatureSummary, SessionDescriptor } from '../../../core/types'
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -376,6 +377,68 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
 }
 
 // ---------------------------------------------------------------------------
+// AgentInfoPanel — left panel content at LOD 2 when a drone is selected
+// ---------------------------------------------------------------------------
+
+const ROLE_COLORS: Record<SessionDescriptor['role'], string> = {
+  leader: 'text-amber-300',
+  drone: 'text-sky-300',
+  free: 'text-fuchsia-300',
+}
+
+function AgentInfoPanel({
+  session,
+  pendingQuestion,
+  onBackToFeature,
+}: {
+  session: SessionDescriptor
+  pendingQuestion: string | null
+  onBackToFeature: () => void
+}) {
+  const description = getMockAgentDescription(session.id)
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onBackToFeature}
+        className="text-xs tracking-widest text-slate-400 hover:text-sky-300 cursor-pointer"
+      >
+        ← FEATURE
+      </button>
+      <div className="text-xs tracking-widest text-slate-400 mt-3">AGENT</div>
+      <h3 className="text-sky-100 text-lg mt-1">{session.label ?? session.id.slice(0, 8)}</h3>
+
+      <div className="mt-3 flex gap-4 text-xs">
+        <div>
+          <div className="tracking-widest text-slate-500">ROLE</div>
+          <div className={`${ROLE_COLORS[session.role]} mt-0.5 uppercase`}>{session.role}</div>
+        </div>
+        <div>
+          <div className="tracking-widest text-slate-500">STATE</div>
+          <div className="text-slate-200 mt-0.5">{session.state}</div>
+        </div>
+      </div>
+
+      {description && (
+        <>
+          <div className="text-xs tracking-widest text-slate-400 mt-4">DESCRIPTION</div>
+          <p className="text-sm text-slate-300 mt-1 whitespace-pre-wrap">{description}</p>
+        </>
+      )}
+
+      {pendingQuestion && (
+        <>
+          <div className="text-xs tracking-widest text-amber-300 mt-4">
+            AWAITING CLARIFICATION
+          </div>
+          <p className="text-sm text-amber-100 mt-1 whitespace-pre-wrap">{pendingQuestion}</p>
+        </>
+      )}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // InfoPanelBody
 // ---------------------------------------------------------------------------
 
@@ -424,6 +487,7 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
 export function FocusedPanel() {
   const focus = useUiStore((s) => s.focus)
   const back = useUiStore((s) => s.back)
+  const bindChatDrone = useUiStore((s) => s.bindChatDrone)
   const splitterRatio = useUiStore((s) => s.splitterRatio)
   const setSplitterRatio = useUiStore((s) => s.setSplitterRatio)
   const infoPanelOpen = useUiStore((s) => s.infoPanelOpen)
@@ -433,6 +497,7 @@ export function FocusedPanel() {
   const planets = usePlanets()
   const sessions = useSessionList()
   const features = useFeaturesMap()
+  const pendings = usePendingsMap()
 
   const planetId =
     focus.lod === 1 && 'planetId' in focus
@@ -521,7 +586,26 @@ export function FocusedPanel() {
               >
                 <GlassPanel className="h-full p-4 overflow-y-auto relative">
                   <MinimizeButton onClick={() => setInfoPanelOpen(false)} title="hide info panel" />
-                  {focus.lod === 2 && focusedFeature ? (
+                  {focus.lod === 2 && focus.chatDroneId ? (
+                    (() => {
+                      const droneSession = sessions.find((s) => s.id === focus.chatDroneId)
+                      if (droneSession) {
+                        const pending = pendings.get(droneSession.id)
+                        return (
+                          <AgentInfoPanel
+                            session={droneSession}
+                            pendingQuestion={pending?.question ?? null}
+                            onBackToFeature={() => bindChatDrone('')}
+                          />
+                        )
+                      }
+                      return focusedFeature ? (
+                        <ShipInfoPanel feature={focusedFeature} />
+                      ) : (
+                        <InfoPanelBody planet={planet!} />
+                      )
+                    })()
+                  ) : focus.lod === 2 && focusedFeature ? (
                     <ShipInfoPanel feature={focusedFeature} />
                   ) : (
                     <InfoPanelBody planet={planet!} />

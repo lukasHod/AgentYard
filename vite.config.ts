@@ -8,6 +8,9 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   plugins: [react()],
   root: path.resolve(here, 'src/client'),
+  // Static assets (GLB models, textures) live at the repo-root /public.
+  // Point vite there so dev serves them alongside the proxied /api routes.
+  publicDir: path.resolve(here, 'public'),
   build: {
     outDir: path.resolve(here, 'dist/public'),
     emptyOutDir: true,
