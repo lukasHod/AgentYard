@@ -22,18 +22,23 @@ const SUN_FOCUS: CameraTarget = {
   lookAt: [0, 0, 0],
 }
 
-// Planet follow camera: a fixed offset in WORLD coordinates applied to the
-// planet's live position. As the planet orbits the sun, the camera moves
-// in parallel with it — so the planet stays stationary in screen space
-// (centre of view) but the sun is NOT stationary; it drifts across the
-// view as the planet+camera pair sweep around their shared orbit. This
-// gives the "co-orbiting alongside the planet" cinematic feel and avoids
-// the lockstep-with-sun feel a radial-outward camera produces.
+// Planet follow camera: a fixed offset in WORLD coordinates applied to
+// the planet's live position. As the planet orbits the sun the camera
+// moves in parallel with it — so the planet stays stationary in screen
+// space (off-centre, see below) while the sun drifts across the view.
 //
-// Tight offset for a close cinematic frame. The z offset is intentionally
-// positive so the camera sits "behind" the planet relative to the world
-// +Z direction; lookAt is the planet itself.
-const PLANET_FOLLOW_OFFSET = { x: 0, y: 1.5, z: 2.5 }
+// Tight offset for an "alongside the planet" cinematic frame.
+const PLANET_FOLLOW_OFFSET = { x: 0, y: 0.6, z: 2.2 }
+
+// Shift the lookAt point along world -X so the camera looks slightly to
+// the LEFT of the planet's centre. The planet then renders on the RIGHT
+// side of the viewport (so its silhouette sits prominently behind the
+// chat panel) while empty space + stars fill the left, mirroring a
+// classic "planet shoulder" composition. Offset is in world coords, but
+// because the follow camera's local +X is always aligned with world +X
+// (no roll), the on-screen direction is consistent regardless of orbital
+// phase.
+const PLANET_LOOKAT_OFFSET = { x: -1.0, y: 0, z: 0 }
 
 function planetCameraPosition(p: { x: number; y: number; z: number }): [number, number, number] {
   return [
@@ -43,13 +48,21 @@ function planetCameraPosition(p: { x: number; y: number; z: number }): [number, 
   ]
 }
 
+function planetLookAt(p: { x: number; y: number; z: number }): [number, number, number] {
+  return [
+    p.x + PLANET_LOOKAT_OFFSET.x,
+    p.y + PLANET_LOOKAT_OFFSET.y,
+    p.z + PLANET_LOOKAT_OFFSET.z,
+  ]
+}
+
 export function cameraTargetFor(focus: Focus, lookup: PlanetPositionLookup): CameraTarget {
   if (focus.lod === 0) return SYSTEM_OVERVIEW
   if ('sun' in focus && focus.sun) return SUN_FOCUS
   if (focus.lod === 1 && 'planetId' in focus) {
     const p = lookup(focus.planetId)
     if (!p) return SYSTEM_OVERVIEW
-    return { position: planetCameraPosition(p), lookAt: [p.x, p.y, p.z] }
+    return { position: planetCameraPosition(p), lookAt: planetLookAt(p) }
   }
   if (focus.lod === 2) {
     const p = lookup(focus.planetId)
@@ -60,7 +73,7 @@ export function cameraTargetFor(focus: Focus, lookup: PlanetPositionLookup): Cam
     const [cx, cy, cz] = planetCameraPosition(p)
     return {
       position: [(cx + p.x) / 2, cy, (cz + p.z) / 2],
-      lookAt: [p.x, p.y, p.z],
+      lookAt: planetLookAt(p),
     }
   }
   return SYSTEM_OVERVIEW
