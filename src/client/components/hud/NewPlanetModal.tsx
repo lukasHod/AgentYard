@@ -19,7 +19,7 @@ export function NewPlanetModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center pointer-events-auto" onClick={onClose}>
       <GlassPanel className="p-6 w-[420px]" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-sm tracking-widest text-sky-300 mb-3">NEW PROJECT</h2>
         <label className="text-xs text-slate-400">PROJECT NAME</label>

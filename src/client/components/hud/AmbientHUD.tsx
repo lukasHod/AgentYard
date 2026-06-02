@@ -29,13 +29,14 @@ export function AmbientHUD() {
 
   return (
     <>
-      {/* Top bar */}
+      {/* Top bar — wrapper stays pointer-events-none so the empty middle
+          between the two GlassPanels passes clicks through to the canvas. */}
       <div className="absolute top-4 left-4 right-4 flex items-start justify-between gap-4">
-        <GlassPanel className="px-4 py-2 flex items-center gap-3">
+        <GlassPanel className="px-4 py-2 flex items-center gap-3 pointer-events-auto">
           <span className={connected ? 'text-emerald-300' : 'text-amber-300'}>●</span>
           <span className="font-semibold tracking-widest text-sm">AGENTYARD</span>
         </GlassPanel>
-        <GlassPanel className="px-4 py-2 flex items-center gap-3 text-xs">
+        <GlassPanel className="px-4 py-2 flex items-center gap-3 text-xs pointer-events-auto">
           <GlassChip>{pendings.size} pending</GlassChip>
           <button onClick={() => setMuted(!muted)} className="text-slate-300">{muted ? '🔇' : '🔊'}</button>
           <GlassButton onClick={() => setNewOpen(true)}>+ new project</GlassButton>
@@ -48,7 +49,7 @@ export function AmbientHUD() {
           {running.map((r) => (
             <GlassPanel
               key={`${r.planetId}-${r.featureName}`}
-              className="px-3 py-1.5 text-xs cursor-pointer hover:scale-[1.02] transition-transform"
+              className="px-3 py-1.5 text-xs cursor-pointer hover:scale-[1.02] transition-transform pointer-events-auto"
               onClick={() => focusPlanet(r.planetId)}
             >
               <span className="text-sky-300 animate-pulse mr-1">●</span>

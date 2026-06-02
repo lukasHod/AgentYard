@@ -460,7 +460,7 @@ export function FocusedPanel() {
   if (!isSunFocus && !planet) return null
 
   return (
-    <div className="absolute inset-0 p-4">
+    <div className="absolute inset-0 p-4 pointer-events-auto">
       {/* Top bar */}
       <GlassPanel className="flex items-center justify-between px-4 py-2 mb-3">
         <div className="flex items-center gap-3">
