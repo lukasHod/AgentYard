@@ -41,7 +41,7 @@ const PLANET_FOLLOW_OFFSET = { x: 0, y: 0.4, z: 1.3 }
 // because the follow camera's local +X is always aligned with world +X
 // (no roll), the on-screen direction is consistent regardless of orbital
 // phase.
-const PLANET_LOOKAT_OFFSET = { x: -0.6, y: 0, z: 0 }
+const PLANET_LOOKAT_OFFSET = { x: -1.0, y: 0, z: 0 }
 
 function planetCameraPosition(p: { x: number; y: number; z: number }): [number, number, number] {
   return [
