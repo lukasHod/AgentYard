@@ -10,12 +10,26 @@ describe('cameraTargetFor', () => {
     expect(t.lookAt).toEqual([0, 0, 0])
   })
 
-  it('LOD 1 planet positions the camera offset from the planet', () => {
+  it('LOD 1 positions the camera radially outward from the sun, looking at the planet', () => {
     const t = cameraTargetFor({ lod: 1, planetId: 1 }, () => planetPos)
-    // Camera sits to the side and back of the planet; planet is the lookAt.
     expect(t.lookAt).toEqual([6, 0, 0])
-    expect(t.position[0]).toBeCloseTo(6)
-    expect(t.position[2]).toBeGreaterThan(2) // pulled back along +z
+    // Planet at (6,0,0) → sun direction is +X, so camera should be further along +X.
+    expect(t.position[0]).toBeGreaterThan(6)
+    expect(t.position[2]).toBeCloseTo(0)
+    // Camera should be within ~4 units of the planet (close framing).
+    const dx = t.position[0] - 6
+    const dy = t.position[1]
+    const dz = t.position[2]
+    expect(Math.hypot(dx, dy, dz)).toBeLessThan(4)
+  })
+
+  it('LOD 1 keeps camera on the far side of the sun (no clipping through sun)', () => {
+    // Planet at (-6,0,0): camera should be at (-X further), not between sun and planet.
+    const t = cameraTargetFor({ lod: 1, planetId: 1 }, () => ({ x: -6, y: 0, z: 0 }))
+    expect(t.lookAt).toEqual([-6, 0, 0])
+    expect(t.position[0]).toBeLessThan(-6) // camera is farther from origin than planet
+    // Distance from origin (sun) must exceed planet's sun-distance.
+    expect(Math.hypot(t.position[0], t.position[2])).toBeGreaterThan(6)
   })
 
   it('LOD 1 sun returns sun-focused position', () => {
@@ -40,9 +54,9 @@ describe('cameraTargetForV2', () => {
     expect(t.position[0]).toBeCloseTo(8.5) // 7 + 1.5
   })
 
-  it('falls back to LOD 1 framing if ship not found at LOD 2', () => {
+  it('falls back to planet framing if ship not found at LOD 2', () => {
     const planetLookup = () => ({ x: 5, y: 0, z: 0 })
     const t = cameraTargetForV2({ lod: 2, planetId: 1, shipFeatureId: 99 }, planetLookup, () => null)
-    expect(t.lookAt).toEqual([5, 0, 0]) // same as LOD 1 planet
+    expect(t.lookAt).toEqual([5, 0, 0])
   })
 })
