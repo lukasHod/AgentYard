@@ -1,57 +1,30 @@
 // src/client/scene/SolarSystemScene.tsx
-import { useMemo, useCallback } from 'react'
+import { useCallback } from 'react'
 import { Stars } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { Sun } from './Sun'
 import { Planet } from './Planet'
 import { CameraRig } from './CameraRig'
-import { planetOrbitPositions, ringAngles } from './lib/orbits'
-import { derivePlanetParams } from './lib/planetParams'
-import { usePlanets, useFeaturesMap } from '../state/socketStore'
+import { planetOrbitPositions } from './lib/orbits'
+import { usePlanets } from '../state/socketStore'
+import { getPlanetPosition, getShipPosition } from './lib/positionRegistry'
 
 export function SolarSystemScene() {
   const planets = usePlanets()
   const positions = planetOrbitPositions(planets.length)
 
-  const planetWorld = useMemo(() => {
-    const map = new Map<number, { x: number; y: number; z: number }>()
-    planets.forEach((p, i) => {
-      const angle = (i * Math.PI) / 3 // matches orbitAngleOffset in <Planet>
-      const radius = positions[i]!.radius
-      map.set(p.id, { x: Math.cos(angle) * radius, y: 0, z: -Math.sin(angle) * radius })
-    })
-    return map
-  }, [planets, positions])
+  // Camera lookups read live world positions from the registry that Planet /
+  // Ship components write into each frame. This is what lets the camera
+  // track an orbiting planet so it appears stationary from the user's POV.
+  const planetLookup = useCallback((id: number) => {
+    const v = getPlanetPosition(id)
+    return v ? { x: v.x, y: v.y, z: v.z } : null
+  }, [])
 
-  const lookup = useCallback((id: number) => planetWorld.get(id) ?? null, [planetWorld])
-
-  const features = useFeaturesMap()
-
-  const shipPositions = useMemo(() => {
-    const map = new Map<string, { x: number; y: number; z: number }>()
-    planets.forEach((p, pi) => {
-      const planetAngle = (pi * Math.PI) / 3
-      const planetX = Math.cos(planetAngle) * positions[pi]!.radius
-      const planetZ = -Math.sin(planetAngle) * positions[pi]!.radius
-      const fs = (features.get(p.id) ?? []).filter((f) => f.status === 'running')
-      const angles = ringAngles(fs.length)
-      const planetParams = derivePlanetParams(p.name)
-      const ringR = planetParams.radius * 1.8
-      fs.forEach((f, i) => {
-        map.set(`${p.id}:${f.id}`, {
-          x: planetX + Math.cos(angles[i]!) * ringR,
-          y: 0,
-          z: planetZ + Math.sin(angles[i]!) * ringR,
-        })
-      })
-    })
-    return map
-  }, [planets, features, positions])
-
-  const shipLookup = useCallback(
-    (planetId: number, featureId: number) => shipPositions.get(`${planetId}:${featureId}`) ?? null,
-    [shipPositions],
-  )
+  const shipLookup = useCallback((planetId: number, featureId: number) => {
+    const v = getShipPosition(planetId, featureId)
+    return v ? { x: v.x, y: v.y, z: v.z } : null
+  }, [])
 
   return (
     <>
@@ -62,7 +35,7 @@ export function SolarSystemScene() {
       {planets.map((p, i) => (
         <Planet key={p.id} planet={p} orbitRadius={positions[i]!.radius} orbitAngleOffset={(i * Math.PI) / 3} />
       ))}
-      <CameraRig planetLookup={lookup} shipLookup={shipLookup} />
+      <CameraRig planetLookup={planetLookup} shipLookup={shipLookup} />
       <EffectComposer>
         <Bloom intensity={1.0} luminanceThreshold={0.25} luminanceSmoothing={0.4} mipmapBlur />
         <Vignette darkness={0.6} offset={0.3} />

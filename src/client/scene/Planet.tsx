@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Group } from 'three'
+import { Group, Vector3 } from 'three'
 import { derivePlanetParams } from './lib/planetParams'
 import { PlanetMaterial } from './PlanetMaterial'
 import type { FeatureSummary, PlanetSummary } from '../../core/types'
@@ -8,6 +8,7 @@ import { useUiStore } from '../state/uiStore'
 import { useFeaturesMap, useSessionList, usePendingsMap } from '../state/socketStore'
 import { Ship } from './Ship'
 import { ringAngles } from './lib/orbits'
+import { registerPlanetPosition } from './lib/positionRegistry'
 
 interface PlanetProps {
   planet: PlanetSummary
@@ -98,6 +99,18 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       meshRef.current.rotation.y += dt * (params.rotationSpeed * 0.4)
     }
   })
+
+  // Expose the planet's live world position so the camera rig can track it
+  // as it orbits. The getter is stable; it reads the ref each call so the
+  // returned vector always reflects the current frame's transform.
+  useEffect(() => {
+    const out = new Vector3()
+    return registerPlanetPosition(planet.id, () => {
+      if (!meshRef.current) return null
+      meshRef.current.getWorldPosition(out)
+      return out
+    })
+  }, [planet.id])
 
   return (
     <group ref={groupRef} rotation={[0, orbitAngleOffset, 0]}>

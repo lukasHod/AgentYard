@@ -3,11 +3,12 @@ import { useGLTF, useAnimations } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { GlbErrorBoundary } from './ErrorBoundaries'
-import { Color, Group, Mesh, MeshStandardMaterial, Material } from 'three'
+import { Color, Group, Mesh, MeshStandardMaterial, Material, Vector3 } from 'three'
 import type { FeatureSummary, SessionDescriptor } from '../../core/types'
 import { deriveShipParams } from './lib/shipParams'
 import { useUiStore } from '../state/uiStore'
 import { Drone } from './Drone'
+import { registerShipPosition } from './lib/positionRegistry'
 
 type Phase = 'spawning' | 'idle' | 'completing' | 'failing'
 
@@ -56,6 +57,17 @@ function ShipImpl({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds, o
   // Track whether onDespawned has been called to avoid calling it every frame.
   const despawnedCalledRef = useRef(false)
   const matsRef = useRef<MeshStandardMaterial[]>([])
+
+  // Expose the ship's live world position so the camera rig can frame it as
+  // it orbits with its planet.
+  useEffect(() => {
+    const out = new Vector3()
+    return registerShipPosition(feature.planetId, feature.id, () => {
+      if (!groupRef.current) return null
+      groupRef.current.getWorldPosition(out)
+      return out
+    })
+  }, [feature.planetId, feature.id])
 
   // Watch feature.status to kick off despawn animation.
   useEffect(() => {
