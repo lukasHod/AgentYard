@@ -19,7 +19,7 @@ describe('cameraTargetFor', () => {
     const dx = t.position[0] - 6
     const dy = t.position[1]
     const dz = t.position[2]
-    expect(Math.hypot(dx, dy, dz)).toBeLessThan(3)
+    expect(Math.hypot(dx, dy, dz)).toBeLessThan(2.5)
   })
 
   it('LOD 1 lookAt is offset to the LEFT of the planet so the planet renders right-of-centre', () => {

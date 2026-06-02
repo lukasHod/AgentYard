@@ -28,7 +28,10 @@ const SUN_FOCUS: CameraTarget = {
 // space (off-centre, see below) while the sun drifts across the view.
 //
 // Tight offset for an "alongside the planet" cinematic frame.
-const PLANET_FOLLOW_OFFSET = { x: 0, y: 0.6, z: 2.2 }
+// Distance from planet ~1.36 units (planet radius ~1) — the planet
+// dominates the viewport, with only its left rim + atmosphere visible
+// and the rest of the sphere extending off the right and bottom edges.
+const PLANET_FOLLOW_OFFSET = { x: 0, y: 0.4, z: 1.3 }
 
 // Shift the lookAt point along world -X so the camera looks slightly to
 // the LEFT of the planet's centre. The planet then renders on the RIGHT
@@ -38,7 +41,7 @@ const PLANET_FOLLOW_OFFSET = { x: 0, y: 0.6, z: 2.2 }
 // because the follow camera's local +X is always aligned with world +X
 // (no roll), the on-screen direction is consistent regardless of orbital
 // phase.
-const PLANET_LOOKAT_OFFSET = { x: -1.0, y: 0, z: 0 }
+const PLANET_LOOKAT_OFFSET = { x: -0.6, y: 0, z: 0 }
 
 function planetCameraPosition(p: { x: number; y: number; z: number }): [number, number, number] {
   return [
