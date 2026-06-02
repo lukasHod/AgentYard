@@ -57,6 +57,11 @@ function tableExists(db: DB, name: string): boolean {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(name)
 }
 
+function columnExists(db: DB, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+  return rows.some((r) => r.name === column)
+}
+
 function runRenameMigration(db: DB) {
   // Only act if the legacy `ships` table exists AND `planets` doesn't.
   if (tableExists(db, 'ships') && !tableExists(db, 'planets')) {
@@ -74,6 +79,12 @@ function runRenameMigration(db: DB) {
   }
 }
 
+function runAddTextureMigration(db: DB) {
+  if (tableExists(db, 'planets') && !columnExists(db, 'planets', 'texture')) {
+    db.exec(`ALTER TABLE planets ADD COLUMN texture TEXT`)
+  }
+}
+
 export function getDb(): DB {
   if (_db) return _db
   mkdirSync(DB_DIR, { recursive: true })
@@ -82,6 +93,7 @@ export function getDb(): DB {
   db.pragma('foreign_keys = ON')
   runRenameMigration(db)
   db.exec(SCHEMA)
+  runAddTextureMigration(db)
   _db = db
   return db
 }

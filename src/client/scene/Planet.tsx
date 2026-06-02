@@ -1,6 +1,7 @@
 import { useFrame } from '@react-three/fiber'
+import { useTexture } from '@react-three/drei'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Color, Group, MeshStandardMaterial, Vector3 } from 'three'
+import { Group, MeshStandardMaterial, Vector3 } from 'three'
 import { derivePlanetParams } from './lib/planetParams'
 import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
@@ -8,6 +9,19 @@ import { useFeaturesMap, useSessionList, usePendingsMap } from '../state/socketS
 import { Ship } from './Ship'
 import { ringAngles } from './lib/orbits'
 import { registerPlanetPosition } from './lib/positionRegistry'
+
+const TEXTURES = [
+  'Alpine', 'Gaseous1', 'Gaseous2', 'Gaseous3', 'Gaseous4',
+  'Icy', 'Martian', 'Savannah', 'Swamp',
+  'Terrestrial1', 'Terrestrial2', 'Terrestrial3', 'Terrestrial4',
+  'Tropical', 'Venusian', 'Volcanic',
+]
+
+function pickTexture(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0
+  return TEXTURES[Math.abs(h) % TEXTURES.length]!
+}
 
 const BACKGROUND_SCALE = 0.1     // size of non-focused planets when something else is focused
 const BACKGROUND_BRIGHTNESS = 0.4 // colour multiplier for non-focused planets
@@ -25,6 +39,8 @@ interface PlanetProps {
 
 export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const params = useMemo(() => derivePlanetParams(planet.name), [planet.name])
+  const textureName = planet.texture ?? pickTexture(planet.name)
+  const surfaceTexture = useTexture(`/textures/planets/${textureName}.png`)
   const groupRef = useRef<Group>(null)
   const meshRef = useRef<Group>(null)
   const materialRef = useRef<MeshStandardMaterial>(null)
@@ -40,10 +56,6 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const isAnyFocused = useUiStore((s) => s.focus.lod >= 1)
   const shouldDim = isAnyFocused && !isThisFocused
 
-  const baseColor = useMemo(
-    () => new Color().setHSL(params.paletteHue / 360, 0.55, 0.45),
-    [params.paletteHue],
-  )
   const brightness = useRef(1)
   const scale = useRef(1)
   // Multiplier on orbital + self-rotation motion. 1.0 at LOD 0, 0.1 when
@@ -142,7 +154,7 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
     const targetBrightness = shouldDim ? BACKGROUND_BRIGHTNESS : 1
     brightness.current += (targetBrightness - brightness.current) * Math.min(1, dt * RESPONSE)
     if (materialRef.current) {
-      materialRef.current.color.copy(baseColor).multiplyScalar(brightness.current)
+      materialRef.current.color.setScalar(brightness.current)
     }
 
     // Scale + speed tweens. On zoom-IN the gate holds them off until the
@@ -181,7 +193,7 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       <group ref={meshRef} position={[orbitRadius, 0, 0]} onClick={(e) => { e.stopPropagation(); focusPlanet(planet.id) }}>
         <mesh>
           <sphereGeometry args={[params.radius, 48, 48]} />
-          <meshStandardMaterial ref={materialRef} color={baseColor} roughness={0.6} metalness={0.05} />
+          <meshStandardMaterial ref={materialRef} map={surfaceTexture} roughness={0.7} metalness={0.0} />
         </mesh>
         {params.hasRing && (
           <mesh rotation={[Math.PI / 2.3, 0, 0]}>

@@ -22,6 +22,7 @@ const planet = (id: number, name: string): PlanetSummary => ({
   workflowId: null,
   state: 'idle',
   createdAt: 0,
+  texture: null,
   pathExists: true,
 })
 

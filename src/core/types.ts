@@ -57,6 +57,7 @@ export interface PlanetSummary {
   workflowId: number | null
   state: string
   createdAt: number
+  texture: string | null
   /** True if projectPath exists on disk (computed server-side at read time). */
   pathExists: boolean
 }

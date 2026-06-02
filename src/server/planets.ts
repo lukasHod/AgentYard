@@ -2,6 +2,19 @@ import { existsSync } from 'node:fs'
 import { simpleGit } from 'simple-git'
 import { createRepo } from './repository.js'
 
+const TEXTURES = [
+  'Alpine', 'Gaseous1', 'Gaseous2', 'Gaseous3', 'Gaseous4',
+  'Icy', 'Martian', 'Savannah', 'Swamp',
+  'Terrestrial1', 'Terrestrial2', 'Terrestrial3', 'Terrestrial4',
+  'Tropical', 'Venusian', 'Volcanic',
+]
+
+function pickTexture(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0
+  return TEXTURES[Math.abs(h) % TEXTURES.length]!
+}
+
 export interface Planet {
   id: number
   name: string
@@ -9,6 +22,7 @@ export interface Planet {
   workflowId: number | null
   state: string
   createdAt: number
+  texture: string | null
   /** Set by the read path — true if projectPath exists on disk right now. */
   pathExists: boolean
 }
@@ -20,6 +34,7 @@ interface PlanetRow {
   workflow_id: number | null
   state: string
   created_at: number
+  texture: string | null
 }
 
 function rowToPlanet(row: PlanetRow): Planet {
@@ -30,6 +45,7 @@ function rowToPlanet(row: PlanetRow): Planet {
     workflowId: row.workflow_id,
     state: row.state,
     createdAt: row.created_at,
+    texture: row.texture,
     pathExists: existsSync(row.project_path),
   }
 }
@@ -60,12 +76,13 @@ export async function createPlanet(opts: {
     throw new Error(`Project path is not a git repository: ${opts.projectPath}`)
   }
 
+  const texture = pickTexture(opts.name.trim())
   const info = planets
     .db()
     .prepare(
-      'INSERT INTO planets (name, project_path, workflow_id, state, created_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO planets (name, project_path, workflow_id, state, created_at, texture) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    .run(opts.name.trim(), opts.projectPath, opts.workflowId ?? null, 'idle', Date.now())
+    .run(opts.name.trim(), opts.projectPath, opts.workflowId ?? null, 'idle', Date.now(), texture)
   return getPlanet(Number(info.lastInsertRowid))!
 }
 
