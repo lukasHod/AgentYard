@@ -101,8 +101,13 @@ export function Sun() {
     if (matRef.current) matRef.current.uniforms['uBrightness']!.value = brightness.current
     if (lightRef.current) lightRef.current.intensity = POINT_LIGHT_BASE * brightness.current
 
+    // On zoom-IN the scale + speed tweens are gated to fire only after
+    // the camera dolly is ~80% complete. On zoom-OUT (the user clicks
+    // back to system) the gate is bypassed and the sun restores its
+    // size + tempo immediately, matching the retreating camera.
     sinceFocusChange.current += dt
-    if (sinceFocusChange.current >= SCALE_DELAY) {
+    const isRestoring = !isSunFocused && !isOtherFocused
+    if (isRestoring || sinceFocusChange.current >= SCALE_DELAY) {
       const targetScale = isOtherFocused ? BACKGROUND_SCALE : 1
       scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
       if (groupRef.current) groupRef.current.scale.setScalar(scale.current)

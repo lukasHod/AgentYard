@@ -145,10 +145,14 @@ export function Planet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       materialRef.current.color.copy(baseColor).multiplyScalar(brightness.current)
     }
 
-    // Scale + speed tweens are gated: wait until the camera dolly is
-    // ~80% complete, then settle into the new size + tempo together.
+    // Scale + speed tweens. On zoom-IN the gate holds them off until the
+    // camera dolly is ~80% complete (so the shrink/slow lands AFTER the
+    // user's gaze has arrived). On zoom-OUT the gate is bypassed — the
+    // restore animation begins immediately on click-back so the system
+    // grows + speeds up together with the retreating camera.
     sinceFocusChange.current += dt
-    if (sinceFocusChange.current >= SCALE_DELAY) {
+    const isRestoring = !isAnyFocused
+    if (isRestoring || sinceFocusChange.current >= SCALE_DELAY) {
       const targetScale = shouldDim ? BACKGROUND_SCALE : 1
       scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
       if (meshRef.current) {
