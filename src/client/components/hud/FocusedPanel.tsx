@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GlassPanel } from '../glass/GlassPanel'
 import { GlassButton } from '../glass/GlassButton'
-import { GlassChip } from '../glass/GlassChip'
 import { GlassSplitter } from '../glass/GlassSplitter'
 import { GlassTab } from '../glass/GlassTab'
 import { WorkflowEditorOverlay } from './WorkflowEditorOverlay'
@@ -562,7 +561,6 @@ export function FocusedPanel() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <GlassChip>● link</GlassChip>
             <GlassButton variant="ghost" onClick={() => setWfOpen(true)}>⚙ workflow editor</GlassButton>
             {!isSunFocus && <GlassButton variant="danger">✕ delete</GlassButton>}
           </div>
