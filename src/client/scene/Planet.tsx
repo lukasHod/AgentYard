@@ -1,10 +1,10 @@
 import { useFrame } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react'
-import { Color, Group, MeshBasicMaterial, ShaderMaterial, Vector3 } from 'three'
+import { AdditiveBlending, Color, Group, MeshBasicMaterial, ShaderMaterial, Vector3 } from 'three'
 import { derivePlanetParams } from './lib/planetParams'
 import { getPlanetTexturePath } from './lib/planetTextures'
-import type { SurfaceType } from './lib/planetParams'
+import { atmosphereColorFromImage } from './lib/textureColor'
 import './PlanetMaterial'
 import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
@@ -13,16 +13,16 @@ import { Ship } from './Ship'
 import { ringAngles } from './lib/orbits'
 import { registerPlanetPosition } from './lib/positionRegistry'
 
-// Natural atmosphere colours per surface type — matches the texture palette
-const ATMO_COLOR: Record<SurfaceType, string> = {
-  rocky:   '#b89060',  // dusty tan (Alpine / Martian / Savannah)
-  gas:     '#c87840',  // warm amber (Gaseous)
-  lava:    '#e04818',  // orange-red (Volcanic)
-  ice:     '#90c8f0',  // pale ice blue (Icy)
-  ocean:   '#3060d8',  // deep blue (Terrestrial / Tropical / Swamp)
-  crystal: '#c8b850',  // pale gold (Venusian)
-  ringed:  '#b07038',  // warm bronze (mixed)
-}
+// Atmosphere shell radius as a multiple of the planet radius. The glow peaks
+// at the planet's rim and fades out well inside this silhouette, so the shell
+// only needs to be large enough to give that outward fade room to land softly.
+const ATMO_SCALE = 1.25
+// Fresnel value (e = 1 - facing) at which the planet's limb projects onto the
+// atmosphere shell. Drives where the glow peaks so it sits exactly on the rim.
+const ATMO_RIM_E = 1 - Math.sqrt(1 - 1 / (ATMO_SCALE * ATMO_SCALE))
+// Fresnel value where the glow has fully faded — kept clear of the silhouette
+// (e → 1) so the soft outer edge doesn't fall in the gradient-blowup zone.
+const ATMO_OUTER_E = 0.46
 
 const BACKGROUND_SCALE = 0.1
 const BACKGROUND_BRIGHTNESS = 0.4
@@ -58,10 +58,15 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const isAnyFocused = useUiStore((s) => s.focus.lod >= 1)
   const shouldDim    = isAnyFocused && !isThisFocused
 
-  const atmoColor = useMemo(
-    () => new Color(ATMO_COLOR[params.surfaceType]),
-    [params.surfaceType],
-  )
+  // Atmosphere tint derived from the planet's actual surface texture, so the
+  // glow always matches the planet (icy → light grey, lava → red, etc.) and
+  // can never drift to an unrelated hue.
+  const atmoColor = useMemo(() => {
+    const img = texture.image as CanvasImageSource | undefined
+    return img
+      ? atmosphereColorFromImage(texPath, img)
+      : new Color(0.7, 0.75, 0.8)
+  }, [texPath, texture])
 
   const brightness       = useRef(1)
   const scale            = useRef(1)
@@ -170,17 +175,21 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
           )}
         </group>
 
-        {/* Atmosphere — BackSide scatter glow, outside spinRef (spherically symmetric) */}
+        {/* Atmosphere — FrontSide rim-halo glow. depthTest disabled + zero
+            intensity at the mesh silhouette = no limb flicker (see PlanetMaterial). */}
         <mesh>
-          <sphereGeometry args={[params.radius * 1.03, 48, 48]} />
+          <sphereGeometry args={[params.radius * ATMO_SCALE, 64, 64]} />
           {/* @ts-ignore */}
           <planetAtmoMaterial
             ref={atmoMatRef}
             u_color={atmoColor}
             u_brightness={1}
+            u_rimE={ATMO_RIM_E}
+            u_outerE={ATMO_OUTER_E}
             transparent
+            depthTest={false}
             depthWrite={false}
-            side={1}
+            blending={AdditiveBlending}
           />
         </mesh>
 
