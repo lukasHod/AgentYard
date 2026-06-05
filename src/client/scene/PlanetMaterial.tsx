@@ -11,29 +11,23 @@ import { Color } from 'three'
 // geometry rotates.
 //
 // Fix here:
-//   • FrontSide sphere on a thin shell (~×1.06), depthTest DISABLED —
-//     removes every depth-driven flip, so nothing can shimmer against the
-//     planet's edge.
+//   • FrontSide sphere on a thin shell, depthTest DISABLED — removes every
+//     depth-driven flip, so nothing can shimmer against the planet's edge.
 //   • The glow is brightest right at the planet's limb (e == u_rimE, the
 //     Fresnel value where the planet's silhouette projects onto this shell)
-//     and fades OUTWARD into space, reaching 0 at the shell's own silhouette
-//     (e → 1). Because intensity is zero at the geometry edge the silhouette
-//     can't shimmer either, and because it hugs the limb it reads as glow on
-//     the planet rather than a detached bubble.
-//   • A sun-facing mask keeps the glow on the lit hemisphere, like the
-//     tutorial's day/night term.
+//     and fades OUTWARD into space, reaching 0 at u_outerE — well inside
+//     the mesh silhouette so the outer edge stays soft (no shimmer).
+//   • No sun-facing mask: the halo is a uniform ring visible from any camera
+//     angle. This is essential for close-up planetary view where the camera
+//     can approach from any side.
 const VERT = /* glsl */`
-varying vec3 vWorldPos;
-varying vec3 vNormalWorld;
 varying vec3 vNormalView;
 varying vec3 vViewDir;
 
 void main() {
-  vNormalWorld = normalize(mat3(modelMatrix) * normal);
   vNormalView  = normalize(normalMatrix * normal);
   vec4 mv      = modelViewMatrix * vec4(position, 1.0);
   vViewDir     = normalize(mv.xyz);            // camera→fragment (view space)
-  vWorldPos    = (modelMatrix * vec4(position, 1.0)).xyz;
   gl_Position  = projectionMatrix * mv;
 }
 `
@@ -46,8 +40,6 @@ uniform float u_power;        // outward falloff curve — higher = softer landi
 uniform float u_rimE;         // Fresnel value where the planet's limb projects onto this shell
 uniform float u_outerE;       // Fresnel value where the glow has fully faded to 0
 
-varying vec3 vWorldPos;
-varying vec3 vNormalWorld;
 varying vec3 vNormalView;
 varying vec3 vViewDir;
 
@@ -67,13 +59,7 @@ void main() {
   float inner   = smoothstep(u_rimE - 0.08, u_rimE, e);      // tight fade onto the disc edge, 0 toward centre
   float glow    = outward * inner;
 
-  // Sun-facing mask — sun sits at the world origin, so the direction from
-  // this fragment to the sun is simply -normalize(worldPos).
-  vec3  sunDir  = normalize(-vWorldPos);
-  float cosSun  = dot(normalize(vNormalWorld), sunDir);
-  float sunMask = smoothstep(-0.2, 0.4, cosSun);
-
-  float alpha = glow * sunMask * u_intensity * u_brightness;
+  float alpha = glow * u_intensity * u_brightness;
   gl_FragColor = vec4(u_color, clamp(alpha, 0.0, 1.0));
 }
 `

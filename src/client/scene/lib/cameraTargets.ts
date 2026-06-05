@@ -49,15 +49,16 @@ const SUN_FOCUS: CameraTarget = {
 // moves in parallel with it — so the planet stays stationary in screen
 // space (off-centre, see below) while the sun drifts across the view.
 //
-// Tight offset for an "alongside the planet" cinematic frame.
-// Distance from planet ~1.36 units (planet radius ~1) — the planet
-// dominates the viewport, with only its left rim + atmosphere visible
-// and the rest of the sphere extending off the right and bottom edges.
-// Tight cinematic close-up: planet fills ~60 % of frame height.
+// Offset for the planetary close-up frame.
+// z=1.6 puts the camera at ~1.65 units from the planet centre, which is
+// safely outside the atmosphere shell for every planet size (max shell
+// radius = 1.2 × 1.25 = 1.5).  Keeping z < 1.3 would place the camera
+// *inside* the shell for large planets, making the FrontSide material
+// invisible due to backface culling.
 // NOTE: at this distance the ship orbit ring (radius ≈ planet_radius × 1.8)
 // extends behind the camera, so ships are NOT visible at LOD 1.  They are
 // visible at LOD 2 (click the planet chip or the ship itself).
-const PLANET_FOLLOW_OFFSET = { x: 0, y: 0.4, z: 1.3 }
+const PLANET_FOLLOW_OFFSET = { x: 0, y: 0.4, z: 1.6 }
 
 // Shift lookAt left so the planet sits right-of-centre, leaving room for
 // the info panel on the left.
