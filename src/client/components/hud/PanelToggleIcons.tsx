@@ -1,6 +1,7 @@
 import { useUiStore, type InfoTab } from '../../state/uiStore'
 import { useFeaturesMap } from '../../state/socketStore'
 import { GlassPanel } from '../glass/GlassPanel'
+import { useNotificationRows } from './useNotificationRows'
 
 /**
  * Corner icon buttons that appear when one or both focused-panel halves are
@@ -24,6 +25,7 @@ export function PanelToggleIcons() {
   const openInfoTab = useUiStore((s) => s.openInfoTab)
   const openChat = useUiStore((s) => s.openChat)
   const features = useFeaturesMap()
+  const notifRows = useNotificationRows()
 
   if (focus.lod === 0) return null
   if (focus.lod === 1 && 'sun' in focus && focus.sun) return null
@@ -36,10 +38,12 @@ export function PanelToggleIcons() {
         : null
   const planetFeatures = planetId !== null ? (features.get(planetId) ?? []) : []
   const hasRunning = planetFeatures.some((f) => f.status === 'running')
+  // Only count notifications that belong to this planet
+  const planetNotifCount = notifRows.filter((r) => r.planetId === planetId).length
 
   // At LOD 2 the left side shows ShipInfoPanel (no tabs) — a single INFO icon
   // is sufficient. At LOD 1 we expose all the tab choices.
-  const leftItems: { tab: InfoTab; label: string }[] =
+  const leftItems: { tab: InfoTab; label: string; glow?: boolean }[] =
     focus.lod === 2
       ? [{ tab: 'features', label: 'INFO' }]
       : [
@@ -48,6 +52,11 @@ export function PanelToggleIcons() {
           { tab: 'plans', label: 'PLANS' },
           { tab: 'description', label: 'DESC' },
           ...(hasRunning ? [{ tab: 'run' as const, label: 'RUN' }] : []),
+          {
+            tab: 'notifications' as const,
+            label: planetNotifCount > 0 ? `INBOX · ${planetNotifCount}` : 'INBOX',
+            glow: planetNotifCount > 0,
+          },
         ]
 
   return (
@@ -60,7 +69,7 @@ export function PanelToggleIcons() {
           style={{ top: 88 }}
         >
           {leftItems.map((it) => (
-            <CornerIconButton key={it.tab} onClick={() => openInfoTab(it.tab)}>
+            <CornerIconButton key={it.tab} onClick={() => openInfoTab(it.tab)} glow={it.glow}>
               {it.label}
             </CornerIconButton>
           ))}
@@ -78,12 +87,22 @@ export function PanelToggleIcons() {
   )
 }
 
-function CornerIconButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function CornerIconButton({
+  onClick,
+  children,
+  glow,
+}: {
+  onClick: () => void
+  children: React.ReactNode
+  glow?: boolean
+}) {
   return (
     <GlassPanel
       role="button"
       onClick={onClick}
-      className="px-3 py-2 text-[11px] tracking-widest cursor-pointer select-none hover:brightness-125 transition"
+      className={`px-3 py-2 text-[11px] tracking-widest cursor-pointer select-none hover:brightness-125 transition${
+        glow ? ' text-amber-300 ring-1 ring-amber-400/60' : ''
+      }`}
     >
       {children}
     </GlassPanel>
