@@ -30,7 +30,8 @@ const FAIL_FADE_DURATION = 2.0
 const FLASH_COMPLETE = new Color('#67e8f9')
 const FLASH_FAIL = new Color('#fb7185')
 
-const BASE_SCALE = 0.3
+// ~5 % of a typical planet diameter (planet radius 0.8–1.2, diameter 2 units → 0.1 units target).
+const BASE_SCALE = 0.0255  // 15 % smaller than previous 0.03
 
 /**
  * One R3F ship for an active feature. The shared model is cloned per-instance so
@@ -181,12 +182,14 @@ function ShipImpl({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds, o
     >
       {/* groupRef controls scale; inner group is unscaled relative to parent */}
       <group>
+        {/* Dedicated fill light so the ship is visible even in planet shadow */}
+        <pointLight intensity={0.5} distance={3} color="#c8d8ff" />
         <primitive object={cloned} />
         {drones.map((d, i) => (
           <Drone
             key={d.id}
             session={d}
-            orbitRadius={0.6 + (i % 3) * 0.15}
+            orbitRadius={2.0 + (i % 3) * 0.6}
             orbitAngle={(i * 2 * Math.PI) / Math.max(1, drones.length)}
             bobPhase={i * 0.7}
             pending={pendingDroneIds.has(d.id)}

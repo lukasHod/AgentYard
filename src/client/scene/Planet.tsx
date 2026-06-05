@@ -41,11 +41,15 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const texPath = useMemo(() => getPlanetTexturePath(planet.name, params.surfaceType), [planet.name, params.surfaceType])
   const texture = useTexture(texPath)
 
-  const groupRef   = useRef<Group>(null)
-  // meshRef: position + scale anchor (ships dock here, no rotation)
-  // spinRef: self-rotation only — keeps ships from orbiting the planet axis
-  const meshRef    = useRef<Group>(null)
-  const spinRef    = useRef<Group>(null)
+  const groupRef    = useRef<Group>(null)
+  // meshRef: position + scale anchor. Ships dock via shipHostRef (see below).
+  // spinRef: self-rotation only — keeps ships from orbiting the planet axis.
+  const meshRef     = useRef<Group>(null)
+  const spinRef     = useRef<Group>(null)
+  // Counter-rotates exactly -groupRef.rotation.y each frame so that ships
+  // inside it stay at a FIXED world-space angle relative to the planet,
+  // independent of the planet's orbital phase around the sun.
+  const shipHostRef = useRef<Group>(null)
   const surfMatRef = useRef<MeshBasicMaterial>(null)
   const atmoMatRef = useRef<ShaderMaterial>(null)
   const focusPlanet = useUiStore((s) => s.focusPlanet)
@@ -104,8 +108,13 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
     () => [...features.filter((f) => f.status === 'running'), ...despawning],
     [features, despawning],
   )
-  const angles          = useMemo(() => ringAngles(visible.length), [visible.length])
-  const shipOrbitRadius = params.radius * 1.8
+  // 135° (3π/4) offset: puts the first ship in front of the planet's lit limb as
+  // seen from the close-up camera (offset +z=1.3 from planet, looking toward −x).
+  // At 135° the ship sits at (+z, −x) relative to the planet — the camera-to-ship
+  // ray misses the planet sphere for all planet radii (clearance verified ≥ 1.25×
+  // planet radius). Orbit radius 1.5× gives further clearance above the surface.
+  const angles          = useMemo(() => ringAngles(visible.length).map(a => a + (3 * Math.PI) / 4), [visible.length])
+  const shipOrbitRadius = params.radius * 1.5
 
   const sessions      = useSessionList()
   const pendings      = usePendingsMap()
@@ -122,6 +131,11 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
     const sf = speedFactor.current
     if (groupRef.current) groupRef.current.rotation.y += dt * 0.05 * sf
     if (spinRef.current)  spinRef.current.rotation.y  += dt * (params.rotationSpeed * 0.4) * sf
+    // Cancel the orbit rotation for ships so they remain at a fixed world-space
+    // angle relative to the planet regardless of how far the planet has orbited.
+    if (shipHostRef.current && groupRef.current) {
+      shipHostRef.current.rotation.y = -groupRef.current.rotation.y
+    }
 
     const targetBrightness = shouldDim ? BACKGROUND_BRIGHTNESS : 1
     brightness.current += (targetBrightness - brightness.current) * Math.min(1, dt * RESPONSE)
@@ -136,7 +150,9 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       scale.current += (targetScale - scale.current) * Math.min(1, dt * RESPONSE)
       if (meshRef.current) meshRef.current.scale.setScalar(scale.current)
 
-      const targetSpeed = isAnyFocused ? 0.1 : 1
+      // Stop orbital motion when this planet is focused so ships stay
+      // at a fixed position relative to the camera for the entire session.
+      const targetSpeed = isAnyFocused ? 0.0 : 1
       speedFactor.current += (targetSpeed - speedFactor.current) * Math.min(1, dt * RESPONSE)
     }
   })
@@ -193,17 +209,19 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
           />
         </mesh>
 
-        {visible.map((f, i) => (
-          <Ship
-            key={f.id}
-            feature={f}
-            orbitRadius={shipOrbitRadius}
-            orbitAngle={angles[i]!}
-            drones={droneSessions}
-            pendingDroneIds={pendingDroneIds}
-            onDespawned={() => onShipDespawned(f.id)}
-          />
-        ))}
+        <group ref={shipHostRef}>
+          {visible.map((f, i) => (
+            <Ship
+              key={f.id}
+              feature={f}
+              orbitRadius={shipOrbitRadius}
+              orbitAngle={angles[i]!}
+              drones={droneSessions}
+              pendingDroneIds={pendingDroneIds}
+              onDespawned={() => onShipDespawned(f.id)}
+            />
+          ))}
+        </group>
       </group>
     </group>
   )

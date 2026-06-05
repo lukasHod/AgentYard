@@ -51,7 +51,9 @@ function DroneImpl({ session, orbitRadius, orbitAngle, bobPhase, pending, onClic
     return c
   }, [gltf.scene, isLeader])
 
-  const baseScale = isLeader ? 0.21 : 0.15
+  // Drones are children of the Ship's scaled group (scale = BASE_SCALE ≈ 0.03).
+  // These local-scale values compensate so drones remain visible at LOD 2.
+  const baseScale = isLeader ? 0.77 : 0.55  // 10 % bigger than previous 0.7 / 0.5
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime

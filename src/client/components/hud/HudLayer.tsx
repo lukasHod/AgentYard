@@ -18,7 +18,8 @@ export function HudLayer() {
       {focus.lod === 0 && <AmbientHUD />}
       {focus.lod >= 1 && <FocusedPanel />}
       {focus.lod >= 1 && <PanelToggleIcons />}
-      <NotificationDeck />
+      {/* Floating deck only in overview; in planet/ship view notifications live in the INBOX tab */}
+      {focus.lod === 0 && <NotificationDeck />}
     </div>
   )
 }

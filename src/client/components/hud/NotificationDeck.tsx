@@ -1,19 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { GlassPanel } from '../glass/GlassPanel'
-import {
-  usePendingsMap,
-  useSessionList,
-  usePlanets,
-  useFeaturesMap,
-} from '../../state/socketStore'
+import { usePendingsMap } from '../../state/socketStore'
 import { useUiStore } from '../../state/uiStore'
 import { playClarificationChime, isAudioMuted } from '../../canvas/chime'
+import { useNotificationRows } from './useNotificationRows'
 
 export function NotificationDeck() {
   const pendings = usePendingsMap()
-  const sessions = useSessionList()
-  const planets = usePlanets()
-  const features = useFeaturesMap()
   const focusShip = useUiStore((s) => s.focusShip)
   const prevCount = useRef(0)
 
@@ -25,49 +18,7 @@ export function NotificationDeck() {
     prevCount.current = pendings.size
   }, [pendings])
 
-  // Map each pending to a row, looking up which (planet, feature) the drone
-  // session belongs to. Today's server invariant: only one feature runs at a
-  // time per server, so any pending session is on that running feature.
-  const rows = useMemo(() => {
-    const out: Array<{
-      droneId: string
-      planetId: number
-      shipFeatureId: number
-      planetName: string
-      featureName: string
-      droneLabel: string
-      question: string
-    }> = []
-
-    for (const [droneId, pending] of pendings) {
-      const session = sessions.find((s) => s.id === droneId)
-      let foundPlanetId: number | null = null
-      let foundFeatureId: number | null = null
-      let foundPlanetName = ''
-      let foundFeatureName = ''
-      for (const p of planets) {
-        const running = (features.get(p.id) ?? []).find((f) => f.status === 'running')
-        if (running) {
-          foundPlanetId = p.id
-          foundFeatureId = running.id
-          foundPlanetName = p.name
-          foundFeatureName = running.name
-          break
-        }
-      }
-      if (foundPlanetId === null || foundFeatureId === null) continue
-      out.push({
-        droneId,
-        planetId: foundPlanetId,
-        shipFeatureId: foundFeatureId,
-        planetName: foundPlanetName,
-        featureName: foundFeatureName,
-        droneLabel: session?.label ?? session?.role ?? droneId.slice(0, 6),
-        question: pending.question,
-      })
-    }
-    return out
-  }, [pendings, sessions, planets, features])
+  const rows = useNotificationRows()
 
   if (rows.length === 0) return null
 

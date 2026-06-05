@@ -53,17 +53,15 @@ const SUN_FOCUS: CameraTarget = {
 // Distance from planet ~1.36 units (planet radius ~1) — the planet
 // dominates the viewport, with only its left rim + atmosphere visible
 // and the rest of the sphere extending off the right and bottom edges.
+// Tight cinematic close-up: planet fills ~60 % of frame height.
+// NOTE: at this distance the ship orbit ring (radius ≈ planet_radius × 1.8)
+// extends behind the camera, so ships are NOT visible at LOD 1.  They are
+// visible at LOD 2 (click the planet chip or the ship itself).
 const PLANET_FOLLOW_OFFSET = { x: 0, y: 0.4, z: 1.3 }
 
-// Shift the lookAt point along world -X so the camera looks slightly to
-// the LEFT of the planet's centre. The planet then renders on the RIGHT
-// side of the viewport (so its silhouette sits prominently behind the
-// chat panel) while empty space + stars fill the left, mirroring a
-// classic "planet shoulder" composition. Offset is in world coords, but
-// because the follow camera's local +X is always aligned with world +X
-// (no roll), the on-screen direction is consistent regardless of orbital
-// phase.
-const PLANET_LOOKAT_OFFSET = { x: -1.0, y: 0, z: 0 }
+// Shift lookAt left so the planet sits right-of-centre, leaving room for
+// the info panel on the left.
+const PLANET_LOOKAT_OFFSET = { x: -2.4, y: 0, z: 0 }
 
 function planetCameraPosition(p: { x: number; y: number; z: number }): [number, number, number] {
   return [
@@ -111,11 +109,27 @@ export function cameraTargetForV2(
 ): CameraTarget {
   if (focus.lod === 2) {
     const s = shipLookup(focus.planetId, focus.shipFeatureId)
-    if (s) {
-      // Frame the ship from the side + slightly above + pulled back.
+    const p = planetLookup(focus.planetId)
+    if (s && p) {
+      // Position camera on the OPPOSITE side of the ship from the planet,
+      // elevated, so the planet stays in background rather than occluding
+      // the ship.  Compute the ship→planet direction and step back from it.
+      const dx = s.x - p.x
+      const dz = s.z - p.z
+      const len = Math.hypot(dx, dz) || 1
+      const nx = dx / len  // unit vector ship→away-from-planet (x)
+      const nz = dz / len  // unit vector ship→away-from-planet (z)
+      const BACK = 2.8     // distance behind the ship
+      const UP   = 1.8     // height above the ship
       return {
-        position: [s.x + 1.5, s.y + 0.8, s.z + 2.5],
-        lookAt: [s.x, s.y, s.z],
+        position: [s.x + nx * BACK, s.y + UP, s.z + nz * BACK],
+        lookAt:   [s.x, s.y + 0.1, s.z],
+      }
+    }
+    if (s) {
+      return {
+        position: [s.x, s.y + 1.8, s.z + 2.8],
+        lookAt:   [s.x, s.y, s.z],
       }
     }
   }

@@ -21,6 +21,7 @@ import { EmptyMessage } from '../ui/EmptyMessage'
 import { apiGet, apiPost } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { getMockAgentDescription } from '../../state/mockSeed'
+import { useNotificationRows } from '../hud/useNotificationRows'
 import type { PlanetSummary, FeatureSummary, SessionDescriptor } from '../../../core/types'
 
 // ---------------------------------------------------------------------------
@@ -438,6 +439,35 @@ function AgentInfoPanel({
 }
 
 // ---------------------------------------------------------------------------
+// NotificationsTab
+// ---------------------------------------------------------------------------
+
+function NotificationsTab() {
+  const rows = useNotificationRows()
+  const focusShip = useUiStore((s) => s.focusShip)
+
+  if (rows.length === 0) {
+    return <EmptyMessage>no pending clarifications</EmptyMessage>
+  }
+  return (
+    <ul className="space-y-2 overflow-y-auto">
+      {rows.map((r) => (
+        <li
+          key={r.droneId}
+          className="border border-amber-300/20 rounded p-2 cursor-pointer hover:bg-amber-300/5"
+          onClick={() => focusShip(r.planetId, r.shipFeatureId, r.droneId)}
+        >
+          <div className="text-sky-300 text-xs">
+            {r.planetName} · {r.featureName} · {r.droneLabel}
+          </div>
+          <p className="text-slate-300 text-sm mt-0.5">{r.question}</p>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // InfoPanelBody
 // ---------------------------------------------------------------------------
 
@@ -446,6 +476,7 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
   const tab = useUiStore((s) => s.infoTab)
   const setTab = useUiStore((s) => s.openInfoTab)
   const hasRunning = features.some((f) => f.status === 'running')
+  const notifCount = useNotificationRows().length
 
   return (
     <>
@@ -460,13 +491,16 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
           PLANS
         </GlassTab>
         <GlassTab active={tab === 'description'} onClick={() => setTab('description')}>
-          DESCRIPTION
+          DESC
         </GlassTab>
         {hasRunning && (
           <GlassTab active={tab === 'run'} onClick={() => setTab('run')}>
             RUN
           </GlassTab>
         )}
+        <GlassTab active={tab === 'notifications'} onClick={() => setTab('notifications')}>
+          INBOX{notifCount > 0 ? ` · ${notifCount}` : ''}
+        </GlassTab>
       </div>
       {tab === 'features' && <FeaturesTab features={features} planetId={planet.id} />}
       {tab === 'tools' && <ToolsTabContent planetId={planet.id} />}
@@ -475,6 +509,7 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
         <DescriptionTab planetId={planet.id} projectPath={planet.projectPath} />
       )}
       {tab === 'run' && <RunTabContent planetId={planet.id} features={features} />}
+      {tab === 'notifications' && <NotificationsTab />}
     </>
   )
 }

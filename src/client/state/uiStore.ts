@@ -7,7 +7,7 @@ export type Focus =
   | { lod: 2; planetId: number; shipFeatureId: number; chatDroneId?: string }
 
 /** Tabs available on the LOD-1 info panel. */
-export type InfoTab = 'features' | 'tools' | 'plans' | 'description' | 'run'
+export type InfoTab = 'features' | 'tools' | 'plans' | 'description' | 'run' | 'notifications'
 
 const SPLITTER_KEY = 'agentyard.splitterRatio.v2'
 const readSplitter = (): number => {
