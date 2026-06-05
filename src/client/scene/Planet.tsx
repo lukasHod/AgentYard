@@ -130,7 +130,7 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   useFrame((_, dt) => {
     const sf = speedFactor.current
     if (groupRef.current) groupRef.current.rotation.y += dt * 0.05 * sf
-    if (spinRef.current)  spinRef.current.rotation.y  += dt * (params.rotationSpeed * 0.4) * sf
+    if (spinRef.current)  spinRef.current.rotation.y  += dt * (params.rotationSpeed * 0.02)
     // Cancel the orbit rotation for ships so they remain at a fixed world-space
     // angle relative to the planet regardless of how far the planet has orbited.
     if (shipHostRef.current && groupRef.current) {
