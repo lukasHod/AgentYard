@@ -58,6 +58,7 @@ export interface PlanetSummary {
   state: string
   createdAt: number
   texture: string | null
+  hasClouds: boolean
   /** True if projectPath exists on disk (computed server-side at read time). */
   pathExists: boolean
 }
