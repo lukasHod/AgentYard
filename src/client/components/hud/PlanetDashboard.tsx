@@ -13,7 +13,7 @@ export type PlanetState = 'idle' | 'running' | 'pending'
 
 export function getCircleRadius(count: number): number {
   const circumference = count * (PANEL_SIZE + PANEL_GAP)
-  return Math.max(220, circumference / (2 * Math.PI))
+  return Math.max(190, circumference / (2 * Math.PI))
 }
 
 export function getPlanetState(
@@ -120,11 +120,8 @@ export function PlanetDashboard() {
   const center = containerSize / 2
 
   return (
-    <div
-      className="flex justify-center items-center w-full"
-      style={{ minHeight: containerSize }}
-    >
-      <div className="relative" style={{ width: containerSize, height: containerSize }}>
+    <div className="flex justify-center items-center w-full h-full">
+      <div className="relative flex-shrink-0" style={{ width: containerSize, height: containerSize }}>
         {planets.map((p, i) => {
           const angle = (i / planets.length) * 2 * Math.PI - Math.PI / 2
           const x = center + r * Math.cos(angle) - PANEL_SIZE / 2
