@@ -4,10 +4,15 @@ import { Color, Vector3 } from 'three'
 
 const VERT = /* glsl */`
 varying vec3 vPos;
+varying vec3 vNormalView;
+varying vec3 vViewDir;
 
 void main() {
   vPos        = normalize(position);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vNormalView = normalize(normalMatrix * normal);
+  vec4 mv     = modelViewMatrix * vec4(position, 1.0);
+  vViewDir    = normalize(mv.xyz);
+  gl_Position = projectionMatrix * mv;
 }
 `
 
@@ -19,6 +24,8 @@ uniform vec3  u_color;
 uniform float u_time;
 
 varying vec3 vPos;
+varying vec3 vNormalView;
+varying vec3 vViewDir;
 
 float hash(vec3 p) {
   p  = fract(p * vec3(0.1031, 0.1030, 0.0973));
@@ -50,15 +57,18 @@ float fbm(vec3 p) {
 }
 
 void main() {
-  // Fast layer: detailed cloud shapes + slow morphing drift
-  float fast    = fbm(vPos * 2.5 + u_seed + vec3(u_time * 0.025, 0.0, u_time * 0.01));
+  // Fast layer: high-frequency detail for sharp cloud structures
+  float fast    = fbm(vPos * 4.5 + u_seed + vec3(u_time * 0.025, 0.0, u_time * 0.01));
   // Slow layer: large-scale formation / dissipation envelope
   float slow    = fbm(vPos * 1.2 + u_seed * 0.7 + vec3(0.0, u_time * 0.006, 0.0));
-  // Combine: fast detail weighted by slow envelope
-  float density = fast * (0.5 + 0.7 * slow);
-  // Soft threshold: wispy edges, denser centres
-  float alpha   = smoothstep(u_coverage - 0.15, u_coverage + 0.05, density) * u_opacity;
-  gl_FragColor  = vec4(u_color, clamp(alpha, 0.0, 1.0));
+  // Combine and boost contrast so values bifurcate toward cloud vs. clear sky
+  float density = pow(fast * (0.5 + 0.7 * slow), 1.6);
+  // Fade clouds to zero near the planet limb so the sphere edge is invisible
+  float facing   = clamp(-dot(vViewDir, vNormalView), 0.0, 1.0);
+  float limbFade = smoothstep(0.0, 0.3, facing);
+  // Tight threshold: sharp cloud edges rather than a soft haze
+  float alpha    = smoothstep(u_coverage - 0.06, u_coverage + 0.02, density) * u_opacity * limbFade;
+  gl_FragColor   = vec4(u_color, clamp(alpha, 0.0, 1.0));
 }
 `
 
@@ -70,8 +80,8 @@ export const PlanetCloudMaterial = shaderMaterial(
     u_time:     0,
     u_seed:     new Vector3(0, 0, 0),
     u_coverage: 0.45,
-    u_opacity:  0.85,
-    u_color:    new Color(0.95, 0.95, 1.0),
+    u_opacity:  0.55,
+    u_color:    new Color(0.78, 0.82, 0.88),
   },
   VERT,
   FRAG,

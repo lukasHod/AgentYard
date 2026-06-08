@@ -87,7 +87,7 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
 
   const cloudCoverage = useMemo(() => {
     const h = deriveHash(hashStringToInt(planet.name), 'clouds')
-    return 0.3 + (hashByte(h, 0) / 255) * 0.4
+    return 0.18 + (hashByte(h, 0) / 255) * 0.28
   }, [planet.name])
 
   const brightness       = useRef(1)
@@ -165,7 +165,7 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
     }
     if (cloudMatRef.current) {
       ;(cloudMatRef.current as any).u_time   += dt
-      ;(cloudMatRef.current as any).u_opacity = 0.85 * brightness.current
+      ;(cloudMatRef.current as any).u_opacity = 0.55 * brightness.current
     }
 
     sinceFocusChange.current += dt
