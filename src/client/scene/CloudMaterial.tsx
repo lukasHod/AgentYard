@@ -62,7 +62,10 @@ void main() {
 }
 `
 
-export const CloudMaterial = shaderMaterial(
+// Named PlanetCloudMaterial (not CloudMaterial) to avoid name collision with
+// @react-three/drei's built-in Cloud component which also registers cloudMaterial
+// in JSX.IntrinsicElements as MeshLambertMaterial.
+export const PlanetCloudMaterial = shaderMaterial(
   {
     u_time:     0,
     u_seed:     new Vector3(0, 0, 0),
@@ -74,13 +77,13 @@ export const CloudMaterial = shaderMaterial(
   FRAG,
 )
 
-extend({ CloudMaterial })
+extend({ PlanetCloudMaterial })
 
 import type { ShaderMaterialProps } from '@react-three/fiber'
 
 declare module '@react-three/fiber' {
   interface ThreeElements {
-    cloudMaterial: ShaderMaterialProps & {
+    planetCloudMaterial: ShaderMaterialProps & {
       u_time?: number
       u_seed?: import('three').Vector3
       u_coverage?: number
