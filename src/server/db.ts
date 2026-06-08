@@ -85,6 +85,12 @@ function runAddTextureMigration(db: DB) {
   }
 }
 
+function runAddHasCloudsMigration(db: DB) {
+  if (tableExists(db, 'planets') && !columnExists(db, 'planets', 'has_clouds')) {
+    db.exec(`ALTER TABLE planets ADD COLUMN has_clouds INTEGER NOT NULL DEFAULT 0`)
+  }
+}
+
 export function getDb(): DB {
   if (_db) return _db
   mkdirSync(DB_DIR, { recursive: true })
@@ -94,6 +100,7 @@ export function getDb(): DB {
   runRenameMigration(db)
   db.exec(SCHEMA)
   runAddTextureMigration(db)
+  runAddHasCloudsMigration(db)
   _db = db
   return db
 }
