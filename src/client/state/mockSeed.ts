@@ -92,6 +92,7 @@ const MOCK_PLANETS: PlanetSummary[] = [
     createdAt: NOW - 1000 * 60 * 60 * 24 * 3,
     pathExists: true,
     texture: null,
+    hasClouds: true,
   },
   {
     id: 2,
@@ -102,6 +103,7 @@ const MOCK_PLANETS: PlanetSummary[] = [
     createdAt: NOW - 1000 * 60 * 60 * 24 * 7,
     pathExists: true,
     texture: null,
+    hasClouds: false,
   },
 ]
 

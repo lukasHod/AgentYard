@@ -20,7 +20,7 @@
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:server && npm run test:client",
-    "test:server": "node --import tsx --test \"src/core/executor.test.ts\" \"src/core/tools.test.ts\" \"src/server/runtime/scriptArgv.test.ts\" \"src/server/runtime/markCompleteGate.test.ts\" \"src/server/tools/crud.test.ts\" \"src/server/tools/lifecycle.test.ts\" \"src/server/tools/resolver.test.ts\" \"src/server/tools/scanCache.test.ts\" \"src/server/workflows.test.ts\"",
+    "test:server": "node --import tsx --test \"src/core/executor.test.ts\" \"src/core/tools.test.ts\" \"src/server/runtime/scriptArgv.test.ts\" \"src/server/runtime/markCompleteGate.test.ts\" \"src/server/tools/crud.test.ts\" \"src/server/tools/lifecycle.test.ts\" \"src/server/tools/resolver.test.ts\" \"src/server/tools/scanCache.test.ts\" \"src/server/workflows.test.ts\" \"src/server/planets.test.ts\"",
     "test:client": "vitest run"
   },
   "dependencies": {

@@ -6,6 +6,8 @@ import { derivePlanetParams } from './lib/planetParams'
 import { getPlanetTexturePath } from './lib/planetTextures'
 import { atmosphereColorFromImage } from './lib/textureColor'
 import './PlanetMaterial'
+import './CloudMaterial'
+import { hashStringToInt, hashByte, deriveHash } from './lib/hash'
 import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
 import { useFeaturesMap, useSessionList, usePendingsMap } from '../state/socketStore'
@@ -52,6 +54,8 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const shipHostRef = useRef<Group>(null)
   const surfMatRef = useRef<MeshBasicMaterial>(null)
   const atmoMatRef = useRef<ShaderMaterial>(null)
+  const cloudSpinRef = useRef<Group>(null)
+  const cloudMatRef  = useRef<ShaderMaterial>(null)
   const focusPlanet = useUiStore((s) => s.focusPlanet)
 
   const isThisFocused = useUiStore(
@@ -71,6 +75,20 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
       ? atmosphereColorFromImage(texPath, img)
       : new Color(0.7, 0.75, 0.8)
   }, [texPath, texture])
+
+  const cloudSeed = useMemo(() => {
+    const h = hashStringToInt(planet.name)
+    return new Vector3(
+      hashByte(h, 0) / 32,
+      hashByte(h, 1) / 32,
+      hashByte(h, 2) / 32,
+    )
+  }, [planet.name])
+
+  const cloudCoverage = useMemo(() => {
+    const h = deriveHash(hashStringToInt(planet.name), 'clouds')
+    return 0.18 + (hashByte(h, 0) / 255) * 0.28
+  }, [planet.name])
 
   const brightness       = useRef(1)
   const scale            = useRef(1)
@@ -142,6 +160,13 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
     const b = brightness.current
     if (surfMatRef.current) surfMatRef.current.color.setScalar(b)
     if (atmoMatRef.current) (atmoMatRef.current as any).u_brightness = b
+    if (cloudSpinRef.current) {
+      cloudSpinRef.current.rotation.y += dt * params.rotationSpeed * 0.02 * 1.15
+    }
+    if (cloudMatRef.current) {
+      ;(cloudMatRef.current as any).u_time   += dt
+      ;(cloudMatRef.current as any).u_opacity = 0.55 * brightness.current
+    }
 
     sinceFocusChange.current += dt
     const isRestoring = !isAnyFocused
@@ -190,6 +215,22 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
             </mesh>
           )}
         </group>
+
+        {planet.hasClouds && (
+          <group ref={cloudSpinRef}>
+            <mesh>
+              <sphereGeometry args={[params.radius * 1.02, 64, 64]} />
+              <planetCloudMaterial
+                ref={cloudMatRef}
+                u_seed={cloudSeed}
+                u_coverage={cloudCoverage}
+                transparent
+                depthTest
+                depthWrite={false}
+              />
+            </mesh>
+          </group>
+        )}
 
         {/* Atmosphere — FrontSide rim-halo glow. depthTest disabled + zero
             intensity at the mesh silhouette = no limb flicker (see PlanetMaterial). */}

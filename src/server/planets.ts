@@ -15,6 +15,47 @@ function pickTexture(name: string): string {
   return TEXTURES[Math.abs(h) % TEXTURES.length]!
 }
 
+// FNV-1a 32-bit — mirrors src/client/scene/lib/hash.ts so surface type
+// derivation is identical on server and client.
+function fnv1a(s: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h >>> 0
+}
+
+function hashByte(h: number, i: number): number {
+  return (h >>> (i * 8)) & 0xff
+}
+
+// Surface type order must match src/client/scene/lib/planetParams.ts exactly.
+const SURFACES = ['rocky', 'gas', 'lava', 'ice', 'ocean', 'crystal', 'ringed'] as const
+type SurfaceType = (typeof SURFACES)[number]
+
+// Maximum hashByte value (0–255) that results in clouds for each surface type.
+// hashByte(h2, 1) < threshold → has clouds.
+const CLOUD_THRESHOLDS: Record<SurfaceType, number> = {
+  ocean:   192, // 75 %
+  ice:     153, // 60 %
+  rocky:   115, // 45 %
+  ringed:   64, // 25 %
+  crystal:  51, // 20 %
+  lava:     26, // 10 %
+  gas:       0, //  0 %
+}
+
+export function pickHasClouds(name: string): boolean {
+  const h1 = fnv1a(name)
+  // h2 uses the same derivation as deriveHash(h1, 'planet') in planetParams.ts
+  const h2 = fnv1a('planet' + h1.toString(16))
+  const surfaceType = SURFACES[hashByte(h1, 1) % SURFACES.length]!
+  const threshold = CLOUD_THRESHOLDS[surfaceType]
+  // byte 1 of h2 is independent of hasRing (which uses byte 0 of h2)
+  return hashByte(h2, 1) < threshold
+}
+
 export interface Planet {
   id: number
   name: string
@@ -23,6 +64,7 @@ export interface Planet {
   state: string
   createdAt: number
   texture: string | null
+  hasClouds: boolean
   /** Set by the read path — true if projectPath exists on disk right now. */
   pathExists: boolean
 }
@@ -35,6 +77,7 @@ interface PlanetRow {
   state: string
   created_at: number
   texture: string | null
+  has_clouds: number
 }
 
 function rowToPlanet(row: PlanetRow): Planet {
@@ -46,6 +89,7 @@ function rowToPlanet(row: PlanetRow): Planet {
     state: row.state,
     createdAt: row.created_at,
     texture: row.texture,
+    hasClouds: row.has_clouds === 1,
     pathExists: existsSync(row.project_path),
   }
 }
@@ -76,13 +120,14 @@ export async function createPlanet(opts: {
     throw new Error(`Project path is not a git repository: ${opts.projectPath}`)
   }
 
-  const texture = pickTexture(opts.name.trim())
+  const texture   = pickTexture(opts.name.trim())
+  const hasClouds = pickHasClouds(opts.name.trim())
   const info = planets
     .db()
     .prepare(
-      'INSERT INTO planets (name, project_path, workflow_id, state, created_at, texture) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO planets (name, project_path, workflow_id, state, created_at, texture, has_clouds) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-    .run(opts.name.trim(), opts.projectPath, opts.workflowId ?? null, 'idle', Date.now(), texture)
+    .run(opts.name.trim(), opts.projectPath, opts.workflowId ?? null, 'idle', Date.now(), texture, hasClouds ? 1 : 0)
   return getPlanet(Number(info.lastInsertRowid))!
 }
 

@@ -24,6 +24,7 @@ const planet = (id: number, name: string): PlanetSummary => ({
   createdAt: 0,
   texture: null,
   pathExists: true,
+  hasClouds: false,
 })
 
 const feature = (id: number, planetId: number): FeatureSummary => ({
