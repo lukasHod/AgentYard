@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { GlassTab } from '../glass/GlassTab'
 import { ToolsTabContent } from '../ToolsTabContent'
+import { PlanetDashboard } from './PlanetDashboard'
 
 type SunTab = 'dashboard' | 'workflows' | 'tools' | 'agents' | 'mcps'
 
@@ -26,11 +27,7 @@ export function SunPanelInfo() {
 }
 
 function DashboardTab() {
-  return (
-    <div className="text-sm text-slate-300">
-      All-projects overview lands as a Phase 14 polish.
-    </div>
-  )
+  return <PlanetDashboard />
 }
 
 function WorkflowsTab() {
