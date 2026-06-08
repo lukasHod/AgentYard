@@ -54,3 +54,72 @@
   border-color: rgba(125, 211, 252, 0.7);
   box-shadow: 0 0 18px rgba(56, 189, 248, 0.5);
 }
+
+/* ─── Planet Dashboard ──────────────────────────────────────── */
+
+.planet-panel {
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(12px) saturate(1.15);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+  border: 1px solid rgba(125, 211, 252, 0.30);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 4px 16px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(125, 211, 252, 0.12),
+    0 0 20px rgba(56, 189, 248, 0.12);
+  transition: filter 0.15s;
+}
+.planet-panel:hover { filter: brightness(1.2); }
+
+.planet-panel--running {
+  border-color: rgba(125, 211, 252, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 4px 16px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(125, 211, 252, 0.30),
+    0 0 30px rgba(56, 189, 248, 0.40),
+    0 0 60px rgba(56, 189, 248, 0.18);
+}
+
+.planet-panel--pending {
+  border-color: rgba(251, 146, 60, 0.85);
+  animation: pending-pulse 2s ease-in-out infinite;
+}
+
+@keyframes pending-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.10),
+      0 4px 16px rgba(0, 0, 0, 0.55),
+      0 0 28px 4px rgba(251, 146, 60, 0.75),
+      0 0 55px rgba(251, 146, 60, 0.50);
+  }
+  50% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.10),
+      0 4px 16px rgba(0, 0, 0, 0.55),
+      0 0 40px 6px rgba(251, 146, 60, 0.95),
+      0 0 80px rgba(251, 146, 60, 0.65);
+  }
+}
+
+/* Orbiting dot — travels clockwise around the 150×150 panel border */
+@keyframes orbit-border {
+  from { offset-distance: 0%; }
+  to   { offset-distance: 100%; }
+}
+
+.planet-orb {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  /* Fade to transparent-cyan (not #00000000) to avoid the dark ring artifact */
+  background: radial-gradient(circle, #38bdf8ff 0%, #38bdf8aa 40%, #38bdf800 100%);
+  transform: translate(-50%, -50%);
+  /* Rounded-rect path matching border-radius: 16px on a 150×150 element */
+  offset-path: path('M 16 0 L 134 0 Q 150 0 150 16 L 150 134 Q 150 150 134 150 L 16 150 Q 0 150 0 134 L 0 16 Q 0 0 16 0 Z');
+  animation: orbit-border 3s linear infinite;
+  pointer-events: none;
+  z-index: 10;
+}
