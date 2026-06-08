@@ -1,3 +1,6 @@
+import { useUiStore } from '../../state/uiStore'
+import { usePlanets, useFeaturesMap } from '../../state/socketStore'
+import { useNotificationRows } from './useNotificationRows'
 import type { PlanetSummary } from '../../../core/types'
 import { getPlanetTexturePath } from '../../scene/lib/planetTextures'
 import { derivePlanetParams } from '../../scene/lib/planetParams'
@@ -63,5 +66,80 @@ function PlanetPanel({ planet, state, onClick }: PlanetPanelProps) {
         {planet.name}
       </span>
     </button>
+  )
+}
+
+export function PlanetDashboard() {
+  const planets = usePlanets()
+  const features = useFeaturesMap()
+  const notifRows = useNotificationRows()
+  const focusPlanet = useUiStore((s) => s.focusPlanet)
+
+  const pendingPlanetIds = new Set(notifRows.map((r) => r.planetId))
+
+  if (planets.length === 0) {
+    return (
+      <p className="text-sm text-slate-500 mt-4">
+        No projects yet — create one with the + button.
+      </p>
+    )
+  }
+
+  // Grid layout for more than MAX_CIRCLE planets
+  if (planets.length > MAX_CIRCLE) {
+    return (
+      <div className="flex flex-wrap gap-4 justify-center pt-4">
+        {planets.map((p) => (
+          <PlanetPanel
+            key={p.id}
+            planet={p}
+            state={getPlanetState(p.id, features, pendingPlanetIds)}
+            onClick={() => focusPlanet(p.id)}
+          />
+        ))}
+      </div>
+    )
+  }
+
+  // Single planet — just center it
+  if (planets.length === 1) {
+    return (
+      <div className="flex justify-center pt-8">
+        <PlanetPanel
+          planet={planets[0]!}
+          state={getPlanetState(planets[0]!.id, features, pendingPlanetIds)}
+          onClick={() => focusPlanet(planets[0]!.id)}
+        />
+      </div>
+    )
+  }
+
+  // Circle layout for 2–MAX_CIRCLE planets
+  const r = getCircleRadius(planets.length)
+  const containerSize = 2 * r + PANEL_SIZE + 32
+  const center = containerSize / 2
+
+  return (
+    <div
+      className="flex justify-center items-center w-full"
+      style={{ minHeight: containerSize }}
+    >
+      <div className="relative" style={{ width: containerSize, height: containerSize }}>
+        {planets.map((p, i) => {
+          const angle = (i / planets.length) * 2 * Math.PI - Math.PI / 2
+          const x = center + r * Math.cos(angle) - PANEL_SIZE / 2
+          const y = center + r * Math.sin(angle) - PANEL_SIZE / 2
+          return (
+            <div key={p.id} style={{ position: 'absolute', left: x, top: y }}>
+              <PlanetPanel
+                planet={p}
+                state={getPlanetState(p.id, features, pendingPlanetIds)}
+                onClick={() => focusPlanet(p.id)}
+              />
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
