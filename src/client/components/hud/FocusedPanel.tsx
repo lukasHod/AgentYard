@@ -605,7 +605,7 @@ export function FocusedPanel() {
         {isSunFocus ? (
           <div className="relative pointer-events-auto" style={{ height: 'calc(100% - 80px)' }}>
             <div className="absolute inset-0 p-2">
-              <GlassPanel className="h-full p-4 overflow-y-auto">
+              <GlassPanel className="h-full p-4 overflow-hidden flex flex-col">
                 <SunPanelInfo />
               </GlassPanel>
             </div>
