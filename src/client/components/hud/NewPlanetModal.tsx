@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { GlassPanel } from '../glass/GlassPanel'
 import { GlassButton } from '../glass/GlassButton'
-import { apiPost } from '../../api'
+import { apiPost, apiGet } from '../../api'
 import { pushToast } from '../../state/toastStore'
 
 export function NewPlanetModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
   const [projectPath, setProjectPath] = useState('')
   const [busy, setBusy] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
 
   const submit = async () => {
     if (!name.trim() || !projectPath.trim()) return
@@ -16,6 +17,14 @@ export function NewPlanetModal({ onClose }: { onClose: () => void }) {
     setBusy(false)
     if (!res.ok) { pushToast('error', `Create project failed: ${res.error}`); return }
     onClose()
+  }
+
+  const browse = async () => {
+    setBrowsing(true)
+    const res = await apiGet<{ path: string | null }>('/api/browse-folder')
+    setBrowsing(false)
+    if (!res.ok) { pushToast('error', `Browse failed: ${res.error}`); return }
+    if (res.data.path) setProjectPath(res.data.path)
   }
 
   return (
@@ -33,8 +42,10 @@ export function NewPlanetModal({ onClose }: { onClose: () => void }) {
         <input
           value={projectPath}
           onChange={(e) => setProjectPath(e.target.value)}
+          onClick={browse}
+          readOnly={browsing}
           placeholder="C:/code/my-repo (must be a git repository)"
-          className="w-full mt-1 mb-4 bg-black/40 border border-sky-400/30 rounded px-2 py-1 font-mono text-xs"
+          className="w-full mt-1 mb-4 bg-black/40 border border-sky-400/30 rounded px-2 py-1 font-mono text-xs cursor-pointer"
         />
         <div className="flex justify-end gap-2">
           <GlassButton variant="ghost" onClick={onClose}>cancel</GlassButton>

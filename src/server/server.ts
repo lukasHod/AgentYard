@@ -25,6 +25,7 @@ import { registerPlanetRoutes } from './routes/planets.js'
 import { registerTestRunRoutes } from './routes/testRuns.js'
 import { registerToolRoutes } from './routes/tools.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
+import { registerBrowseFolderRoute } from './routes/browseFolder.js'
 import type { AppContext } from './routes/context.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -115,6 +116,7 @@ export async function startServer(opts: ServerOptions) {
   registerRunRoutes(ctx)
   registerTestRunRoutes(ctx)
   registerPlanetRoutes(ctx)
+  registerBrowseFolderRoute(ctx)
   registerFeatureRoutes(ctx)
 
   const address = await app.listen({ port: opts.port, host: '127.0.0.1' })
