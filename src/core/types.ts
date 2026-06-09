@@ -77,6 +77,15 @@ export interface FeatureSummary {
   createdAt: number
 }
 
+export interface HandoffSummary {
+  handoffBranch: string
+  featureBranch: string
+  featureName: string
+  shortDescription: string
+  sender: string
+  timestamp: number
+}
+
 // Wire protocol — messages over Socket.IO.
 // Server → Client events
 export interface ServerEvents {
@@ -99,6 +108,9 @@ export interface ServerEvents {
   'planet:deleted':   { id: number }
   'feature:created':  FeatureSummary
   'feature:updated':  FeatureSummary
+  'handoff:created':  HandoffSummary
+  'handoff:pickedup': { handoffBranch: string; feature: FeatureSummary }
+  'handoff:cancelled': { handoffBranch: string }
   // ── Sandbox test-run events ──
   // Scoped so the normal Run view + galaxy don't ever pick them up. Every payload
   // carries testRunId so the modal can filter to the one it's watching.

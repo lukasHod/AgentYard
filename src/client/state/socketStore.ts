@@ -61,6 +61,7 @@ interface Actions {
   applyFeatureUpdated: (f: ServerEvents['feature:updated']) => void
   setPlanets: (planets: PlanetSummary[]) => void
   setFeatures: (features: Map<number, FeatureSummary[]>) => void
+  setPlanetFeatures: (planetId: number, features: FeatureSummary[]) => void
   resetRun: () => void
 }
 
@@ -226,6 +227,12 @@ export const useSocketStore = create<State & Actions>((set) => ({
 
   setPlanets: (planets) => set({ planets }),
   setFeatures: (features) => set({ features }),
+  setPlanetFeatures: (planetId, fs) =>
+    set((prev) => {
+      const next = new Map(prev.features)
+      next.set(planetId, fs)
+      return { features: next }
+    }),
 
   resetRun: () =>
     set({
