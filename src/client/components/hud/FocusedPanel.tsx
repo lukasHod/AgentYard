@@ -21,7 +21,7 @@ import { AgentChat } from '../AgentChat'
 import { EmptyMessage } from '../ui/EmptyMessage'
 import { HandoffsTab } from '../HandoffsTab'
 import { HandoffDialog } from '../HandoffDialog'
-import { apiGet, apiPost } from '../../api'
+import { apiGet, apiPost, apiDelete } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { getMockAgentDescription } from '../../state/mockSeed'
 import { useNotificationRows } from '../hud/useNotificationRows'
@@ -585,6 +585,7 @@ export function FocusedPanel() {
   const sessions = useSessionList()
   const features = useFeaturesMap()
   const pendings = usePendingsMap()
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const planetId =
     focus.lod === 1 && 'planetId' in focus
@@ -650,7 +651,21 @@ export function FocusedPanel() {
           </div>
           <div className="flex items-center gap-2">
             <GlassButton variant="ghost" onClick={() => setWfOpen(true)}>⚙ workflow editor</GlassButton>
-            {!isSunFocus && <GlassButton variant="danger">✕ delete</GlassButton>}
+            {!isSunFocus && (
+              confirmingDelete ? (
+                <>
+                  <GlassButton variant="ghost" onClick={() => setConfirmingDelete(false)}>cancel</GlassButton>
+                  <GlassButton variant="danger" onClick={async () => {
+                    setConfirmingDelete(false)
+                    back()
+                    const res = await apiDelete(`/api/planets/${planet!.id}`)
+                    if (!res.ok) pushToast({ message: `delete failed: ${res.error}`, variant: 'error' })
+                  }}>confirm delete</GlassButton>
+                </>
+              ) : (
+                <GlassButton variant="danger" onClick={() => setConfirmingDelete(true)}>✕ delete</GlassButton>
+              )
+            )}
           </div>
         </GlassPanel>
 

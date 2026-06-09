@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useUiStore } from './uiStore'
 import { useShallow } from 'zustand/react/shallow'
 import type {
   AgentState,
@@ -201,14 +202,19 @@ export const useSocketStore = create<State & Actions>((set) => ({
 
   applyPlanetCreated: (s) => set((prev) => ({ planets: [s, ...prev.planets] })),
 
-  applyPlanetDeleted: (ev) =>
+  applyPlanetDeleted: (ev) => {
     set((prev) => {
       const planets = prev.planets.filter((s) => s.id !== ev.id)
       if (planets.length === prev.planets.length && !prev.features.has(ev.id)) return prev
       const features = new Map(prev.features)
       features.delete(ev.id)
       return { planets, features }
-    }),
+    })
+    const focus = useUiStore.getState().focus
+    if (focus.lod !== 0 && 'planetId' in focus && focus.planetId === ev.id) {
+      useUiStore.setState({ focus: { lod: 0 } })
+    }
+  },
 
   applyFeatureCreated: (f) =>
     set((prev) => {
