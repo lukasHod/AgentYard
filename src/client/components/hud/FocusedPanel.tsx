@@ -7,6 +7,7 @@ import { WorkflowEditorOverlay } from './WorkflowEditorOverlay'
 import { SunPanelInfo } from './SunPanel'
 import { useUiStore, type InfoTab } from '../../state/uiStore'
 import {
+  useSocketStore,
   usePlanets,
   useFeaturesMap,
   useSessionList,
@@ -18,6 +19,8 @@ import { sendAgentMessage, replyClarification as emitReply } from '../../state/s
 import { ToolsTabContent } from '../ToolsTabContent'
 import { AgentChat } from '../AgentChat'
 import { EmptyMessage } from '../ui/EmptyMessage'
+import { HandoffsTab } from '../HandoffsTab'
+import { HandoffDialog } from '../HandoffDialog'
 import { apiGet, apiPost } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { getMockAgentDescription } from '../../state/mockSeed'
@@ -44,40 +47,63 @@ type Tab = InfoTab
 
 function FeaturesTab({
   features,
+  planetId,
 }: {
   features: FeatureSummary[]
   planetId: number
 }) {
+  const [handoffTarget, setHandoffTarget] = useState<FeatureSummary | null>(null)
+
   if (features.length === 0) {
     return <EmptyMessage>no features yet</EmptyMessage>
   }
   return (
-    <ul className="space-y-2">
-      {features.map((f) => (
-        <li key={f.id} className="border border-sky-400/15 rounded p-2">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sky-300 truncate">{f.name}</span>
-            <span
-              className={`text-[10px] tracking-widest ${
-                f.status === 'running'
-                  ? 'text-sky-300'
-                  : f.status === 'complete'
-                    ? 'text-emerald-300'
-                    : f.status === 'failed'
-                      ? 'text-rose-400'
-                      : 'text-slate-500'
-              }`}
-            >
-              {f.status}
-            </span>
-          </div>
-          <p className="text-slate-300 mt-1 whitespace-pre-wrap line-clamp-2 text-xs">{f.task}</p>
-          {f.branch && (
-            <p className="text-[10px] text-slate-500 mt-1 font-mono truncate">{f.branch}</p>
-          )}
-        </li>
-      ))}
-    </ul>
+    <>
+      {handoffTarget && (
+        <HandoffDialog
+          planetId={planetId}
+          feature={handoffTarget}
+          onClose={() => setHandoffTarget(null)}
+        />
+      )}
+      <ul className="space-y-2">
+        {features.map((f) => (
+          <li key={f.id} className="border border-sky-400/15 rounded p-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sky-300 truncate">{f.name}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                {(f.status === 'pending' || f.status === 'running') && (
+                  <GlassButton
+                    variant="ghost"
+                    className="text-[10px] py-0 px-1.5"
+                    onClick={() => setHandoffTarget(f)}
+                  >
+                    hand off
+                  </GlassButton>
+                )}
+                <span
+                  className={`text-[10px] tracking-widest ${
+                    f.status === 'running'
+                      ? 'text-sky-300'
+                      : f.status === 'complete'
+                        ? 'text-emerald-300'
+                        : f.status === 'failed'
+                          ? 'text-rose-400'
+                          : 'text-slate-500'
+                  }`}
+                >
+                  {f.status}
+                </span>
+              </div>
+            </div>
+            <p className="text-slate-300 mt-1 whitespace-pre-wrap line-clamp-2 text-xs">{f.task}</p>
+            {f.branch && (
+              <p className="text-[10px] text-slate-500 mt-1 font-mono truncate">{f.branch}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
 
@@ -471,35 +497,61 @@ function NotificationsTab() {
 // InfoPanelBody
 // ---------------------------------------------------------------------------
 
+function usePlanetSync(planetId: number) {
+  const setPlanetFeatures = useSocketStore((s) => s.setPlanetFeatures)
+
+  const sync = useCallback(() => {
+    void apiPost<FeatureSummary[]>(`/api/planets/${planetId}/sync`).then((res) => {
+      if (res.ok) setPlanetFeatures(planetId, res.data)
+    })
+  }, [planetId, setPlanetFeatures])
+
+  // Sync once when the planet panel opens or the planet changes.
+  useEffect(() => {
+    sync()
+  }, [sync])
+
+  return sync
+}
+
 function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
   const features = useFeaturesMap().get(planet.id) ?? []
   const tab = useUiStore((s) => s.infoTab)
   const setTab = useUiStore((s) => s.openInfoTab)
   const hasRunning = features.some((f) => f.status === 'running')
   const notifCount = useNotificationRows().length
+  const sync = usePlanetSync(planet.id)
+
+  function switchTab(t: typeof tab) {
+    sync()
+    setTab(t)
+  }
 
   return (
     <>
       <div className="flex flex-wrap gap-2 mb-4">
-        <GlassTab active={tab === 'features'} onClick={() => setTab('features')}>
+        <GlassTab active={tab === 'features'} onClick={() => switchTab('features')}>
           FEATURES
         </GlassTab>
-        <GlassTab active={tab === 'tools'} onClick={() => setTab('tools')}>
+        <GlassTab active={tab === 'tools'} onClick={() => switchTab('tools')}>
           TOOLS
         </GlassTab>
-        <GlassTab active={tab === 'plans'} onClick={() => setTab('plans')}>
+        <GlassTab active={tab === 'plans'} onClick={() => switchTab('plans')}>
           PLANS
         </GlassTab>
-        <GlassTab active={tab === 'description'} onClick={() => setTab('description')}>
+        <GlassTab active={tab === 'description'} onClick={() => switchTab('description')}>
           DESC
         </GlassTab>
         {hasRunning && (
-          <GlassTab active={tab === 'run'} onClick={() => setTab('run')}>
+          <GlassTab active={tab === 'run'} onClick={() => switchTab('run')}>
             RUN
           </GlassTab>
         )}
-        <GlassTab active={tab === 'notifications'} onClick={() => setTab('notifications')}>
+        <GlassTab active={tab === 'notifications'} onClick={() => switchTab('notifications')}>
           INBOX{notifCount > 0 ? ` · ${notifCount}` : ''}
+        </GlassTab>
+        <GlassTab active={tab === 'handoffs'} onClick={() => switchTab('handoffs')}>
+          HANDOFFS
         </GlassTab>
       </div>
       {tab === 'features' && <FeaturesTab features={features} planetId={planet.id} />}
@@ -510,6 +562,7 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
       )}
       {tab === 'run' && <RunTabContent planetId={planet.id} features={features} />}
       {tab === 'notifications' && <NotificationsTab />}
+      {tab === 'handoffs' && <HandoffsTab planetId={planet.id} />}
     </>
   )
 }

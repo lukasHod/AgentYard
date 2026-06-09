@@ -41,6 +41,11 @@ export interface RunWorkflowOptions {
    * to AI-node gates / script-node spawns.
    */
   signal?: AbortSignal
+  /**
+   * Pre-formatted handoff context block to prepend to every AI-node leader's
+   * system prompt. Set when this run is resuming a handed-off feature.
+   */
+  handoffContext?: string
 }
 
 const DEFAULT_AI_NODE_TIMEOUT_MS = 30 * 60 * 1000 // 30 min
@@ -51,6 +56,7 @@ interface RunAINodeDeps {
   input: NodeRunInput
   aiNodeTimeoutMs: number
   signal?: AbortSignal
+  handoffContext?: string
 }
 
 /** Spawn leader + agents for an AI node, run it, return the leader's result. */
@@ -102,10 +108,13 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
     rosterDescription: [...droneByRole.keys()].join(', '),
   })
 
+  const leaderPrompt = deps.handoffContext
+    ? `${deps.handoffContext}\n\n${input.prompt}`
+    : input.prompt
   const leader = manager.spawn({
     role: 'leader',
     label: `${node.id}/leader`,
-    systemPrompt: input.prompt,
+    systemPrompt: leaderPrompt,
     runtimeTools: [assignTaskTool, markCompleteTool] as AnyTool[],
   })
 
@@ -243,6 +252,7 @@ export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<s
         input,
         aiNodeTimeoutMs,
         signal: opts.signal,
+        handoffContext: opts.handoffContext,
       })
     },
   })

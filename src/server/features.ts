@@ -14,6 +14,7 @@ export interface Feature {
   error: string | null
   workflowId: number
   createdAt: number
+  handoffContext: string | null
 }
 
 interface FeatureRow {
@@ -28,6 +29,7 @@ interface FeatureRow {
   error: string | null
   workflow_id: number
   created_at: number
+  handoff_context: string | null
 }
 
 function rowToFeature(row: FeatureRow): Feature {
@@ -43,6 +45,7 @@ function rowToFeature(row: FeatureRow): Feature {
     error: row.error,
     workflowId: row.workflow_id,
     createdAt: row.created_at,
+    handoffContext: row.handoff_context,
   }
 }
 
@@ -82,6 +85,7 @@ export function updateFeature(
     status: FeatureStatus
     finalSummary: string | null
     error: string | null
+    handoffContext: string | null
   }>,
 ): Feature | undefined {
   const sets: string[] = []
@@ -105,6 +109,10 @@ export function updateFeature(
   if ('error' in patch) {
     sets.push('error = ?')
     vals.push(patch.error)
+  }
+  if ('handoffContext' in patch) {
+    sets.push('handoff_context = ?')
+    vals.push(patch.handoffContext)
   }
   if (sets.length === 0) return getFeature(id)
   vals.push(id)

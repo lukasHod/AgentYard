@@ -98,6 +98,16 @@ export class TranscriptStore {
     }
   }
 
+  /** Return transcript entries for a set of session IDs (for handoff serialization). */
+  getTranscripts(ids: string[]): Map<string, TranscriptEntry[]> {
+    const result = new Map<string, TranscriptEntry[]>()
+    for (const id of ids) {
+      const entries = this.transcripts.get(id)
+      if (entries) result.set(id, [...entries])
+    }
+    return result
+  }
+
   clear(): void {
     this.transcripts.clear()
     this.pending.clear()

@@ -91,6 +91,12 @@ function runAddHasCloudsMigration(db: DB) {
   }
 }
 
+function runAddHandoffContextMigration(db: DB) {
+  if (tableExists(db, 'features') && !columnExists(db, 'features', 'handoff_context')) {
+    db.exec(`ALTER TABLE features ADD COLUMN handoff_context TEXT`)
+  }
+}
+
 export function getDb(): DB {
   if (_db) return _db
   mkdirSync(DB_DIR, { recursive: true })
@@ -101,6 +107,7 @@ export function getDb(): DB {
   db.exec(SCHEMA)
   runAddTextureMigration(db)
   runAddHasCloudsMigration(db)
+  runAddHandoffContextMigration(db)
   _db = db
   return db
 }

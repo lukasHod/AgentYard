@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { simpleGit } from 'simple-git'
 import { createPlanet, deletePlanet, getPlanet, listPlanets } from '../planets.js'
+import { listFeatures } from '../features.js'
 import type { AppContext } from './context.js'
 
 export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }: AppContext): void {
@@ -61,6 +62,26 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
     } catch (e) {
       return apiError(reply, 500, 'failed to open planet chat', e)
     }
+  })
+
+  /**
+   * Trigger a background git fetch on the planet repo and return the latest
+   * feature list from the DB. The fetch is fire-and-forget — the response
+   * returns immediately with fresh DB state.
+   */
+  app.post<{ Params: { id: string } }>('/api/planets/:id/sync', async (req, reply) => {
+    const planet = getPlanet(Number(req.params.id))
+    if (!planet) return reply.code(404).send({ error: 'planet not found' })
+
+    if (planet.pathExists) {
+      // Fire-and-forget: update remote refs so callers see the latest handoff
+      // branches, remote feature branches, etc. Never blocks the response.
+      simpleGit(planet.projectPath)
+        .fetch(['--all', '--prune'])
+        .catch(() => {})
+    }
+
+    return listFeatures(planet.id)
   })
 
   app.get<{ Params: { id: string } }>('/api/planets/:id/description', async (req, reply) => {

@@ -56,6 +56,48 @@ export async function createFeatureWorktree(opts: {
   return { path: wtPath, branch }
 }
 
+/**
+ * Create a worktree for a handed-off feature by checking out an EXISTING branch.
+ * Fetches the branch from origin first if it doesn't exist locally.
+ */
+export async function createPickupWorktree(opts: {
+  planetPath: string
+  featureId: number
+  branch: string
+}): Promise<FeatureWorktree> {
+  if (!existsSync(opts.planetPath)) {
+    throw new Error(`Project path does not exist: ${opts.planetPath}`)
+  }
+  const git: SimpleGit = simpleGit(opts.planetPath)
+  if (!(await git.checkIsRepo())) {
+    throw new Error(`Project path is not a git repo: ${opts.planetPath}`)
+  }
+
+  // Ensure the branch exists locally (may only be on origin).
+  try {
+    await git.raw(['fetch', 'origin', `${opts.branch}:${opts.branch}`])
+  } catch {
+    // Branch may already exist locally — ignore fetch errors.
+  }
+
+  const worktreesRoot = path.join(opts.planetPath, '.agentyard', 'worktrees')
+  mkdirSync(worktreesRoot, { recursive: true })
+  const wtPath = path.join(worktreesRoot, String(opts.featureId))
+
+  if (existsSync(wtPath)) {
+    try {
+      await git.raw(['worktree', 'remove', '--force', wtPath])
+    } catch {
+      // ignore
+    }
+    if (existsSync(wtPath)) rmSync(wtPath, { recursive: true, force: true })
+  }
+
+  // Checkout existing branch (no -b flag).
+  await git.raw(['worktree', 'add', wtPath, opts.branch])
+  return { path: wtPath, branch: opts.branch }
+}
+
 export async function removeFeatureWorktree(planetPath: string, worktreePath: string): Promise<void> {
   if (!existsSync(planetPath)) return
   const git = simpleGit(planetPath)

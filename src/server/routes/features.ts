@@ -5,6 +5,7 @@ import {
   updateFeature,
   type Feature,
 } from '../features.js'
+import { formatHandoffContext, type HandoffPayload } from '../handoff.js'
 import { runWorkflowOnSessions } from '../runtime/runWorkflowOnSessions.js'
 import { createFeatureWorktree, removeFeatureWorktree } from '../runtime/worktrees.js'
 import { getPlanet } from '../planets.js'
@@ -79,6 +80,17 @@ export function registerFeatureRoutes(ctx: AppContext): void {
       return apiError(reply, 500, 'worktree creation failed', e)
     }
 
+    // If this feature was picked up from a handoff, inject prior conversation context.
+    let handoffContext: string | undefined
+    if (feature.handoffContext) {
+      try {
+        const payload = JSON.parse(feature.handoffContext) as HandoffPayload
+        handoffContext = formatHandoffContext(payload)
+      } catch {
+        // Malformed handoff context — skip injection rather than crashing.
+      }
+    }
+
     const controller = new AbortController()
     const runPromise = runWorkflowOnSessions({
       workflow: wf,
@@ -87,6 +99,7 @@ export function registerFeatureRoutes(ctx: AppContext): void {
       ctx: { planetProjectPath: planet.projectPath },
       cwd,
       signal: controller.signal,
+      handoffContext,
       emit: (ev) => {
         runState.emit(ev)
         if (ev.type === 'run:complete') {
