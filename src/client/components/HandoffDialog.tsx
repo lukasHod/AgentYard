@@ -33,7 +33,7 @@ export function HandoffDialog({ planetId, feature, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-50 pointer-events-auto flex items-center justify-center bg-black/60"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <GlassPanel className="w-full max-w-md p-4 space-y-3">
