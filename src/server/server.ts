@@ -86,7 +86,7 @@ export async function startServer(opts: ServerOptions) {
     // In dev the UI is served by Vite on a different origin and needs CORS allow.
     // In prod the UI is served from the same Fastify origin, so refuse cross-origin
     // sockets — closes DNS-rebinding / cross-site Socket.IO connection vectors.
-    cors: opts.dev ? { origin: 'http://localhost:5173' } : { origin: false },
+    cors: opts.dev ? { origin: /^http:\/\/localhost:\d+$/ } : { origin: false },
   })
   const transcripts = new TranscriptStore(io)
   const runState = new RunRegistry(io)

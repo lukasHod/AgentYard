@@ -19,17 +19,24 @@ interface Props {
 export function FolderPickerModal({ onSelect, onClose }: Props) {
   const [listing, setListing] = useState<DirListing | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [typed, setTyped] = useState('')
 
-  function navigate(p: string) {
+  async function navigate(p: string) {
     setLoading(true)
-    apiGet<DirListing>(`/api/fs/dirs?path=${encodeURIComponent(p)}`).then((res) => {
-      setLoading(false)
-      if (res.ok) {
-        setListing(res.data)
-        setTyped(res.data.current)
-      }
-    })
+    setError(null)
+    const res = await apiGet<DirListing>(`/api/fs/dirs?path=${encodeURIComponent(p)}`)
+    setLoading(false)
+    if (res.ok) {
+      setListing(res.data)
+      setTyped(res.data.current)
+      return
+    }
+    setError(
+      res.status === 500
+        ? 'Folder browser is unavailable. Make sure the AgentYard server is running on port 4242.'
+        : res.error,
+    )
   }
 
   useEffect(() => { navigate('') }, [])
@@ -44,8 +51,15 @@ export function FolderPickerModal({ onSelect, onClose }: Props) {
         className="fixed inset-0 z-50 pointer-events-auto bg-black/70 flex items-center justify-center"
         onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       >
-        <GlassPanel className="p-6 w-[520px]">
-          <p className="text-slate-400 text-xs">loading...</p>
+        <GlassPanel className="p-6 w-[520px] flex flex-col gap-3">
+          <p className="text-slate-400 text-xs">{loading ? 'loading...' : 'Folder browser unavailable'}</p>
+          {error && <p className="text-rose-300 text-xs leading-relaxed">{error}</p>}
+          {error && (
+            <div className="flex justify-end gap-2">
+              <GlassButton variant="ghost" className="text-xs" onClick={onClose}>close</GlassButton>
+              <GlassButton className="text-xs" onClick={() => navigate(typed)}>retry</GlassButton>
+            </div>
+          )}
         </GlassPanel>
       </div>
     )

@@ -10,7 +10,7 @@
     "dist"
   ],
   "scripts": {
-    "dev": "concurrently -k -n server,client -c blue,green \"node --import tsx --watch src/server/cli.ts start --dev\" \"vite\"",
+    "dev": "node --import tsx scripts/dev.ts",
     "dev:server": "node --import tsx --watch src/server/cli.ts start --dev",
     "dev:client": "vite",
     "build": "npm run build:client && npm run build:server",
