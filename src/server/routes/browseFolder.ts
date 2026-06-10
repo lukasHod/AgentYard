@@ -28,12 +28,24 @@ function isDir(p: string): boolean {
   }
 }
 
-/** Filesystem roots for the platform. */
-function roots(): { name: string; path: string }[] {
+let cachedWindowsRoots: { name: string; path: string }[] | null = null
+
+function windowsRoots(): { name: string; path: string }[] {
+  if (cachedWindowsRoots) return cachedWindowsRoots
+
+  cachedWindowsRoots = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    .split('')
+    .map((letter) => `${letter}:\\`)
+    .filter(isDir)
+    .map((drive) => ({ name: drive, path: drive }))
+
+  return cachedWindowsRoots
+}
+
+/** Filesystem roots for quick navigation. Cache drive detection so folder clicks stay fast. */
+export function rootsFor(current: string): { name: string; path: string }[] {
   if (process.platform === 'win32') {
-    // Common drive letters — check which ones actually exist.
-    return 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l) => `${l}:\\`).filter(isDir)
-      .map((p) => ({ name: p, path: p }))
+    return windowsRoots()
   }
   return [{ name: '/', path: '/' }]
 }
@@ -52,7 +64,7 @@ export function registerBrowseFolderRoute({ app }: AppContext): void {
       current,
       parent,
       entries: listDirs(current),
-      roots: roots(),
+      roots: rootsFor(current),
     }
   })
 }
