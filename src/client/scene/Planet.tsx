@@ -39,8 +39,11 @@ interface PlanetProps {
 }
 
 function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
-  const params  = useMemo(() => derivePlanetParams(planet.name), [planet.name])
-  const texPath = useMemo(() => getPlanetTexturePath(planet.name, params.surfaceType), [planet.name, params.surfaceType])
+  const params  = useMemo(
+    () => derivePlanetParams(`${planet.id}:${planet.texture}`),
+    [planet.id, planet.texture],
+  )
+  const texPath = useMemo(() => getPlanetTexturePath(planet.texture), [planet.texture])
   const texture = useTexture(texPath)
 
   const groupRef    = useRef<Group>(null)
@@ -77,18 +80,18 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   }, [texPath, texture])
 
   const cloudSeed = useMemo(() => {
-    const h = hashStringToInt(planet.name)
+    const h = hashStringToInt(`${planet.id}:${planet.texture}`)
     return new Vector3(
       hashByte(h, 0) / 32,
       hashByte(h, 1) / 32,
       hashByte(h, 2) / 32,
     )
-  }, [planet.name])
+  }, [planet.id, planet.texture])
 
   const cloudCoverage = useMemo(() => {
-    const h = deriveHash(hashStringToInt(planet.name), 'clouds')
+    const h = deriveHash(hashStringToInt(`${planet.id}:${planet.texture}`), 'clouds')
     return 0.18 + (hashByte(h, 0) / 255) * 0.28
-  }, [planet.name])
+  }, [planet.id, planet.texture])
 
   const brightness       = useRef(1)
   const scale            = useRef(1)
@@ -269,7 +272,10 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
 }
 
 function FallbackPlanet({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
-  const params    = useMemo(() => derivePlanetParams(planet.name), [planet.name])
+  const params    = useMemo(
+    () => derivePlanetParams(`${planet.id}:${planet.texture}`),
+    [planet.id, planet.texture],
+  )
   const baseColor = useMemo(
     () => new Color().setHSL(params.paletteHue / 360, 0.55, 0.45),
     [params.paletteHue],

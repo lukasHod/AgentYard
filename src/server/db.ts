@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS planets (
   project_path TEXT NOT NULL,
   workflow_id  INTEGER,
   state        TEXT NOT NULL DEFAULT 'idle',
-  created_at   INTEGER NOT NULL
+  created_at   INTEGER NOT NULL,
+  texture      TEXT NOT NULL,
+  has_clouds   INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS workflows (

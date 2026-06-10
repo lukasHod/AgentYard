@@ -91,7 +91,7 @@ const MOCK_PLANETS: PlanetSummary[] = [
     state: 'developing',
     createdAt: NOW - 1000 * 60 * 60 * 24 * 3,
     pathExists: true,
-    texture: null,
+    texture: 'Gaseous2',
     hasClouds: true,
   },
   {
@@ -102,7 +102,7 @@ const MOCK_PLANETS: PlanetSummary[] = [
     state: 'idle',
     createdAt: NOW - 1000 * 60 * 60 * 24 * 7,
     pathExists: true,
-    texture: null,
+    texture: 'Terrestrial3',
     hasClouds: false,
   },
 ]

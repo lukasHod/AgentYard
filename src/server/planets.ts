@@ -1,16 +1,10 @@
 import { existsSync } from 'node:fs'
 import { simpleGit } from 'simple-git'
 import { createRepo } from './repository.js'
+import { PLANET_TEXTURE_NAMES, type PlanetTextureName } from '../core/planetTextures.js'
 
-const TEXTURES = [
-  'Alpine', 'Gaseous1', 'Gaseous2', 'Gaseous3', 'Gaseous4',
-  'Icy', 'Martian', 'Savannah', 'Swamp',
-  'Terrestrial1', 'Terrestrial2', 'Terrestrial3', 'Terrestrial4',
-  'Tropical', 'Venusian', 'Volcanic',
-]
-
-function pickTexture(): string {
-  return TEXTURES[Math.floor(Math.random() * TEXTURES.length)]!
+function pickTexture(): PlanetTextureName {
+  return PLANET_TEXTURE_NAMES[Math.floor(Math.random() * PLANET_TEXTURE_NAMES.length)]!
 }
 
 export function pickHasClouds(): boolean {
@@ -24,7 +18,7 @@ export interface Planet {
   workflowId: number | null
   state: string
   createdAt: number
-  texture: string | null
+  texture: PlanetTextureName
   hasClouds: boolean
   /** Set by the read path — true if projectPath exists on disk right now. */
   pathExists: boolean
@@ -37,7 +31,7 @@ interface PlanetRow {
   workflow_id: number | null
   state: string
   created_at: number
-  texture: string | null
+  texture: PlanetTextureName
   has_clouds: number
 }
 
