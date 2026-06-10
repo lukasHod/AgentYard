@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { GlassPanel } from './glass/GlassPanel'
 import { GlassButton } from './glass/GlassButton'
 import { apiGet } from '../api'
+import { parentDirectory } from '../state/projectPickerPrefs'
 
 interface DirEntry { name: string; path: string }
 interface DirListing {
@@ -12,20 +13,45 @@ interface DirListing {
 }
 
 interface Props {
+  initialPath?: string
   onSelect: (path: string) => void
   onClose: () => void
 }
 
-export function FolderPickerModal({ onSelect, onClose }: Props) {
+export function FolderPickerModal({ initialPath = '', onSelect, onClose }: Props) {
   const [listing, setListing] = useState<DirListing | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [typed, setTyped] = useState('')
+  const requestId = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
 
-  async function navigate(p: string) {
+  async function navigate(p: string, optimistic = false) {
+    const nextRequestId = requestId.current + 1
+    requestId.current = nextRequestId
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    if (optimistic) {
+      const parent = parentDirectory(p) || null
+      setListing((current) => ({
+        current: p,
+        parent,
+        entries: [],
+        roots: current?.roots ?? [],
+      }))
+      setTyped(p)
+    }
+
     setLoading(true)
     setError(null)
-    const res = await apiGet<DirListing>(`/api/fs/dirs?path=${encodeURIComponent(p)}`)
+    const res = await apiGet<DirListing>(
+      `/api/fs/dirs?path=${encodeURIComponent(p)}`,
+      { signal: controller.signal },
+    )
+    if (nextRequestId !== requestId.current) return
+    if (!res.ok && res.aborted) return
     setLoading(false)
     if (res.ok) {
       setListing(res.data)
@@ -39,7 +65,10 @@ export function FolderPickerModal({ onSelect, onClose }: Props) {
     )
   }
 
-  useEffect(() => { navigate('') }, [])
+  useEffect(() => {
+    navigate(initialPath)
+    return () => abortRef.current?.abort()
+  }, [initialPath])
 
   function handleTyped(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') navigate(typed)
@@ -92,7 +121,7 @@ export function FolderPickerModal({ onSelect, onClose }: Props) {
             {listing.roots.map((r) => (
               <button
                 key={r.path}
-                onClick={() => navigate(r.path)}
+                onClick={() => navigate(r.path, true)}
                 className="text-[10px] px-2 py-0.5 rounded border border-sky-400/20 text-sky-400 hover:bg-sky-400/10"
               >
                 {r.name}
@@ -105,7 +134,7 @@ export function FolderPickerModal({ onSelect, onClose }: Props) {
         <div className="overflow-y-auto max-h-64 space-y-0.5">
           {listing.parent !== null && (
             <button
-              onClick={() => navigate(listing.parent!)}
+              onClick={() => navigate(listing.parent!, true)}
               className="w-full text-left px-2 py-1 rounded text-xs text-slate-400 hover:bg-sky-400/10 flex items-center gap-2"
             >
               <span>↑</span>
@@ -119,7 +148,7 @@ export function FolderPickerModal({ onSelect, onClose }: Props) {
           {!loading && listing.entries.map((e) => (
             <button
               key={e.path}
-              onClick={() => navigate(e.path)}
+              onClick={() => navigate(e.path, true)}
               className="w-full text-left px-2 py-1 rounded text-xs text-slate-200 hover:bg-sky-400/10 flex items-center gap-2 font-mono"
             >
               <span className="text-sky-400/60">📁</span>
