@@ -1,3 +1,5 @@
+import type { PlanetTextureName } from './planetTextures'
+
 // Shared types used by both server and client.
 // Authoritative shapes for planets, workflows, agents, messages.
 // Keep this file dependency-free.
@@ -57,7 +59,7 @@ export interface PlanetSummary {
   workflowId: number | null
   state: string
   createdAt: number
-  texture: string | null
+  texture: PlanetTextureName
   hasClouds: boolean
   /** True if projectPath exists on disk (computed server-side at read time). */
   pathExists: boolean

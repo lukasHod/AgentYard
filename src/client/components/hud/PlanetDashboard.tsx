@@ -3,7 +3,6 @@ import { usePlanets, useFeaturesMap } from '../../state/socketStore'
 import { useNotificationRows } from './useNotificationRows'
 import type { PlanetSummary } from '../../../core/types'
 import { getPlanetTexturePath } from '../../scene/lib/planetTextures'
-import { derivePlanetParams } from '../../scene/lib/planetParams'
 
 export const PANEL_SIZE = 150
 export const PANEL_GAP = 28
@@ -33,10 +32,7 @@ interface PlanetPanelProps {
 }
 
 function PlanetPanel({ planet, state, onClick }: PlanetPanelProps) {
-  const texturePath = getPlanetTexturePath(
-    planet.name,
-    derivePlanetParams(planet.name).surfaceType,
-  )
+  const texturePath = getPlanetTexturePath(planet.texture)
   return (
     <button
       type="button"
