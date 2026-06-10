@@ -6,6 +6,8 @@ interface DevPorts {
   client: number
 }
 
+const serverWatch = process.argv.includes('--watch')
+
 function canConnect(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = createConnection({ port, host })
@@ -94,18 +96,24 @@ const env = {
 console.log('\nAgentYard dev ports')
 console.log(`  Server: http://localhost:${ports.server}`)
 console.log(`  UI:     http://localhost:${ports.client}\n`)
+console.log(`  Server watch: ${serverWatch ? 'on' : 'off'}\n`)
 
 const children = [
-  spawnDevProcess('server', process.execPath, [
-    '--import',
-    'tsx',
-    '--watch',
-    'src/server/cli.ts',
-    'start',
-    '--dev',
-    '--port',
-    String(ports.server),
-  ], env),
+  spawnDevProcess(
+    'server',
+    process.execPath,
+    [
+      '--import',
+      'tsx',
+      ...(serverWatch ? ['--watch'] : []),
+      'src/server/cli.ts',
+      'start',
+      '--dev',
+      '--port',
+      String(ports.server),
+    ],
+    env,
+  ),
   spawnDevProcess('client', process.execPath, [
     'node_modules/vite/bin/vite.js',
     '--host',
