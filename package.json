@@ -11,7 +11,9 @@
   ],
   "scripts": {
     "dev": "node --import tsx scripts/dev.ts",
-    "dev:server": "node --import tsx --watch src/server/cli.ts start --dev",
+    "dev:watch": "node --import tsx scripts/dev.ts --watch",
+    "dev:server": "node --import tsx src/server/cli.ts start --dev",
+    "dev:server:watch": "node --import tsx --watch src/server/cli.ts start --dev",
     "dev:client": "vite",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",

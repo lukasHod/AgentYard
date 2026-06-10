@@ -39,6 +39,23 @@ function appendHistory(planetId: number, msg: PersistedChatMessage): void {
     .run(planetId, msg.role, msg.content, msg.timestamp)
 }
 
+function appendInterruptedTurnNotice(
+  planetId: number,
+  history: PersistedChatMessage[],
+): PersistedChatMessage[] {
+  const last = history.at(-1)
+  if (last?.role !== 'user') return history
+
+  const notice: PersistedChatMessage = {
+    role: 'system',
+    content:
+      'The previous message was saved, but the agent did not finish a response before the chat session ended. Please resend it if you still want me to run it.',
+    timestamp: Date.now(),
+  }
+  appendHistory(planetId, notice)
+  return [...history, notice]
+}
+
 function clearHistory(planetId: number): void {
   getDb().prepare('DELETE FROM planet_chat_messages WHERE planet_id = ?').run(planetId)
 }
@@ -147,7 +164,7 @@ export class PlanetChatRegistry {
     const planet = getPlanet(planetId)
     if (!planet) throw new Error(`Planet ${planetId} not found`)
 
-    const history = loadHistory(planetId)
+    const history = appendInterruptedTurnNotice(planetId, loadHistory(planetId))
     const systemPrompt = buildSystemPrompt({
       planetName: planet.name,
       projectPath: planet.projectPath,

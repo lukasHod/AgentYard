@@ -42,7 +42,18 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     socket.on('agent:send', (payload: ClientEvents['agent:send']) => {
       if (typeof payload?.agentRunId !== 'string' || typeof payload?.content !== 'string') return
       if (payload.content.length === 0) return
-      manager.get(payload.agentRunId)?.sendUserMessage(payload.content)
+      const session = manager.get(payload.agentRunId)
+      if (!session) {
+        app.log.warn({ agentRunId: payload.agentRunId }, 'agent:send target session not found')
+        socket.emit('agent:message', {
+          agentRunId: payload.agentRunId,
+          role: 'system',
+          content: 'This chat session is no longer running. Reopen the chat and resend your message.',
+          timestamp: Date.now(),
+        })
+        return
+      }
+      session.sendUserMessage(payload.content)
     })
 
     socket.on('clarification:reply', (payload: ClientEvents['clarification:reply']) => {
