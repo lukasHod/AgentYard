@@ -14,11 +14,12 @@ program
   .description('Start the AgentYard server and open the UI in your browser')
   .option('-p, --port <port>', 'port to bind', '4242')
   .option('--no-open', 'do not auto-open the browser')
-  .option('--dev', 'development mode (do not serve client static; expect Vite on :5173)')
+  .option('--dev', 'development mode (do not serve client static; expect Vite separately)')
   .action(async (opts: { port: string; open: boolean; dev: boolean }) => {
     const port = Number(opts.port)
     const { address, shutdown } = await startServer({ port, dev: !!opts.dev })
-    const uiUrl = opts.dev ? 'http://localhost:5173' : address
+    const devClientPort = process.env.AGENTYARD_CLIENT_PORT ?? '5173'
+    const uiUrl = opts.dev ? `http://localhost:${devClientPort}` : address
     console.log(`\n  AgentYard is up.`)
     console.log(`  Server:  ${address}`)
     console.log(`  UI:      ${uiUrl}\n`)

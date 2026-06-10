@@ -22,9 +22,16 @@ npm install
 npm run dev
 ```
 
-- Server starts on `http://localhost:4242`
-- Vite dev server on `http://localhost:5173` (this is the URL to visit during development)
+- AgentYard automatically picks free localhost ports for the server and Vite UI.
+- The terminal prints the actual URLs, for example `http://localhost:4242` and `http://localhost:5173`.
 - Type a message, watch the agent reply. Try: *"Use the request_clarification tool to ask what color my favorite is, then acknowledge."* You should see the amber "incoming transmission" panel, reply, and the agent continues.
+
+If you need fixed ports while working beside another app, run the pieces manually:
+
+```bash
+npm run dev:server -- --port 4242
+npm run dev:client -- --port 5174
+```
 
 Smoke test (assumes `npm run dev` already running):
 

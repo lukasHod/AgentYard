@@ -4,6 +4,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
+const clientPort = Number(process.env.AGENTYARD_CLIENT_PORT ?? 5173)
+const serverPort = Number(process.env.AGENTYARD_SERVER_PORT ?? 4242)
+const serverHttpTarget = `http://localhost:${serverPort}`
+const serverWsTarget = `ws://localhost:${serverPort}`
 
 export default defineConfig({
   plugins: [react()],
@@ -22,15 +26,15 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
-    strictPort: false,
+    port: clientPort,
+    strictPort: process.env.AGENTYARD_CLIENT_PORT !== undefined,
     proxy: {
       // Regex-anchored so it matches only /api/<rest> and not e.g.
       // /api.ts (which would collide with src/client/api.ts at the
       // Vite dev root).
-      '^/api/': 'http://localhost:4242',
+      '^/api/': serverHttpTarget,
       '/socket.io': {
-        target: 'ws://localhost:4242',
+        target: serverWsTarget,
         ws: true,
         changeOrigin: true,
       },
