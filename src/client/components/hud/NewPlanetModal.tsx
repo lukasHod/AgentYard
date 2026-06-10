@@ -4,12 +4,14 @@ import { GlassButton } from '../glass/GlassButton'
 import { apiPost } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { FolderPickerModal } from '../FolderPickerModal'
+import { readLastProjectParent, rememberProjectParent } from '../../state/projectPickerPrefs'
 
 export function NewPlanetModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
   const [projectPath, setProjectPath] = useState('')
   const [busy, setBusy] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
+  const [lastProjectParent] = useState(() => readLastProjectParent())
 
   const submit = async () => {
     if (!name.trim() || !projectPath.trim()) return
@@ -17,6 +19,7 @@ export function NewPlanetModal({ onClose }: { onClose: () => void }) {
     const res = await apiPost('/api/planets', { name: name.trim(), projectPath: projectPath.trim() })
     setBusy(false)
     if (!res.ok) { pushToast('error', `Create project failed: ${res.error}`); return }
+    rememberProjectParent(projectPath)
     onClose()
   }
 
@@ -24,7 +27,11 @@ export function NewPlanetModal({ onClose }: { onClose: () => void }) {
     <>
       {pickingFolder && (
         <FolderPickerModal
-          onSelect={(p) => setProjectPath(p)}
+          initialPath={lastProjectParent}
+          onSelect={(p) => {
+            rememberProjectParent(p)
+            setProjectPath(p)
+          }}
           onClose={() => setPickingFolder(false)}
         />
       )}

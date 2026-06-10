@@ -659,7 +659,7 @@ export function FocusedPanel() {
                     setConfirmingDelete(false)
                     back()
                     const res = await apiDelete(`/api/planets/${planet!.id}`)
-                    if (!res.ok) pushToast({ message: `delete failed: ${res.error}`, variant: 'error' })
+                    if (!res.ok) pushToast('error', `delete failed: ${res.error}`)
                   }}>confirm delete</GlassButton>
                 </>
               ) : (
