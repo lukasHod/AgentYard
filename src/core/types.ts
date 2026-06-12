@@ -70,9 +70,11 @@ export interface FeatureSummary {
   planetId: number
   name: string
   task: string
+  description: string | null
+  chatName: string | null
   branch: string | null
   worktreePath: string | null
-  status: 'pending' | 'running' | 'complete' | 'failed'
+  status: 'idle' | 'done' | 'failed' | string
   finalSummary: string | null
   error: string | null
   workflowId: number

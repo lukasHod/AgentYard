@@ -1,12 +1,14 @@
 import { createRepo } from './repository.js'
 
-export type FeatureStatus = 'pending' | 'running' | 'complete' | 'failed'
+export type FeatureStatus = 'idle' | 'done' | 'failed' | string
 
 export interface Feature {
   id: number
   planetId: number
   name: string
   task: string
+  description: string | null
+  chatName: string | null
   branch: string | null
   worktreePath: string | null
   status: FeatureStatus
@@ -22,6 +24,8 @@ interface FeatureRow {
   planet_id: number
   name: string
   task: string
+  description: string | null
+  chat_name: string | null
   branch: string | null
   worktree_path: string | null
   status: FeatureStatus
@@ -38,6 +42,8 @@ function rowToFeature(row: FeatureRow): Feature {
     planetId: row.planet_id,
     name: row.name,
     task: row.task,
+    description: row.description,
+    chatName: row.chat_name,
     branch: row.branch,
     worktreePath: row.worktree_path,
     status: row.status,
@@ -73,13 +79,15 @@ export function createFeature(opts: {
     .prepare(
       'INSERT INTO features (planet_id, name, task, status, created_at, workflow_id) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    .run(opts.planetId, opts.name, opts.task, 'pending', Date.now(), opts.workflowId)
+    .run(opts.planetId, opts.name, opts.task, 'idle', Date.now(), opts.workflowId)
   return getFeature(Number(info.lastInsertRowid))!
 }
 
 export function updateFeature(
   id: number,
   patch: Partial<{
+    description: string | null
+    chatName: string | null
     branch: string | null
     worktreePath: string | null
     status: FeatureStatus
@@ -90,6 +98,14 @@ export function updateFeature(
 ): Feature | undefined {
   const sets: string[] = []
   const vals: unknown[] = []
+  if ('description' in patch) {
+    sets.push('description = ?')
+    vals.push(patch.description)
+  }
+  if ('chatName' in patch) {
+    sets.push('chat_name = ?')
+    vals.push(patch.chatName)
+  }
   if ('branch' in patch) {
     sets.push('branch = ?')
     vals.push(patch.branch)
