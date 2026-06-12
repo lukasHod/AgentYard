@@ -91,13 +91,21 @@ export function cameraTargetFor(focus: Focus, lookup: PlanetPositionLookup): Cam
   if (focus.lod === 2) {
     const p = lookup(focus.planetId)
     if (!p) return SYSTEM_OVERVIEW
-    // Fallback when no ship-position lookup is supplied: frame the planet
-    // a bit closer than LOD 1 so the user sees something useful before
-    // ship-aware framing kicks in (see cameraTargetForV2).
-    const [cx, cy, cz] = planetCameraPosition(p)
+    // Rotate camera around planet's Y-axis so the planet slides off to the
+    // right of frame when a feature opens.  Looking in the orbit-tangent
+    // direction puts the planet ~90° to camera-right (outside any normal
+    // FOV) and the existing 0.8 s lerp slides the planet from its LOD-1
+    // position to the right edge and off-screen naturally.
+    const SLIP = Math.PI * (70 / 180) // 70 degrees CCW around planet Y
+    const cosA = Math.cos(SLIP)
+    const sinA = Math.sin(SLIP)
+    // Rotate PLANET_FOLLOW_OFFSET (0, 0.4, 1.6) around Y by SLIP
+    const rx = -PLANET_FOLLOW_OFFSET.z * sinA // 0*cos - 1.6*sin
+    const rz =  PLANET_FOLLOW_OFFSET.z * cosA // 0*sin + 1.6*cos
+    const AHEAD = 6 // units to look ahead along tangent
     return {
-      position: [(cx + p.x) / 2, cy, (cz + p.z) / 2],
-      lookAt: planetLookAt(p),
+      position: [p.x + rx, p.y + PLANET_FOLLOW_OFFSET.y, p.z + rz],
+      lookAt:   [p.x + rx - cosA * AHEAD, p.y, p.z + rz - sinA * AHEAD],
     }
   }
   return SYSTEM_OVERVIEW

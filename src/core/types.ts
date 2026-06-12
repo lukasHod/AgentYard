@@ -70,9 +70,11 @@ export interface FeatureSummary {
   planetId: number
   name: string
   task: string
+  description: string | null
+  chatName: string | null
   branch: string | null
   worktreePath: string | null
-  status: 'pending' | 'running' | 'complete' | 'failed'
+  status: 'idle' | 'running' | 'done' | 'complete' | 'failed' | 'pending' | (string & {})
   finalSummary: string | null
   error: string | null
   workflowId: number
@@ -110,6 +112,7 @@ export interface ServerEvents {
   'planet:deleted':   { id: number }
   'feature:created':  FeatureSummary
   'feature:updated':  FeatureSummary
+  'feature:deleted':  { id: number }
   'handoff:created':  HandoffSummary
   'handoff:pickedup': { handoffBranch: string; feature: FeatureSummary }
   'handoff:cancelled': { handoffBranch: string }

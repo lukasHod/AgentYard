@@ -43,10 +43,18 @@ describe('cameraTargetFor', () => {
     expect(t.position[2]).toBeGreaterThan(2)
   })
 
-  it('returns sentinel for LOD 2 (ship positions are dynamic; handled by rig)', () => {
+  it('LOD 2 rotates camera so planet slides off to the right (lookAt is to planet-left)', () => {
     const t = cameraTargetFor({ lod: 2, planetId: 1, shipFeatureId: 7 }, () => planetPos)
-    // LookAt is the same off-centre target as LOD 1 (lookAt offset is shared).
+    // Camera is rotated ~70° around planet Y so planet ends up off-screen
+    // to the right. LookAt is along the orbit tangent, which is to the
+    // planet's left (lookAt.x < planet.x).
     expect(t.lookAt[0]).toBeLessThan(6)
+    // Camera is no longer zooming in toward the planet — position is at
+    // roughly LOD-1 radius from the planet, just rotated.
+    const dx = t.position[0] - 6
+    const dy = t.position[1]
+    const dz = t.position[2]
+    expect(Math.hypot(dx, dy, dz)).toBeLessThan(2.5)
   })
 })
 

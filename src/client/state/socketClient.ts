@@ -37,6 +37,7 @@ export function initSocketClient(): Socket {
   socket.on('planet:deleted', (ev: ServerEvents['planet:deleted']) => store.applyPlanetDeleted(ev))
   socket.on('feature:created', (ev: ServerEvents['feature:created']) => store.applyFeatureCreated(ev))
   socket.on('feature:updated', (ev: ServerEvents['feature:updated']) => store.applyFeatureUpdated(ev))
+  socket.on('feature:deleted', (ev: ServerEvents['feature:deleted']) => store.applyFeatureDeleted(ev.id))
 
   return socket
 }

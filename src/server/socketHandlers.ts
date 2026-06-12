@@ -4,6 +4,7 @@ import type { SessionManager } from './runtime/SessionManager.js'
 import type { TestRunRegistry } from './runtime/testRun.js'
 import type { RunRegistry } from './runState.js'
 import type { PlanetChatRegistry } from './planetChat.js'
+import type { FeatureChatRegistry } from './featureChat.js'
 import type { TranscriptStore } from './transcriptStore.js'
 import type { TypedIOServer, TypedSocket } from './socketTypes.js'
 
@@ -15,6 +16,7 @@ export interface WireSocketDeps {
   runState: RunRegistry
   transcripts: TranscriptStore
   planetChats: PlanetChatRegistry
+  featureChats?: FeatureChatRegistry
 }
 
 /**
@@ -25,7 +27,7 @@ export interface WireSocketDeps {
  * test-run:*) get forwarded to the SessionManager / TestRunRegistry.
  */
 export function wireSocketHandlers(deps: WireSocketDeps): void {
-  const { app, io, manager, testRuns, runState, transcripts, planetChats } = deps
+  const { app, io, manager, testRuns, runState, transcripts, planetChats, featureChats } = deps
 
   // socket.io's typed-event generics give us static event names / payload
   // shapes (see socketTypes.ts), but the wire is still untrusted at runtime
@@ -36,6 +38,7 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     socket.emit('session:list', manager.describeAll())
     transcripts.catchUp(socket)
     planetChats.catchUpSocket(socket)
+    featureChats?.catchUpSocket(socket)
     const snapshot = runState.snapshot()
     if (snapshot) socket.emit('run:snapshot', snapshot)
 
