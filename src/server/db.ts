@@ -49,6 +49,16 @@ CREATE TABLE IF NOT EXISTS planet_chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_planet_chat_messages_planet
   ON planet_chat_messages(planet_id, id);
+
+CREATE TABLE IF NOT EXISTS feature_chat_messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  feature_id INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  timestamp  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feature_chat_messages_feature
+  ON feature_chat_messages (feature_id, id);
 `
 
 export type DB = Database.Database
@@ -99,6 +109,18 @@ function runAddHandoffContextMigration(db: DB) {
   }
 }
 
+function runAddDescriptionMigration(db: DB) {
+  if (tableExists(db, 'features') && !columnExists(db, 'features', 'description')) {
+    db.exec(`ALTER TABLE features ADD COLUMN description TEXT`)
+  }
+}
+
+function runAddChatNameMigration(db: DB) {
+  if (tableExists(db, 'features') && !columnExists(db, 'features', 'chat_name')) {
+    db.exec(`ALTER TABLE features ADD COLUMN chat_name TEXT`)
+  }
+}
+
 export function getDb(): DB {
   if (_db) return _db
   mkdirSync(DB_DIR, { recursive: true })
@@ -110,6 +132,8 @@ export function getDb(): DB {
   runAddTextureMigration(db)
   runAddHasCloudsMigration(db)
   runAddHandoffContextMigration(db)
+  runAddDescriptionMigration(db)
+  runAddChatNameMigration(db)
   _db = db
   return db
 }
