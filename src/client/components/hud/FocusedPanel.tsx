@@ -407,7 +407,9 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
     setMarkingDone(true)
     const res = await apiPost(`/api/features/${feature.id}/done`)
     setMarkingDone(false)
-    if (!res.ok) {
+    if (res.ok) {
+      pushToast('success', 'Feature marked as done.')
+    } else {
       pushToast('error', `Couldn't mark done: ${res.error}`)
     }
   }
