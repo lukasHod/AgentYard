@@ -15,6 +15,7 @@ import { seedDefaultScriptsIfMissing } from './scriptsSeed.js'
 import { ensureDefaultWorkflow } from './workflows.js'
 import { RunRegistry } from './runState.js'
 import { PlanetChatRegistry } from './planetChat.js'
+import { FeatureChatRegistry } from './featureChat.js'
 import { TranscriptStore } from './transcriptStore.js'
 import { wireSocketHandlers } from './socketHandlers.js'
 import type { TypedIOServer } from './socketTypes.js'
@@ -92,6 +93,7 @@ export async function startServer(opts: ServerOptions) {
   const runState = new RunRegistry(io)
   const testRuns = new TestRunRegistry(io)
   const planetChats = new PlanetChatRegistry({ manager, io, runState, log: app.log })
+  const featureChats = new FeatureChatRegistry({ manager, io, runState, log: app.log })
 
   manager.on('session:added', (desc: SessionDescriptor) => transcripts.onSessionAdded(desc))
   manager.on('session:removed', (ev: { id: string }) => transcripts.onSessionRemoved(ev))
@@ -108,6 +110,7 @@ export async function startServer(opts: ServerOptions) {
     runState,
     transcripts,
     planetChats,
+    featureChats,
     apiError,
   }
   wireSocketHandlers(ctx)
