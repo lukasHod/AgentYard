@@ -53,10 +53,21 @@ function FeaturesTab({
   planetId: number
 }) {
   const [handoffTarget, setHandoffTarget] = useState<FeatureSummary | null>(null)
+  const [creating, setCreating] = useState(false)
+  const focusShip = useUiStore((s) => s.focusShip)
+  const focus = useUiStore((s) => s.focus)
 
-  if (features.length === 0) {
-    return <EmptyMessage>no features yet</EmptyMessage>
+  const handleNewFeature = async () => {
+    setCreating(true)
+    const res = await apiPost<FeatureSummary>(`/api/planets/${planetId}/features`)
+    setCreating(false)
+    if (res.ok) {
+      focusShip(planetId, res.data.id)
+    } else {
+      pushToast('error', `Couldn't create feature: ${res.error}`)
+    }
   }
+
   return (
     <>
       {handoffTarget && (
@@ -66,43 +77,70 @@ function FeaturesTab({
           onClose={() => setHandoffTarget(null)}
         />
       )}
-      <ul className="space-y-2">
-        {features.map((f) => (
-          <li key={f.id} className="border border-sky-400/15 rounded p-2">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-sky-300 truncate">{f.name}</span>
-              <div className="flex items-center gap-2 shrink-0">
-                {(f.status === 'pending' || f.status === 'running') && (
-                  <GlassButton
-                    variant="ghost"
-                    className="text-[10px] py-0 px-1.5"
-                    onClick={() => setHandoffTarget(f)}
-                  >
-                    hand off
-                  </GlassButton>
+      <div className="mb-3">
+        <GlassButton
+          variant="primary"
+          className="text-xs"
+          onClick={() => void handleNewFeature()}
+          disabled={creating}
+        >
+          {creating ? 'creating…' : '+ New Feature'}
+        </GlassButton>
+      </div>
+      {features.length === 0 ? (
+        <EmptyMessage>no features yet</EmptyMessage>
+      ) : (
+        <ul className="space-y-2">
+          {features.map((f) => {
+            const isActive = focus.lod === 2 && focus.shipFeatureId === f.id
+            return (
+              <li
+                key={f.id}
+                className={`border rounded p-2 cursor-pointer transition-colors ${
+                  isActive
+                    ? 'border-sky-400/60 bg-sky-400/10'
+                    : 'border-sky-400/15 hover:border-sky-400/30 hover:bg-sky-400/5'
+                }`}
+                onClick={() => focusShip(planetId, f.id)}
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sky-300 truncate">{f.chatName ?? f.name}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {(f.status === 'pending' || f.status === 'running') && (
+                      <GlassButton
+                        variant="ghost"
+                        className="text-[10px] py-0 px-1.5"
+                        onClick={(e) => { e.stopPropagation(); setHandoffTarget(f) }}
+                      >
+                        hand off
+                      </GlassButton>
+                    )}
+                    <span
+                      className={`text-[10px] tracking-widest ${
+                        f.status === 'running'
+                          ? 'text-sky-300'
+                          : f.status === 'complete'
+                            ? 'text-emerald-300'
+                            : f.status === 'failed'
+                              ? 'text-rose-400'
+                              : 'text-slate-500'
+                      }`}
+                    >
+                      {f.status}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-slate-300 mt-1 whitespace-pre-wrap line-clamp-2 text-xs">
+                  {f.description ?? f.task}
+                </p>
+                {f.branch && (
+                  <p className="text-[10px] text-slate-500 mt-1 font-mono truncate">{f.branch}</p>
                 )}
-                <span
-                  className={`text-[10px] tracking-widest ${
-                    f.status === 'running'
-                      ? 'text-sky-300'
-                      : f.status === 'complete'
-                        ? 'text-emerald-300'
-                        : f.status === 'failed'
-                          ? 'text-rose-400'
-                          : 'text-slate-500'
-                  }`}
-                >
-                  {f.status}
-                </span>
-              </div>
-            </div>
-            <p className="text-slate-300 mt-1 whitespace-pre-wrap line-clamp-2 text-xs">{f.task}</p>
-            {f.branch && (
-              <p className="text-[10px] text-slate-500 mt-1 font-mono truncate">{f.branch}</p>
-            )}
-          </li>
-        ))}
-      </ul>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </>
   )
 }
@@ -247,10 +285,13 @@ function RunTabContent({
 function ChatPanelBody({
   planet,
   targetSessionId,
+  featureId,
 }: {
   planet: PlanetSummary
-  /** Explicit session to render; null → auto-open the planet's ambient chat (LOD 1). */
+  /** Explicit session to render; null → auto-open the ambient/feature chat. */
   targetSessionId: string | null
+  /** When set, we are at LOD 2; auto-open uses the feature chat endpoint. */
+  featureId?: number
 }) {
   const sessions = useSessionList()
   const transcripts = useTranscriptsMap()
@@ -266,23 +307,29 @@ function ChatPanelBody({
     () =>
       targetSessionId
         ? (sessions.find((s) => s.id === targetSessionId) ?? null)
-        : (ambientSession ?? null),
-    [targetSessionId, sessions, ambientSession],
+        : featureId !== undefined
+          ? null // feature chat not yet open; handled by auto-open effect below
+          : (ambientSession ?? null),
+    [targetSessionId, sessions, ambientSession, featureId],
   )
 
   const [opening, setOpening] = useState(false)
   const [openErr, setOpenErr] = useState<string | null>(null)
 
-  // Reset the cached error when the user switches planets so the next planet
-  // gets a fresh auto-open attempt.
+  // Reset the cached error when the user switches planets/features so the next
+  // one gets a fresh auto-open attempt.
   useEffect(() => {
     setOpenErr(null)
-  }, [planet.id])
+  }, [planet.id, featureId])
 
   const open = useCallback(async () => {
     setOpening(true)
     setOpenErr(null)
-    const res = await apiPost(`/api/planets/${planet.id}/chat/open`)
+    const url =
+      featureId !== undefined
+        ? `/api/features/${featureId}/chat/open`
+        : `/api/planets/${planet.id}/chat/open`
+    const res = await apiPost(url)
     setOpening(false)
     if (!res.ok) {
       setOpenErr(res.error)
@@ -290,11 +337,11 @@ function ChatPanelBody({
     }
     // On success the server emits `session:added` which lands in the store and
     // the panel re-renders with `session` populated.
-  }, [planet.id])
+  }, [planet.id, featureId])
 
-  // Auto-open when entering a planet that has no ambient session yet.
-  // Only fires at LOD 1 (targetSessionId === null); at LOD 2 the drone session
-  // is managed by the server, not by the client.
+  // Auto-open when entering a planet/feature that has no chat session yet.
+  // At LOD 1 (featureId undefined): opens the planet ambient chat.
+  // At LOD 2 (featureId set): opens the feature's dedicated chat session.
   useEffect(() => {
     if (targetSessionId !== null) return
     if (session || opening || openErr || !connected || !planet.pathExists) return
@@ -354,11 +401,46 @@ function ChatPanelBody({
 // ---------------------------------------------------------------------------
 
 function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
+  const [markingDone, setMarkingDone] = useState(false)
+
+  const handleMarkDone = async () => {
+    setMarkingDone(true)
+    const res = await apiPost(`/api/features/${feature.id}/done`)
+    setMarkingDone(false)
+    if (!res.ok) {
+      pushToast('error', `Couldn't mark done: ${res.error}`)
+    }
+  }
+
   return (
     <>
       <div className="text-xs tracking-widest text-slate-400">FEATURE</div>
-      <h3 className="text-sky-100 text-lg mt-1">{feature.name}</h3>
-      <p className="text-sm text-slate-300 mt-2 whitespace-pre-wrap">{feature.task}</p>
+      <h3 className="text-sky-100 text-lg mt-1">{feature.chatName ?? feature.name}</h3>
+      {feature.description !== null ? (
+        <p className="text-sm text-slate-300 mt-2 whitespace-pre-wrap">{feature.description}</p>
+      ) : (
+        <p className="text-sm text-slate-500 mt-2 italic">Generating description…</p>
+      )}
+
+      {feature.task && (
+        <>
+          <div className="text-xs tracking-widest text-slate-400 mt-4">TASK</div>
+          <p className="text-sm text-slate-300 mt-1 whitespace-pre-wrap">{feature.task}</p>
+        </>
+      )}
+
+      {feature.status !== 'done' && (
+        <div className="mt-4">
+          <GlassButton
+            variant="ghost"
+            className="text-xs"
+            onClick={() => void handleMarkDone()}
+            disabled={markingDone}
+          >
+            {markingDone ? 'marking…' : '✓ Mark done'}
+          </GlassButton>
+        </div>
+      )}
 
       <div className="text-xs tracking-widest text-slate-400 mt-4">STATUS</div>
       <p
@@ -606,9 +688,9 @@ export function FocusedPanel() {
   const targetSessionId = useMemo(() => {
     if (focus.lod !== 2) return null // LOD 1 → null → ChatPanelBody opens the ambient chat
     if (focus.chatDroneId) return focus.chatDroneId
-    // Default at LOD 2: bind to the leader session for this feature.
-    const leader = sessions.find((s) => s.role === 'leader')
-    return leader?.id ?? null
+    // Default at LOD 2: find the feature's dedicated chat session by label.
+    const label = `feature:${focus.shipFeatureId}:chat`
+    return sessions.find((s) => s.label === label)?.id ?? null
   }, [focus, sessions])
 
   const [wfOpen, setWfOpen] = useState(false)
@@ -752,7 +834,11 @@ export function FocusedPanel() {
               >
                 <GlassPanel className="h-full p-4 overflow-hidden relative">
                   <MinimizeButton onClick={() => setChatPanelOpen(false)} title="hide chat panel" />
-                  <ChatPanelBody planet={planet!} targetSessionId={targetSessionId} />
+                  <ChatPanelBody
+                    planet={planet!}
+                    targetSessionId={targetSessionId}
+                    featureId={focus.lod === 2 ? focus.shipFeatureId : undefined}
+                  />
                 </GlassPanel>
               </div>
             )}
