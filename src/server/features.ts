@@ -86,6 +86,7 @@ export function createFeature(opts: {
 export function updateFeature(
   id: number,
   patch: Partial<{
+    name: string
     description: string | null
     chatName: string | null
     branch: string | null
@@ -98,6 +99,10 @@ export function updateFeature(
 ): Feature | undefined {
   const sets: string[] = []
   const vals: unknown[] = []
+  if ('name' in patch) {
+    sets.push('name = ?')
+    vals.push(patch.name)
+  }
   if ('description' in patch) {
     sets.push('description = ?')
     vals.push(patch.description)

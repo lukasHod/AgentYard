@@ -19,6 +19,7 @@ export function createUpdateFeatureInfoTool(deps: {
     async (args) => {
       const updated = updateFeature(deps.featureId, {
         chatName: args.chatName,
+        name: args.name,
         description: args.description,
       })
       if (!updated) {
