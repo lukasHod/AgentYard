@@ -72,15 +72,19 @@ export function createFeature(opts: {
   planetId: number
   name: string
   task: string
-  workflowId: number
+  workflowId?: number
 }): Feature {
   const info = features
     .db()
     .prepare(
       'INSERT INTO features (planet_id, name, task, status, created_at, workflow_id) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    .run(opts.planetId, opts.name, opts.task, 'idle', Date.now(), opts.workflowId)
+    .run(opts.planetId, opts.name, opts.task, 'idle', Date.now(), opts.workflowId ?? 0)
   return getFeature(Number(info.lastInsertRowid))!
+}
+
+export function deleteFeature(id: number): void {
+  features.db().prepare('DELETE FROM features WHERE id = ?').run(id)
 }
 
 export function updateFeature(

@@ -1,14 +1,10 @@
 import type { FastifyBaseLogger } from 'fastify'
-import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
 import { getDb } from './db.js'
 import { getPlanet } from './planets.js'
 import type { RunRegistry } from './runState.js'
 import type { Session, SessionEvent } from './runtime/Session.js'
 import type { SessionDescriptor, SessionManager } from './runtime/SessionManager.js'
-import { createStartFeatureTool } from './runtime/tools/startFeature.js'
 import type { TypedIOServer, TypedSocket } from './socketTypes.js'
-
-type AnyTool = SdkMcpToolDefinition<any>
 
 export interface PersistedChatMessage {
   role: 'assistant' | 'user' | 'system'
@@ -73,11 +69,8 @@ function buildSystemPrompt(opts: {
     `You are the AgentYard planet-chat assistant for the project "${opts.planetName}".`,
     `Working directory: ${opts.projectPath}. You have the full Claude Code toolset (Read, Edit, Write, Glob, Grep, Bash, etc.) — use it freely to explore and modify the project.`,
     '',
-    'Two modes of use:',
-    '1. Q&A — the user asks questions about the project and you answer using the tools to inspect the code. Do not edit files unless the user clearly wants edits.',
-    '2. Feature creation — when the user wants you to BUILD something larger (a new feature, a refactor that touches many files, etc.), prefer calling the `start_feature` tool. It spawns a worktree + workflow that runs the build for them in isolation. Confirm the feature name and task wording before calling.',
-    '',
-    'Style: terse, direct, no preamble. When you take an action, say what you did in one sentence. When in doubt about scope, ask one targeted question via `request_clarification`.',
+    'Use: Q&A — the user asks questions about the project and you answer using the tools to inspect the code. Do not edit files unless the user clearly wants edits.',
+    'Style: terse, direct, no preamble.',
   ].join('\n')
 
   if (opts.history.length === 0) return base
@@ -171,21 +164,13 @@ export class PlanetChatRegistry {
       history,
     })
 
-    const startFeatureTool = createStartFeatureTool({
-      planetId,
-      manager: this.deps.manager,
-      io: this.deps.io,
-      runState: this.deps.runState,
-      log: this.deps.log,
-    }) as AnyTool
-
     const session = this.deps.manager.spawn({
       role: 'free',
       label: buildPlanetChatLabel(planetId),
       systemPrompt,
       cwd: planet.projectPath,
       toolPreset: 'claude_code',
-      runtimeTools: [startFeatureTool],
+      runtimeTools: [],
       // Load the user's installed Claude Code config — personal skills,
       // MCP servers, plugins from `~/.claude/` + `<cwd>/.claude/`.
       // Drones/leaders intentionally run with `settingSources: []` so

@@ -3,6 +3,7 @@ import type { SessionManager } from '../runtime/SessionManager.js'
 import type { TestRunRegistry } from '../runtime/testRun.js'
 import type { RunRegistry } from '../runState.js'
 import type { PlanetChatRegistry } from '../planetChat.js'
+import type { FeatureChatRegistry } from '../featureChat.js'
 import type { TranscriptStore } from '../transcriptStore.js'
 import type { TypedIOServer } from '../socketTypes.js'
 
@@ -19,6 +20,7 @@ export interface AppContext {
   runState: RunRegistry
   transcripts: TranscriptStore
   planetChats: PlanetChatRegistry
+  featureChats?: FeatureChatRegistry
   apiError: (
     reply: FastifyReply,
     code: number,
