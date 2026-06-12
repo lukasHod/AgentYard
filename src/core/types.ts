@@ -74,7 +74,7 @@ export interface FeatureSummary {
   chatName: string | null
   branch: string | null
   worktreePath: string | null
-  status: 'idle' | 'done' | 'failed' | string
+  status: 'idle' | 'running' | 'done' | 'complete' | 'failed' | 'pending' | (string & {})
   finalSummary: string | null
   error: string | null
   workflowId: number

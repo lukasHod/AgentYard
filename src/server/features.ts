@@ -1,6 +1,6 @@
 import { createRepo } from './repository.js'
 
-export type FeatureStatus = 'idle' | 'done' | 'failed' | string
+export type FeatureStatus = 'idle' | 'running' | 'done' | 'complete' | 'failed' | 'pending' | (string & {})
 
 export interface Feature {
   id: number
