@@ -13,7 +13,7 @@ export function createUpdateFeatureInfoTool(deps: {
     'Update the display name and description for this feature',
     {
       chatName: z.string().describe('Human-readable title, e.g. "Dashboard Readability Redesign"'),
-      name: z.string().describe('Slug for git branch, e.g. "dashboard-redesign"'),
+      name: z.string().min(1).describe('Slug for git branch, e.g. "dashboard-redesign"'),
       description: z.string().describe('1-3 sentence summary of what this feature is about'),
     },
     async (args) => {

@@ -29,7 +29,7 @@ export function createRunFeatureWorkflowTool(deps: {
         .describe('Workflow to run; omit to use planet default'),
     },
     async (args) => {
-      const feature = getFeature(deps.featureId)
+      let feature = getFeature(deps.featureId)
       if (!feature) {
         return {
           isError: true,
@@ -75,6 +75,12 @@ export function createRunFeatureWorkflowTool(deps: {
           }
         }
       }
+      if (activeFeatureId === deps.featureId && deps.runState.isInFlight()) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: 'This feature workflow is already running.' }],
+        }
+      }
 
       deps.runState.setActiveFeatureId(deps.featureId)
 
@@ -92,10 +98,12 @@ export function createRunFeatureWorkflowTool(deps: {
           status: 'running',
         })!
         deps.io.emit('feature:updated', afterWorktree)
+        feature = afterWorktree
       } catch (e) {
         const internalMsg = e instanceof Error ? e.message : String(e)
         const failed = updateFeature(feature.id, { status: 'failed', error: internalMsg })!
         deps.io.emit('feature:updated', failed)
+        deps.runState.setActiveFeatureId(null)
         return {
           isError: true,
           content: [
