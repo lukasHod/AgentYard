@@ -60,6 +60,7 @@ interface Actions {
   applyPlanetDeleted: (ev: ServerEvents['planet:deleted']) => void
   applyFeatureCreated: (f: ServerEvents['feature:created']) => void
   applyFeatureUpdated: (f: ServerEvents['feature:updated']) => void
+  applyFeatureDeleted: (id: number) => void
   setPlanets: (planets: PlanetSummary[]) => void
   setFeatures: (features: Map<number, FeatureSummary[]>) => void
   setPlanetFeatures: (planetId: number, features: FeatureSummary[]) => void
@@ -228,6 +229,16 @@ export const useSocketStore = create<State & Actions>((set) => ({
       const list = (prev.features.get(f.planetId) ?? []).map((x) => (x.id === f.id ? f : x))
       const features = new Map(prev.features)
       features.set(f.planetId, list)
+      return { features }
+    }),
+
+  applyFeatureDeleted: (id) =>
+    set((prev) => {
+      const features = new Map(prev.features)
+      for (const [planetId, list] of features) {
+        const filtered = list.filter((f) => f.id !== id)
+        if (filtered.length !== list.length) features.set(planetId, filtered)
+      }
       return { features }
     }),
 

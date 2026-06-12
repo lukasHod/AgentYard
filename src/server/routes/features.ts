@@ -26,7 +26,6 @@ export function registerFeatureRoutes(ctx: AppContext): void {
 
   app.post<{
     Params: { id: string }
-    Body: { chatName?: string }
   }>('/api/planets/:id/features', async (req, reply) => {
     const planet = getPlanet(Number(req.params.id))
     if (!planet) return reply.code(404).send({ error: 'planet not found' })
@@ -66,18 +65,22 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     const feature = getFeature(featureId)
     if (!feature) return reply.code(404).send({ error: 'feature not found' })
 
-    if (ctx.featureChats) {
-      await ctx.featureChats.deleteForFeature(featureId)
-    }
-
-    if (feature.worktreePath) {
-      const planet = getPlanet(feature.planetId)
-      if (planet) {
-        await removeFeatureWorktree(planet.projectPath, feature.worktreePath)
+    try {
+      if (ctx.featureChats) {
+        await ctx.featureChats.deleteForFeature(featureId)
       }
+
+      if (feature.worktreePath) {
+        const planet = getPlanet(feature.planetId)
+        if (planet) {
+          await removeFeatureWorktree(planet.projectPath, feature.worktreePath)
+        }
+      }
+    } finally {
+      deleteFeature(featureId)
     }
 
-    deleteFeature(featureId)
+    io.emit('feature:deleted', { id: featureId })
     return { ok: true }
   })
 }

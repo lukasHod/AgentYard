@@ -112,6 +112,7 @@ export interface ServerEvents {
   'planet:deleted':   { id: number }
   'feature:created':  FeatureSummary
   'feature:updated':  FeatureSummary
+  'feature:deleted':  { id: number }
   'handoff:created':  HandoffSummary
   'handoff:pickedup': { handoffBranch: string; feature: FeatureSummary }
   'handoff:cancelled': { handoffBranch: string }
