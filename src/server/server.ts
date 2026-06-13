@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { closeDb, getDb } from './db.js'
 import { SessionManager } from './runtime/SessionManager.js'
+import { createPersistingRuntimeContext } from './runtime/runtimeContext.js'
+import { reconcileStaleSessions } from './runtime/reconcile.js'
 import type { SessionEvent } from './runtime/Session.js'
 import type { SessionDescriptor } from './runtime/SessionManager.js'
 import { TestRunRegistry } from './runtime/testRun.js'
@@ -83,6 +85,10 @@ export async function startServer(opts: ServerOptions) {
   }
 
   const manager = new SessionManager()
+  manager.setRuntimeContext(createPersistingRuntimeContext(app.log))
+  // Reconcile any non-terminal runner_sessions left from a prior process —
+  // SDK sessions can't survive restart, so they're force-terminated.
+  reconcileStaleSessions(app.log)
   const io: TypedIOServer = new IOServer(app.server, {
     // In dev the UI is served by Vite on a different origin and needs CORS allow.
     // In prod the UI is served from the same Fastify origin, so refuse cross-origin

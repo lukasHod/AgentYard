@@ -197,6 +197,7 @@ export class FeatureChatRegistry {
       toolPreset: 'claude_code',
       runtimeTools: [updateFeatureInfoTool, runFeatureWorkflowTool],
       settingSources: ['user', 'project'],
+      scope: { featureId, planetId: feature.planetId },
     })
     this.sessionByFeature.set(featureId, session.id)
     this.featureBySession.set(session.id, featureId)
