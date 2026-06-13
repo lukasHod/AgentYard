@@ -3,7 +3,7 @@ import { promisify } from 'node:util'
 import { getPlanet } from '../planets.js'
 import { createFeature, getFeature, updateFeature } from '../features.js'
 import { getWorkflow, listWorkflows } from '../workflows.js'
-import { createPickupWorktree } from '../runtime/worktrees.js'
+import { createFeatureWorktree, createPickupWorktree } from '../runtime/worktrees.js'
 import {
   createHandoffBranch,
   deleteHandoffBranch,
@@ -49,10 +49,23 @@ export function registerHandoffRoutes(ctx: AppContext): void {
 
     const { featureId, handoffNote } = req.body
 
-    const feature = getFeature(featureId)
+    let feature = getFeature(featureId)
     if (!feature) return reply.code(404).send({ error: 'feature not found' })
     if (feature.planetId !== planet.id) return reply.code(403).send({ error: 'feature does not belong to this planet' })
-    if (!feature.branch) return reply.code(422).send({ error: 'feature has no branch yet' })
+
+    // Auto-create a branch and worktree for idle features that haven't started yet.
+    if (!feature.branch) {
+      try {
+        const wt = await createFeatureWorktree({
+          planetPath: planet.projectPath,
+          featureId: feature.id,
+          featureName: feature.name,
+        })
+        feature = updateFeature(feature.id, { branch: wt.branch, worktreePath: wt.path })!
+      } catch (e) {
+        return apiError(reply, 500, 'failed to create feature branch for handoff', e)
+      }
+    }
 
     // Collect agent transcripts for all current sessions.
     const sessions = manager.describeAll()
@@ -73,7 +86,7 @@ export function registerHandoffRoutes(ctx: AppContext): void {
       try {
         await execFile('git', ['-C', feature.worktreePath, 'add', '-A'])
         await execFile('git', ['-C', feature.worktreePath, 'commit', '-m', 'wip: handoff snapshot', '--allow-empty'])
-        await execFile('git', ['-C', feature.worktreePath, 'push', 'origin', feature.branch])
+        if (feature.branch) await execFile('git', ['-C', feature.worktreePath, 'push', 'origin', feature.branch])
       } catch {
         // Best-effort — if nothing to commit or push fails, continue anyway.
       }
@@ -129,7 +142,7 @@ export function registerHandoffRoutes(ctx: AppContext): void {
     }
 
     const summary = {
-      handoffBranch: `agentyard/handoff/${feature.branch.replace(/^refs\/heads\//, '')}`,
+      handoffBranch: `agentyard/handoff/${(feature.branch ?? `idea-${feature.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${feature.id}`).replace(/^refs\/heads\//, '')}`,
       featureBranch: feature.branch,
       featureName: feature.name,
       shortDescription: payload.shortDescription,
@@ -177,22 +190,24 @@ export function registerHandoffRoutes(ctx: AppContext): void {
       workflowId,
     })
 
-    // Create worktree on the existing handed-off branch.
-    let worktreePath: string
-    try {
-      const wt = await createPickupWorktree({
-        planetPath: planet.projectPath,
-        featureId: feature.id,
-        branch: payload.branch,
-      })
-      worktreePath = wt.path
-      feature = updateFeature(feature.id, {
-        branch: payload.branch,
-        worktreePath,
-        handoffContext: JSON.stringify(payload),
-      })!
-    } catch (e) {
-      return apiError(reply, 500, 'failed to create worktree for handoff', e)
+    if (payload.branch) {
+      // Create worktree on the existing handed-off branch.
+      try {
+        const wt = await createPickupWorktree({
+          planetPath: planet.projectPath,
+          featureId: feature.id,
+          branch: payload.branch,
+        })
+        feature = updateFeature(feature.id, {
+          branch: payload.branch,
+          worktreePath: wt.path,
+          handoffContext: JSON.stringify(payload),
+        })!
+      } catch (e) {
+        return apiError(reply, 500, 'failed to create worktree for handoff', e)
+      }
+    } else {
+      feature = updateFeature(feature.id, { handoffContext: JSON.stringify(payload) })!
     }
 
     // Remove the handoff branch from origin now that it's been consumed.
