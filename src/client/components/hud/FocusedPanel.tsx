@@ -106,7 +106,7 @@ function FeaturesTab({
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sky-300 truncate">{f.chatName ?? f.name}</span>
                   <div className="flex items-center gap-2 shrink-0">
-                    {(f.status === 'pending' || f.status === 'running') && (
+                    {f.status !== 'done' && f.status !== 'complete' && (
                       <GlassButton
                         variant="ghost"
                         className="text-[10px] py-0 px-1.5"
@@ -402,6 +402,7 @@ function ChatPanelBody({
 
 function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
   const [markingDone, setMarkingDone] = useState(false)
+  const [handoffTarget, setHandoffTarget] = useState<FeatureSummary | null>(null)
 
   const handleMarkDone = async () => {
     setMarkingDone(true)
@@ -416,6 +417,13 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
 
   return (
     <>
+      {handoffTarget && (
+        <HandoffDialog
+          planetId={feature.planetId}
+          feature={handoffTarget}
+          onClose={() => setHandoffTarget(null)}
+        />
+      )}
       <div className="text-xs tracking-widest text-slate-400">FEATURE</div>
       <h3 className="text-sky-100 text-lg mt-1">{feature.chatName ?? feature.name}</h3>
       {feature.description !== null ? (
@@ -431,8 +439,8 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
         </>
       )}
 
-      {feature.status !== 'done' && (
-        <div className="mt-4">
+      {feature.status !== 'done' && feature.status !== 'complete' && (
+        <div className="mt-4 flex gap-2">
           <GlassButton
             variant="ghost"
             className="text-xs"
@@ -440,6 +448,13 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
             disabled={markingDone}
           >
             {markingDone ? 'marking…' : '✓ Mark done'}
+          </GlassButton>
+          <GlassButton
+            variant="ghost"
+            className="text-xs"
+            onClick={() => setHandoffTarget(feature)}
+          >
+            hand off
           </GlassButton>
         </div>
       )}

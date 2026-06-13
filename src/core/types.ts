@@ -83,7 +83,7 @@ export interface FeatureSummary {
 
 export interface HandoffSummary {
   handoffBranch: string
-  featureBranch: string
+  featureBranch: string | null
   featureName: string
   shortDescription: string
   sender: string

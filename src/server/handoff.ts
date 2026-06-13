@@ -1,4 +1,4 @@
-import { execFile as execFileCb } from 'node:child_process'
+import { execFile as execFileCb, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -9,10 +9,26 @@ import type { HandoffSummary } from '../core/types.js'
 const execFile = promisify(execFileCb)
 
 function git(repoPath: string, args: string[], opts?: { input?: string }) {
-  return execFile('git', ['-C', repoPath, ...args], {
-    encoding: 'utf8',
-    ...(opts?.input !== undefined ? { input: opts.input } : {}),
-  })
+  if (opts?.input !== undefined) {
+    // execFile's `input` option doesn't reliably close stdin on Windows for
+    // commands like `git mktree` that read until EOF. Use spawn with explicit
+    // stdin.end() instead.
+    return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      const proc = spawn('git', ['-C', repoPath, ...args], { stdio: ['pipe', 'pipe', 'pipe'] })
+      let stdout = ''
+      let stderr = ''
+      proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
+      proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+      proc.stdin.write(opts.input!)
+      proc.stdin.end()
+      proc.on('close', (code) => {
+        if (code === 0) resolve({ stdout, stderr })
+        else reject(Object.assign(new Error(`git ${args[0]} failed (${code}): ${stderr}`), { stdout, stderr, code }))
+      })
+      proc.on('error', reject)
+    })
+  }
+  return execFile('git', ['-C', repoPath, ...args], { encoding: 'utf8' })
 }
 
 export interface HandoffAgent {
@@ -24,7 +40,7 @@ export interface HandoffAgent {
 
 export interface HandoffPayload {
   version: 1
-  branch: string
+  branch: string | null
   featureId: number
   planetId: number
   featureName: string
@@ -62,7 +78,10 @@ export async function getGitUser(repoPath: string): Promise<string> {
  * tree or index of any existing worktree.
  */
 export async function createHandoffBranch(repoPath: string, payload: HandoffPayload): Promise<void> {
-  const handoffBranch = `agentyard/handoff/${payload.branch.replace(/^refs\/heads\//, '')}`
+  const branchSlug = payload.branch
+    ? payload.branch.replace(/^refs\/heads\//, '')
+    : `idea-${payload.featureName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${payload.featureId}`
+  const handoffBranch = `agentyard/handoff/${branchSlug}`
   const json = JSON.stringify(payload, null, 2)
 
   // Write payload to a temp file so hash-object can read it without stdin.
