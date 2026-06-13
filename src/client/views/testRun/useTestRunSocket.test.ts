@@ -38,6 +38,16 @@ const descriptor = (id: string): SessionDescriptor => ({
   role: 'drone',
   label: id,
   state: 'idle',
+  agentKind: 'claude-sdk',
+  capabilities: {
+    supports_tools: true,
+    supports_structured_events: true,
+    supports_clarification_tool: true,
+    supports_resume: false,
+    supports_cost: true,
+    supports_mcp: true,
+    supports_working_directory: true,
+  },
 })
 
 let socket: FakeSocket

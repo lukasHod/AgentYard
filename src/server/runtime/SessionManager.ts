@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
+import type { AgentCapabilities, AgentKind } from '../../core/plugins.js'
+import { CLAUDE_SDK_CAPABILITIES } from './adapters/claudeSdk.js'
 import { Session, type SessionEvent, type SessionOptions } from './Session.js'
 
 export interface SessionDescriptor {
@@ -7,6 +9,10 @@ export interface SessionDescriptor {
   role: Session['role']
   label?: string
   state: Session['state']
+  /** Always 'claude-sdk' until additional adapters land. Wire-compatible
+   * addition — older clients ignore it. */
+  agentKind: AgentKind
+  capabilities: AgentCapabilities
 }
 
 /**
@@ -55,7 +61,14 @@ export class SessionManager extends EventEmitter {
   }
 
   describe(s: Session): SessionDescriptor {
-    return { id: s.id, role: s.role, label: s.opts.label, state: s.state }
+    return {
+      id: s.id,
+      role: s.role,
+      label: s.opts.label,
+      state: s.state,
+      agentKind: 'claude-sdk',
+      capabilities: CLAUDE_SDK_CAPABILITIES,
+    }
   }
 
   describeAll(): SessionDescriptor[] {

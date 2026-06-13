@@ -1,4 +1,5 @@
 import type { PlanetTextureName } from './planetTextures'
+import type { AgentCapabilities, AgentKind } from './plugins'
 
 // Shared types used by both server and client.
 // Authoritative shapes for planets, workflows, agents, messages.
@@ -38,6 +39,13 @@ export interface SessionDescriptor {
   role: AgentRole
   label?: string
   state: AgentState
+  /**
+   * Which agent backend powers this session. Always `'claude-sdk'` until the
+   * CLI adapters land in later phases; sent over the wire so the UI can switch
+   * tool panes / cost badges based on capabilities below.
+   */
+  agentKind: AgentKind
+  capabilities: AgentCapabilities
 }
 
 export type NodeRunStatus = 'pending' | 'running' | 'complete' | 'failed'
