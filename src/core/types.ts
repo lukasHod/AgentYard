@@ -1,4 +1,5 @@
 import type { PlanetTextureName } from './planetTextures'
+import type { AgentCapabilities, AgentKind } from './plugins'
 
 // Shared types used by both server and client.
 // Authoritative shapes for planets, workflows, agents, messages.
@@ -38,6 +39,13 @@ export interface SessionDescriptor {
   role: AgentRole
   label?: string
   state: AgentState
+  /**
+   * Which agent backend powers this session. Always `'claude-sdk'` until the
+   * CLI adapters land in later phases; sent over the wire so the UI can switch
+   * tool panes / cost badges based on capabilities below.
+   */
+  agentKind: AgentKind
+  capabilities: AgentCapabilities
 }
 
 export type NodeRunStatus = 'pending' | 'running' | 'complete' | 'failed'
@@ -50,6 +58,11 @@ export interface RunSnapshot {
   nodeSummaries: Record<string, string>
   finalSummary?: string
   error?: string
+  /** Phase 7: which feature this run belongs to. Null for ad-hoc /api/runs
+   *  invocations. Sent over the wire so the dashboard can group runs. */
+  featureId?: number | null
+  /** Phase 7: planet that owns the feature, when known. */
+  planetId?: number | null
 }
 
 export interface PlanetSummary {
@@ -98,10 +111,21 @@ export interface ServerEvents {
   'session:removed':  { id: string }
   'agent:message':    { agentRunId: string; role: 'assistant' | 'user' | 'system'; content: string; timestamp: number }
   'agent:state':      { agentRunId: string; state: AgentState }
+  /** Phase 3: agent invoked a tool. Only emitted by adapters whose
+   *  capabilities.supports_structured_events is true. */
+  'agent:tool_use':   { agentRunId: string; tool: string; toolUseId: string; input: unknown; timestamp: number }
+  /** Phase 3: tool returned a result. */
+  'agent:tool_result':{ agentRunId: string; tool: string; toolUseId: string; output: unknown; isError?: boolean; timestamp: number }
+  /** Phase 3: per-turn cost report. Only emitted by adapters whose
+   *  capabilities.supports_cost is true. */
+  'agent:cost':       { agentRunId: string; inputTokens: number; outputTokens: number; timestamp: number }
   'planet:state':     { planetId: number; state: PlanetState }
   'clarification:requested': { agentRunId: string; toolUseId: string; question: string }
   'clarification:resolved':  { agentRunId: string; toolUseId: string }
   'run:snapshot':     RunSnapshot
+  /** Phase 7: emitted on connection so a dashboard tab sees every in-flight
+   *  run, not just the most recent one. Empty array means no active runs. */
+  'run:snapshot:list': RunSnapshot[]
   'run:started':      { runId: string; task: string; nodeIds: string[] }
   'node:started':     { runId: string; nodeId: string; title: string }
   'node:complete':    { runId: string; nodeId: string; title: string; summary: string; outputs?: Record<string, string> }

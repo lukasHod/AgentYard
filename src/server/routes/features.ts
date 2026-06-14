@@ -7,6 +7,7 @@ import {
 } from '../features.js'
 import { removeFeatureWorktree } from '../runtime/worktrees.js'
 import { getPlanet } from '../planets.js'
+import { getDefaultWorkflowIdForNewFeatures } from '../workflows.js'
 import type { AppContext } from './context.js'
 
 export function registerFeatureRoutes(ctx: AppContext): void {
@@ -31,7 +32,9 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     if (!planet) return reply.code(404).send({ error: 'planet not found' })
 
     const name = `feature-${Date.now()}`
-    const feature = createFeature({ planetId: planet.id, name, task: '' })
+    // Phase 8a: new features default to the AO development lifecycle.
+    const workflowId = getDefaultWorkflowIdForNewFeatures()
+    const feature = createFeature({ planetId: planet.id, name, task: '', workflowId })
     io.emit('feature:created', feature)
     return { ok: true, feature }
   })

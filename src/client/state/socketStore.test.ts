@@ -13,6 +13,16 @@ const session = (id: string, state: SessionDescriptor['state'] = 'idle'): Sessio
   role: 'leader',
   label: id,
   state,
+  agentKind: 'claude-sdk',
+  capabilities: {
+    supports_tools: true,
+    supports_structured_events: true,
+    supports_clarification_tool: true,
+    supports_resume: false,
+    supports_cost: true,
+    supports_mcp: true,
+    supports_working_directory: true,
+  },
 })
 
 const planet = (id: number, name: string): PlanetSummary => ({

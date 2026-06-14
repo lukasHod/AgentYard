@@ -163,7 +163,22 @@ export function installMockData(): void {
 
   // Sessions: applySessionList replaces the whole map.
   store.applySessionList(
-    MOCK_AGENTS.map(({ id, role, label, state }) => ({ id, role, label, state })),
+    MOCK_AGENTS.map(({ id, role, label, state }) => ({
+      id,
+      role,
+      label,
+      state,
+      agentKind: 'claude-sdk' as const,
+      capabilities: {
+        supports_tools: true,
+        supports_structured_events: true,
+        supports_clarification_tool: true,
+        supports_resume: false,
+        supports_cost: true,
+        supports_mcp: true,
+        supports_working_directory: true,
+      },
+    })),
   )
 
   // Seed leader transcript.

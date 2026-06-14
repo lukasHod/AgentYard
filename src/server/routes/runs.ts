@@ -18,8 +18,19 @@ export function registerRunRoutes(ctx: AppContext): void {
       const task = body.task?.trim()
       if (!task) return reply.code(400).send({ error: 'task is required' })
 
-      if (runState.isInFlight()) {
-        return reply.code(409).send({ error: 'A run is already in flight; reset first.' })
+      // Phase 7: route through the multi-run admit check. /api/runs is used
+      // for ad-hoc workflow execution without a feature, so we only gate on
+      // global capacity here.
+      const verdict = runState.canBegin({})
+      if (!verdict.ok) {
+        const reason = verdict.reason
+        const message =
+          reason === 'global-capacity'
+            ? 'Global concurrent run limit reached; cancel one or wait.'
+            : reason === 'planet-capacity'
+              ? 'Planet concurrent run limit reached.'
+              : 'This feature already has a run in flight.'
+        return reply.code(409).send({ error: message, reason })
       }
 
       const controller = new AbortController()
@@ -46,6 +57,19 @@ export function registerRunRoutes(ctx: AppContext): void {
     await runState.reset()
     await manager.destroyAll()
     transcripts.clear()
+    return { ok: true }
+  })
+
+  // Phase 9 dashboard support: list every tracked run snapshot.
+  app.get('/api/runs/snapshots', async () => runState.allSnapshots())
+
+  // Phase 9 quick-action: cancel a specific run by id.
+  app.post<{ Params: { id: string } }>('/api/runs/:id/cancel', async (req, reply) => {
+    const runId = req.params.id
+    if (!runState.snapshotById(runId)) {
+      return reply.code(404).send({ error: 'run not found' })
+    }
+    await runState.abortRun(runId)
     return { ok: true }
   })
 }

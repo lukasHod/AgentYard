@@ -171,6 +171,7 @@ export class PlanetChatRegistry {
       cwd: planet.projectPath,
       toolPreset: 'claude_code',
       runtimeTools: [],
+      scope: { planetId },
       // Load the user's installed Claude Code config — personal skills,
       // MCP servers, plugins from `~/.claude/` + `<cwd>/.claude/`.
       // Drones/leaders intentionally run with `settingSources: []` so
