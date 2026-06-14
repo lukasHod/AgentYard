@@ -9,6 +9,8 @@ import type { TranscriptStore } from './transcriptStore.js'
 import type { PendingQuestionStore } from './pendingQuestionStore.js'
 import type { TerminalSessionManager } from './runtime/TerminalSessionManager.js'
 import type { TypedIOServer, TypedSocket } from './socketTypes.js'
+import { updateLoopRun, getLoopRun, listActiveLoopRuns } from './reviewLoopStore.js'
+import { reviewGateRegistry } from './reviewGateRegistry.js'
 
 export interface WireSocketDeps {
   app: FastifyInstance
@@ -49,6 +51,7 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     if (snapshot) socket.emit('run:snapshot', snapshot)
     // Phase 7: also push the full registry so dashboards can show every run.
     socket.emit('run:snapshot:list', runState.allSnapshots())
+    socket.emit('review-loop:list', listActiveLoopRuns())
 
     socket.on('agent:send', (payload: ClientEvents['agent:send']) => {
       if (typeof payload?.agentRunId !== 'string' || typeof payload?.content !== 'string') return
@@ -142,6 +145,28 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
       terminals.restart(payload.sessionId)
     })
 
+    socket.on('terminal:resume', (payload: ClientEvents['terminal:resume']) => {
+      if (typeof payload?.sessionId !== 'string') return
+      terminals.resume(payload.sessionId)
+    })
+
+    socket.on('terminal:open-shell', (payload: ClientEvents['terminal:open-shell']) => {
+      if (typeof payload?.sessionId !== 'string') return
+      try {
+        terminals.openShellFromSession(payload.sessionId)
+      } catch (err) {
+        app.log.warn({ err }, 'terminal:open-shell failed')
+      }
+    })
+
+    socket.on(
+      'terminal:restart-with-context',
+      (payload: ClientEvents['terminal:restart-with-context']) => {
+        if (typeof payload?.sessionId !== 'string' || typeof payload?.markdown !== 'string') return
+        terminals.restartWithContext(payload.sessionId, payload.markdown)
+      },
+    )
+
     socket.on('terminal:delete', (payload: ClientEvents['terminal:delete']) => {
       if (typeof payload?.sessionId !== 'string') return
       void terminals.delete(payload.sessionId)
@@ -177,8 +202,39 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
       },
     )
 
+    socket.on(
+      'review-loop:force-complete',
+      (payload: ClientEvents['review-loop:force-complete']) => {
+        if (typeof payload?.loopRunId !== 'string') return
+        const updated = updateLoopRun(payload.loopRunId, { state: 'manually_resolved' })
+        if (!updated) return
+        // Resolve any waiting gate so the runner can exit.
+        reviewGateRegistry.fail(payload.loopRunId, new Error('manually resolved by user'))
+        io.emit('review-loop:update', updated)
+      },
+    )
+
+    socket.on(
+      'review-loop:force-next-iteration',
+      (payload: ClientEvents['review-loop:force-next-iteration']) => {
+        if (typeof payload?.loopRunId !== 'string') return
+        const loopRun = getLoopRun(payload.loopRunId)
+        if (!loopRun) return
+        // Push empty "approved" decisions for all required slots so the runner
+        // can evaluate and start the next iteration immediately.
+        for (const slot of loopRun.approvalRequiredFrom) {
+          reviewGateRegistry.submitDecision(payload.loopRunId, slot, {
+            reviewerSlot: slot,
+            decision: 'changes_requested',
+            findings: 'Manually forced to next iteration.',
+          })
+        }
+      },
+    )
+
     socket.on('disconnect', (reason) => {
       app.log.info(`socket disconnected: ${socket.id} (${reason})`)
     })
   })
+
 }

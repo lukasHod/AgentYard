@@ -119,6 +119,44 @@ export interface PendingQuestion {
   answer: string | null
 }
 
+// ── Review loop (Phase 14) ────────────────────────────────────────────────────
+
+export type ReviewLoopState =
+  | 'developers_running'
+  | 'reviewers_running'
+  | 'approved'
+  | 'max_iterations_reached'
+  | 'manually_resolved'
+
+export interface ReviewApproval {
+  id: string
+  loopRunId: string
+  iteration: number
+  reviewerSlot: string
+  terminalSessionId: string | null
+  decision: 'pending' | 'approved' | 'changes_requested'
+  findings: string | null
+  createdAt: number
+}
+
+export interface ReviewLoopRun {
+  id: string
+  nodeRunId: string
+  featureId: number | null
+  planetId: number | null
+  iteration: number
+  maxIterations: number
+  state: ReviewLoopState
+  developerSlots: string[]
+  reviewerSlots: string[]
+  approvalRequiredFrom: string[]
+  developerSummary: string | null
+  reviewFindings: string | null
+  approvals: ReviewApproval[]
+  createdAt: number
+  updatedAt: number
+}
+
 export type TerminalProfileId =
   | 'claude-cli'
   | 'codex-cli'
@@ -211,6 +249,8 @@ export interface ServerEvents {
   'feature:created':  FeatureSummary
   'feature:updated':  FeatureSummary
   'feature:deleted':  { id: number }
+  'review-loop:update': ReviewLoopRun
+  'review-loop:list':   ReviewLoopRun[]
   'handoff:created':  HandoffSummary
   'handoff:pickedup': { handoffBranch: string; feature: FeatureSummary }
   'handoff:cancelled': { handoffBranch: string }
@@ -243,9 +283,14 @@ export interface ClientEvents {
   'terminal:resize':     { sessionId: string; cols: number; rows: number }
   'terminal:kill':       { sessionId: string }
   'terminal:restart':    { sessionId: string }
+  'terminal:resume':     { sessionId: string }
+  'terminal:open-shell': { sessionId: string }
+  'terminal:restart-with-context': { sessionId: string; markdown: string }
   'terminal:delete':     { sessionId: string }
   'question:answer':   { questionId: string; answer: string }
   'question:dismiss':  { questionId: string }
+  'review-loop:force-complete': { loopRunId: string }
+  'review-loop:force-next-iteration': { loopRunId: string }
   // ── Sandbox test-run client→server messages ──
   // Forwarded by the server to the test-run's isolated SessionManager.
   'test-run:agent:send':           { testRunId: string; agentRunId: string; content: string }

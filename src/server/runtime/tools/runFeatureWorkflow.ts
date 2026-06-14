@@ -121,6 +121,7 @@ export function createRunFeatureWorkflowTool(deps: {
         task: feature.task,
         manager: deps.manager,
         terminals: deps.terminals,
+        io: deps.io,
         featureId: deps.featureId,
         planetId: deps.planetId,
         ctx: { planetProjectPath: planet.projectPath },

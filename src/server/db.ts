@@ -279,6 +279,48 @@ function runAddFeatureDefaultAgentKindMigration(db: DB) {
   }
 }
 
+function runAddReviewLoopTables(db: DB) {
+  if (!tableExists(db, 'review_loop_runs')) {
+    db.exec(`
+      CREATE TABLE review_loop_runs (
+        id                          TEXT PRIMARY KEY,
+        node_run_id                 TEXT NOT NULL,
+        feature_id                  INTEGER REFERENCES features(id) ON DELETE CASCADE,
+        planet_id                   INTEGER REFERENCES planets(id) ON DELETE CASCADE,
+        iteration                   INTEGER NOT NULL DEFAULT 1,
+        max_iterations              INTEGER NOT NULL DEFAULT 3,
+        state                       TEXT NOT NULL DEFAULT 'developers_running',
+        developer_slots_json        TEXT NOT NULL DEFAULT '[]',
+        reviewer_slots_json         TEXT NOT NULL DEFAULT '[]',
+        approval_required_from_json TEXT NOT NULL DEFAULT '[]',
+        developer_summary           TEXT,
+        review_findings             TEXT,
+        created_at                  INTEGER NOT NULL,
+        updated_at                  INTEGER NOT NULL
+      );
+      CREATE INDEX idx_review_loop_runs_feature
+        ON review_loop_runs(feature_id, created_at DESC);
+      CREATE INDEX idx_review_loop_runs_node_run
+        ON review_loop_runs(node_run_id);
+
+      CREATE TABLE review_approvals (
+        id                   TEXT PRIMARY KEY,
+        loop_run_id          TEXT NOT NULL REFERENCES review_loop_runs(id) ON DELETE CASCADE,
+        iteration            INTEGER NOT NULL,
+        reviewer_slot        TEXT NOT NULL,
+        terminal_session_id  TEXT,
+        decision             TEXT NOT NULL DEFAULT 'pending',
+        findings             TEXT,
+        created_at           INTEGER NOT NULL
+      );
+      CREATE INDEX idx_review_approvals_loop
+        ON review_approvals(loop_run_id, iteration);
+      CREATE INDEX idx_review_approvals_terminal
+        ON review_approvals(terminal_session_id);
+    `)
+  }
+}
+
 function runAddPendingQuestionsTable(db: DB) {
   if (!tableExists(db, 'pending_questions')) {
     db.exec(`
@@ -322,6 +364,7 @@ export function getDb(): DB {
   runAddPlanetDefaultAgentKindMigration(db)
   runAddFeatureDefaultAgentKindMigration(db)
   runAddPendingQuestionsTable(db)
+  runAddReviewLoopTables(db)
   _db = db
   return db
 }

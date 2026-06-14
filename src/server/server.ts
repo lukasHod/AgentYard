@@ -37,6 +37,9 @@ import { registerWorkflowRoutes } from './routes/workflows.js'
 import { registerBrowseFolderRoute } from './routes/browseFolder.js'
 import { registerHandoffRoutes } from './routes/handoffs.js'
 import { registerBridgeRoutes } from './routes/bridge.js'
+import { registerTerminalRoutes } from './routes/terminals.js'
+import { reviewLoopEmitter } from './reviewLoopStore.js'
+import type { ReviewLoopRun } from '../core/types.js'
 import type { AppContext } from './routes/context.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -150,6 +153,11 @@ export async function startServer(opts: ServerOptions) {
     }
   })
 
+  // Broadcast review loop state changes to all connected clients.
+  reviewLoopEmitter.on('update', (loopRun: ReviewLoopRun) => {
+    io.emit('review-loop:update', loopRun)
+  })
+
   const ctx: AppContext = {
     app,
     io,
@@ -175,6 +183,7 @@ export async function startServer(opts: ServerOptions) {
   registerBrowseFolderRoute(ctx)
   registerFeatureRoutes(ctx)
   registerHandoffRoutes(ctx)
+  registerTerminalRoutes(ctx)
 
   const address = await app.listen({ port: opts.port, host: '127.0.0.1' })
   // Expose the bridge URL so terminal sessions inherit it via TerminalSessionManager.

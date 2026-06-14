@@ -23,6 +23,14 @@ import { resolveAgentKind } from '../agentKindCascade.js'
 import type { TerminalSessionManager } from './TerminalSessionManager.js'
 import type { TerminalManagerEvent } from './TerminalSessionManager.js'
 import { bridgeRegistry } from '../bridgeRegistry.js'
+import { reviewGateRegistry } from '../reviewGateRegistry.js'
+import {
+  createLoopRun,
+  updateLoopRun,
+  createApproval,
+  reviewLoopEmitter,
+} from '../reviewLoopStore.js'
+import type { TypedIOServer } from '../socketTypes.js'
 
 type AnyTool = SdkMcpToolDefinition<any>
 
@@ -63,6 +71,11 @@ export interface RunWorkflowOptions {
    * and a node resolves to a CLI kind, the SDK path is used as fallback.
    */
   terminals?: TerminalSessionManager
+  /**
+   * Socket.IO server — used by the review loop runner to broadcast
+   * `review-loop:update` events as loop state changes.
+   */
+  io?: TypedIOServer
 }
 
 const DEFAULT_AI_NODE_TIMEOUT_MS = 30 * 60 * 1000 // 30 min
@@ -77,6 +90,7 @@ interface RunAINodeDeps {
   featureId?: number | null
   planetId?: number | null
   terminals?: TerminalSessionManager
+  io?: TypedIOServer
 }
 
 /** Spawn leader + agents for an AI node, run it, return the leader's result. */
@@ -95,6 +109,10 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
   // than in-process SDK sessions. Fall back to SDK if no terminal manager is
   // available (ad-hoc /api/runs, test runs, etc.).
   if (agentKind !== 'claude-sdk' && deps.terminals) {
+    // Review loop nodes get a dedicated runner that alternates dev/review phases.
+    if (node.reviewLoop) {
+      return runReviewLoopNode(deps, deps.terminals, agentKind, node.reviewLoop)
+    }
     return runAINodeOnTerminals(deps, deps.terminals, agentKind)
   }
 
@@ -311,6 +329,267 @@ async function runAINodeOnTerminals(
   })
 }
 
+/**
+ * Run an AI node as a repeating developer → reviewer loop.
+ *
+ * Each iteration:
+ *  1. Spawn developer terminals (leader + drones, like runAINodeOnTerminals).
+ *     The leader calls mark-node-complete when dev work is done.
+ *  2. Spawn reviewer terminals independently. Each reviewer calls
+ *     /api/bridge/submit-review when done evaluating the developer output.
+ *  3. If all required reviewers approve → complete the node.
+ *     If any request changes and maxIterations not reached → loop back,
+ *     feeding reviewer findings into the next dev phase.
+ *     If maxIterations reached → complete with the last developer summary.
+ */
+async function runReviewLoopNode(
+  deps: RunAINodeDeps,
+  terminals: TerminalSessionManager,
+  agentKind: Exclude<AgentKind, 'claude-sdk'>,
+  policy: NonNullable<NonNullable<(typeof deps.input.node)['reviewLoop']>>,
+): Promise<NodeRunResult> {
+  const { ctx, input, aiNodeTimeoutMs, signal } = deps
+  const node = input.node
+  const profileId = agentKind === 'claude-code-cli' ? 'claude-cli' : 'codex-cli'
+  const maxIter = policy.maxIterations ?? 3
+  const requiredApprovers = policy.approvalRequiredFrom ?? policy.reviewerSlots
+
+  // Create the durable review loop run record.
+  const loopRun = createLoopRun({
+    nodeRunId: node.id,
+    featureId: deps.featureId,
+    planetId: deps.planetId,
+    maxIterations: maxIter,
+    developerSlots: policy.developerSlots,
+    reviewerSlots: policy.reviewerSlots,
+    approvalRequiredFrom: requiredApprovers,
+  })
+  deps.io?.emit('review-loop:update', loopRun)
+
+  let developerSummary = ''
+  let reviewFindings = ''
+
+  for (let iteration = 1; iteration <= maxIter; iteration++) {
+    if (signal?.aborted) throw new Error('run aborted')
+
+    // ── DEVELOPER PHASE ──────────────────────────────────────────────────────
+
+    const updatedRunDev = updateLoopRun(loopRun.id, { iteration, state: 'developers_running' })
+    if (updatedRunDev) deps.io?.emit('review-loop:update', updatedRunDev)
+
+    // Build the developer prompt. On subsequent iterations, prepend reviewer findings.
+    const devPromptBase = [
+      input.prompt ?? '',
+      input.upstreamOutputs
+        ? `\n\n## Context from upstream phases\n${input.upstreamOutputs}`
+        : '',
+    ].filter(Boolean).join('').trim()
+
+    const devPrompt =
+      iteration > 1 && reviewFindings
+        ? `${devPromptBase}\n\n## Reviewer Feedback — Please Fix Before Proceeding\n\n${reviewFindings}`
+        : devPromptBase
+
+    const devLeaderSlot = policy.developerSlots[0]!
+    const devDroneSlots = policy.developerSlots.slice(1)
+
+    // Resolve developer agents from the library.
+    const devLeaderAgent = await resolveTool('agent', devLeaderSlot, ctx)
+    const leaderSystemPrompt = devLeaderAgent?.type === 'agent'
+      ? buildCliArgv(agentKind, `${devPrompt}\n\n## Your Role\nYou are the development leader. Coordinate with drones, implement the required changes, then call mark-node-complete with a summary.`).join(' ')
+      : undefined
+
+    const leaderArgv = buildCliArgv(agentKind, devPrompt)
+    const leaderSession = terminals.start({
+      profileId,
+      argv: leaderArgv,
+      cwd: input.cwd,
+      featureId: deps.featureId ?? undefined,
+      planetId: deps.planetId ?? undefined,
+      role: devLeaderSlot,
+      env: { CLAUDECODE: '' },
+    })
+
+    // Spawn developer drone terminals (fire-and-monitor).
+    for (const droneSlot of devDroneSlots) {
+      const droneAgent = await resolveTool('agent', droneSlot, ctx)
+      if (!droneAgent || droneAgent.type !== 'agent') continue
+      const droneArgv = buildCliArgv(agentKind, droneAgent.data.prompt.trim())
+      try {
+        terminals.start({
+          profileId,
+          argv: droneArgv,
+          cwd: input.cwd,
+          featureId: deps.featureId ?? undefined,
+          planetId: deps.planetId ?? undefined,
+          role: droneSlot,
+          env: { CLAUDECODE: '' },
+        })
+      } catch {
+        // Skip failing drone spawns — don't abort the loop.
+      }
+    }
+
+    // Write initial task message to leader stdin.
+    await new Promise<void>((r) => setTimeout(r, 300))
+    terminals.write(leaderSession.id, `${input.task}\n`)
+
+    // Wait for developer leader to call mark-node-complete or exit.
+    const devResult = await new Promise<NodeRunResult>((resolve, reject) => {
+      let settled = false
+      function settle(fn: () => void) { if (settled) return; settled = true; cleanup(); fn() }
+
+      const unregisterGate = bridgeRegistry.registerGate(
+        leaderSession.id,
+        (r) => settle(() => resolve(r)),
+        (e) => settle(() => reject(e)),
+      )
+
+      function onTerminalEvent(ev: TerminalManagerEvent) {
+        if (ev.type !== 'exit' || ev.sessionId !== leaderSession.id) return
+        settle(() => {
+          const code = ev.code
+          if (code !== null && code !== 0) {
+            reject(new Error(`Developer leader (${devLeaderSlot}) exited with code ${code}`))
+            return
+          }
+          const snap = terminals.snapshot(leaderSession.id)
+          const raw = snap?.data ?? ''
+          resolve({ summary: raw.trim().slice(-2000) || `${devLeaderSlot} completed (iteration ${iteration})` })
+        })
+      }
+      terminals.on('terminal:event', onTerminalEvent)
+
+      const timeoutId = aiNodeTimeoutMs > 0
+        ? setTimeout(() => settle(() => {
+            void terminals.kill(leaderSession.id)
+            reject(new Error(`Developer phase timed out after ${aiNodeTimeoutMs}ms`))
+          }), aiNodeTimeoutMs)
+        : null
+
+      const onAbort = () => settle(() => {
+        void terminals.kill(leaderSession.id)
+        reject(new Error('run aborted'))
+      })
+      signal?.addEventListener('abort', onAbort)
+
+      function cleanup() {
+        unregisterGate()
+        if (timeoutId !== null) clearTimeout(timeoutId)
+        signal?.removeEventListener('abort', onAbort)
+        terminals.off('terminal:event', onTerminalEvent)
+      }
+    })
+
+    developerSummary = devResult.summary
+    updateLoopRun(loopRun.id, { developerSummary })
+
+    // ── REVIEWER PHASE ───────────────────────────────────────────────────────
+
+    const updatedRunRev = updateLoopRun(loopRun.id, { state: 'reviewers_running' })
+    if (updatedRunRev) deps.io?.emit('review-loop:update', updatedRunRev)
+
+    // Spawn each reviewer independently (no leader-drone hierarchy).
+    const reviewerSessions: Map<string, string> = new Map() // slot → sessionId
+    for (const slot of policy.reviewerSlots) {
+      const reviewerAgent = await resolveTool('agent', slot, ctx)
+      const reviewerPromptBase = reviewerAgent?.type === 'agent'
+        ? reviewerAgent.data.prompt.trim()
+        : `You are a code reviewer for the slot "${slot}".`
+
+      const reviewContext =
+        `${reviewerPromptBase}\n\n## Implementation for Review\n\n${developerSummary}\n\n` +
+        `When you finish your review, call \`agentyard submit-review --decision approved\` or ` +
+        `\`agentyard submit-review --decision changes-requested --findings "..."\`.`
+
+      const reviewArgv = buildCliArgv(agentKind, reviewContext)
+      try {
+        const reviewSession = terminals.start({
+          profileId,
+          argv: reviewArgv,
+          cwd: input.cwd,
+          featureId: deps.featureId ?? undefined,
+          planetId: deps.planetId ?? undefined,
+          role: slot,
+          env: {
+            CLAUDECODE: '',
+            AGENTYARD_LOOP_RUN_ID: loopRun.id,
+            AGENTYARD_REVIEWER_SLOT: slot,
+          },
+        })
+        reviewerSessions.set(slot, reviewSession.id)
+        // Pre-create approval record linked to this terminal session.
+        createApproval(loopRun.id, iteration, slot, reviewSession.id)
+      } catch {
+        // If a reviewer fails to spawn, skip it.
+      }
+    }
+
+    // Write task prompt to each reviewer's stdin.
+    await new Promise<void>((r) => setTimeout(r, 300))
+    for (const sessionId of reviewerSessions.values()) {
+      terminals.write(sessionId, `Please review the implementation described above.\n`)
+    }
+
+    // Wait for all required reviewers to submit their decisions.
+    const decisions = await new Promise<{ reviewerSlot: string; decision: string; findings: string | null }[]>(
+      (resolve, reject) => {
+        const unregister = reviewGateRegistry.register(
+          loopRun.id,
+          requiredApprovers,
+          resolve,
+          reject,
+          aiNodeTimeoutMs > 0 ? aiNodeTimeoutMs : undefined,
+        )
+
+        const onAbort = () => {
+          unregister()
+          reject(new Error('run aborted'))
+        }
+        signal?.addEventListener('abort', onAbort)
+        // The unregister above cleans up the gate; abort listener needs manual cleanup.
+        // Wrap resolve/reject to also remove the abort listener.
+        void Promise.resolve().then(() => {
+          // No additional cleanup needed — the gate registry handles its own removal.
+        })
+      },
+    )
+
+    const changesRequested = decisions.filter((d) => d.decision === 'changes_requested')
+    const allApproved = requiredApprovers.every((slot) =>
+      decisions.some((d) => d.reviewerSlot === slot && d.decision === 'approved'),
+    )
+
+    reviewFindings = changesRequested
+      .map((d) => d.findings)
+      .filter(Boolean)
+      .join('\n\n')
+
+    updateLoopRun(loopRun.id, { reviewFindings: reviewFindings || null })
+
+    if (allApproved) {
+      const finalRun = updateLoopRun(loopRun.id, { state: 'approved' })
+      if (finalRun) deps.io?.emit('review-loop:update', finalRun)
+      return {
+        summary: `${developerSummary}\n\n## Review\n\nAll reviewers approved after ${iteration} iteration(s).`,
+      }
+    }
+
+    if (iteration >= maxIter) {
+      const finalRun = updateLoopRun(loopRun.id, { state: 'max_iterations_reached' })
+      if (finalRun) deps.io?.emit('review-loop:update', finalRun)
+      return {
+        summary:
+          `${developerSummary}\n\n## Review\n\nMax iterations (${maxIter}) reached.\n` +
+          (reviewFindings ? `Last reviewer findings:\n${reviewFindings}` : ''),
+      }
+    }
+  }
+
+  // Unreachable but satisfies TS.
+  return { summary: developerSummary }
+}
+
 /** Build the argv for a CLI agent, injecting the system prompt where supported. */
 function buildCliArgv(agentKind: Exclude<AgentKind, 'claude-sdk'>, systemPrompt: string): string[] {
   if (agentKind === 'claude-code-cli') {
@@ -443,6 +722,7 @@ export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<s
         featureId: opts.featureId,
         planetId: opts.planetId,
         terminals: opts.terminals,
+        io: opts.io,
       })
     },
   })

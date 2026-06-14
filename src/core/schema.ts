@@ -56,6 +56,30 @@ export const WorkflowNodeSchema = z.object({
    * omitted, the cascade falls back to feature → planet → global default.
    */
   agentKind: z.enum(['claude-sdk', 'claude-code-cli', 'codex-cli']).optional(),
+
+  /**
+   * Phase 14: reviewer/developer loop policy. When present on an AI node the
+   * runner repeats a dev→review cycle until all required reviewers approve
+   * or maxIterations is reached. CLI (PTY) mode only — SDK fallback runs a
+   * single pass without looping.
+   */
+  reviewLoop: z
+    .object({
+      /** Agent names (from the tool library) that run as developers. */
+      developerSlots: z.array(z.string()).min(1),
+      /** Agent names that run as reviewers. */
+      reviewerSlots: z.array(z.string()).min(1),
+      /**
+       * Subset of reviewerSlots whose approval is required to exit the loop.
+       * Defaults to all reviewerSlots when omitted.
+       */
+      approvalRequiredFrom: z.array(z.string()).optional(),
+      /** Maximum dev→review iterations before forcing node completion. */
+      maxIterations: z.number().int().positive().default(3),
+      /** Reserved: pause before entering review until tests pass. */
+      requireTestsPassing: z.boolean().default(false),
+    })
+    .optional(),
 })
 
 export const WorkflowEdgeSchema = z.object({
@@ -75,6 +99,7 @@ export const WorkflowSchema = z.object({
   isTemplate: z.boolean().default(false),
 })
 
+export type ReviewLoopPolicy = NonNullable<z.infer<typeof WorkflowNodeSchema>['reviewLoop']>
 export type WorkflowNode = z.infer<typeof WorkflowNodeSchema>
 export type WorkflowEdge = z.infer<typeof WorkflowEdgeSchema>
 export type WorkflowGraph = z.infer<typeof WorkflowGraphSchema>

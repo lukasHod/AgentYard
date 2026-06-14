@@ -50,6 +50,13 @@ export function initSocketClient(): Socket {
   socket.on('feature:updated', (ev: ServerEvents['feature:updated']) => store.applyFeatureUpdated(ev))
   socket.on('feature:deleted', (ev: ServerEvents['feature:deleted']) => store.applyFeatureDeleted(ev.id))
 
+  socket.on('review-loop:list', (ev: ServerEvents['review-loop:list']) =>
+    store.applyReviewLoopList(ev),
+  )
+  socket.on('review-loop:update', (ev: ServerEvents['review-loop:update']) =>
+    store.applyReviewLoopUpdate(ev),
+  )
+
   socket.on('terminal:list', (ev: ServerEvents['terminal:list']) => store.applyTerminalList(ev))
   socket.on('terminal:session:added', (ev: ServerEvents['terminal:session:added']) =>
     store.applyTerminalAdded(ev),
@@ -133,6 +140,18 @@ export function restartTerminal(sessionId: string) {
   socket?.emit('terminal:restart', { sessionId })
 }
 
+export function resumeTerminal(sessionId: string) {
+  socket?.emit('terminal:resume', { sessionId })
+}
+
+export function openShellFromTerminal(sessionId: string) {
+  socket?.emit('terminal:open-shell', { sessionId })
+}
+
+export function restartTerminalWithContext(sessionId: string, markdown: string) {
+  socket?.emit('terminal:restart-with-context', { sessionId, markdown })
+}
+
 /**
  * Kills the PTY (if alive) AND removes the descriptor row from the DB. Use
  * for "remove from UI" affordances. Server broadcasts `terminal:session:removed`.
@@ -140,6 +159,16 @@ export function restartTerminal(sessionId: string) {
 export function deleteTerminal(sessionId: string) {
   useSocketStore.getState().applyTerminalRemoved({ sessionId })
   socket?.emit('terminal:delete', { sessionId })
+}
+
+// ── Review loop manual overrides ─────────────────────────────────────────────
+
+export function forceCompleteReviewLoop(loopRunId: string) {
+  socket?.emit('review-loop:force-complete', { loopRunId })
+}
+
+export function forceNextReviewIteration(loopRunId: string) {
+  socket?.emit('review-loop:force-next-iteration', { loopRunId })
 }
 
 // ── Pending questions ──────────────────────────────────────────────────────

@@ -21,6 +21,8 @@ import {
   deleteTerminal,
   answerQuestion,
   dismissQuestion,
+  forceCompleteReviewLoop,
+  forceNextReviewIteration,
 } from '../../state/socketClient'
 import { ToolsTabContent } from '../ToolsTabContent'
 import { TerminalPanel } from '../TerminalPanel'
@@ -30,11 +32,12 @@ import { HandoffDialog } from '../HandoffDialog'
 import { apiGet, apiPost, apiDelete } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { useNotificationRows } from '../hud/useNotificationRows'
-import { usePendingQuestions } from '../../state/socketStore'
+import { usePendingQuestions, useReviewLoopRunsByFeature } from '../../state/socketStore'
 import type {
   ClientEvents,
   PlanetSummary,
   FeatureSummary,
+  ReviewLoopRun,
   TerminalProfileId,
   TerminalSessionDescriptor,
 } from '../../../core/types'
@@ -985,6 +988,97 @@ function PendingQuestionInline({ question, questionId }: { question: string; que
 }
 
 // ---------------------------------------------------------------------------
+// ReviewLoopStatusPanel — shows active review loop state for a feature
+// ---------------------------------------------------------------------------
+
+const LOOP_STATE_LABEL: Record<ReviewLoopRun['state'], string> = {
+  developers_running: 'Developers running',
+  reviewers_running: 'Reviewers reviewing',
+  approved: 'Approved',
+  max_iterations_reached: 'Max iterations reached',
+  manually_resolved: 'Manually resolved',
+}
+
+function ReviewLoopStatusPanel({ loopRun }: { loopRun: ReviewLoopRun }) {
+  const active =
+    loopRun.state === 'developers_running' || loopRun.state === 'reviewers_running'
+  const approved = loopRun.state === 'approved'
+
+  return (
+    <div
+      className={`mt-3 rounded border p-2 space-y-1.5 ${
+        approved
+          ? 'border-emerald-400/30 bg-emerald-400/5'
+          : active
+            ? 'border-cyan-400/30 bg-cyan-400/5'
+            : 'border-slate-600/40 bg-slate-800/30'
+      }`}
+    >
+      <div className="flex items-center gap-1.5 text-[10px] tracking-widest text-slate-400">
+        {active && (
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+        )}
+        REVIEW LOOP · iter {loopRun.iteration}/{loopRun.maxIterations}
+      </div>
+      <p
+        className={`text-xs ${
+          approved
+            ? 'text-emerald-300'
+            : active
+              ? 'text-cyan-200'
+              : 'text-slate-400'
+        }`}
+      >
+        {LOOP_STATE_LABEL[loopRun.state]}
+      </p>
+      {loopRun.state === 'reviewers_running' && loopRun.approvals.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {loopRun.approvals
+            .filter((a) => a.iteration === loopRun.iteration)
+            .map((a) => (
+              <span
+                key={a.id}
+                className={`px-1.5 py-0.5 rounded text-[10px] ${
+                  a.decision === 'approved'
+                    ? 'bg-emerald-800/50 text-emerald-300'
+                    : a.decision === 'changes_requested'
+                      ? 'bg-amber-800/50 text-amber-300'
+                      : 'bg-slate-700/50 text-slate-400'
+                }`}
+              >
+                {a.reviewerSlot}
+                {a.decision !== 'pending'
+                  ? a.decision === 'approved'
+                    ? ' ✓'
+                    : ' ✗'
+                  : '…'}
+              </span>
+            ))}
+        </div>
+      )}
+      {active && (
+        <div className="flex gap-1.5 pt-0.5">
+          {loopRun.state === 'reviewers_running' && (
+            <button
+              className="text-[10px] px-2 py-0.5 rounded border border-amber-600/60 text-amber-300 hover:bg-amber-900/40 transition-colors"
+              onClick={() => forceNextReviewIteration(loopRun.id)}
+            >
+              Force next iteration
+            </button>
+          )}
+          <button
+            className="text-[10px] px-2 py-0.5 rounded border border-slate-600/60 text-slate-400 hover:bg-slate-700/40 transition-colors"
+            onClick={() => forceCompleteReviewLoop(loopRun.id)}
+          >
+            Force complete
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // ShipInfoPanel — left panel content at LOD 2
 // ---------------------------------------------------------------------------
 
@@ -993,6 +1087,7 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
   const [handoffTarget, setHandoffTarget] = useState<FeatureSummary | null>(null)
   const allPending = usePendingQuestions()
   const featurePending = allPending.filter((q) => q.featureId === feature.id)
+  const reviewLoopRuns = useReviewLoopRunsByFeature(feature.id)
 
   const handleMarkDone = async () => {
     setMarkingDone(true)
@@ -1030,6 +1125,15 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
           </div>
           {featurePending.map((q) => (
             <PendingQuestionInline key={q.id} question={q.question} questionId={q.id} />
+          ))}
+        </div>
+      )}
+
+      {reviewLoopRuns.length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs tracking-widest text-slate-400 mb-1">REVIEW LOOPS</div>
+          {reviewLoopRuns.map((r) => (
+            <ReviewLoopStatusPanel key={r.id} loopRun={r} />
           ))}
         </div>
       )}

@@ -6,6 +6,7 @@ import type {
   FeatureSummary,
   NodeRunStatus,
   PendingQuestion,
+  ReviewLoopRun,
   RunSnapshot,
   ServerEvents,
   SessionDescriptor,
@@ -51,6 +52,8 @@ interface State {
   /** Rolling text buffer per terminal session — kept so a remount of the
    *  TerminalPanel can repaint without round-tripping `terminal:attach`. */
   terminalBuffers: Map<string, string>
+  /** Active review loop runs keyed by loop run id. */
+  reviewLoopRuns: Map<string, ReviewLoopRun>
 }
 
 interface Actions {
@@ -84,6 +87,8 @@ interface Actions {
   applyTerminalData: (ev: ServerEvents['terminal:data']) => void
   applyTerminalSnapshot: (ev: ServerEvents['terminal:snapshot']) => void
   applyTerminalExit: (ev: ServerEvents['terminal:exit']) => void
+  applyReviewLoopList: (list: ServerEvents['review-loop:list']) => void
+  applyReviewLoopUpdate: (run: ServerEvents['review-loop:update']) => void
   setPlanets: (planets: PlanetSummary[]) => void
   setFeatures: (features: Map<number, FeatureSummary[]>) => void
   setPlanetFeatures: (planetId: number, features: FeatureSummary[]) => void
@@ -101,6 +106,7 @@ export const useSocketStore = create<State & Actions>((set) => ({
   features: new Map(),
   terminalsById: new Map(),
   terminalBuffers: new Map(),
+  reviewLoopRuns: new Map(),
 
   setConnected: (b) => set({ connected: b }),
 
@@ -387,6 +393,18 @@ export const useSocketStore = create<State & Actions>((set) => ({
     })
   },
 
+  applyReviewLoopList: (list) => {
+    set({ reviewLoopRuns: new Map(list.map((r) => [r.id, r])) })
+  },
+
+  applyReviewLoopUpdate: (run) => {
+    set((prev) => {
+      const next = new Map(prev.reviewLoopRuns)
+      next.set(run.id, run)
+      return { reviewLoopRuns: next }
+    })
+  },
+
   setPlanets: (planets) => set({ planets }),
   setFeatures: (features) => set({ features }),
   setPlanetFeatures: (planetId, fs) =>
@@ -428,6 +446,14 @@ export const usePendingQuestions = (): PendingQuestion[] =>
   useSocketStore(
     useShallow((s) =>
       Array.from(s.pendingQuestionsById.values()).filter((q) => q.state === 'pending'),
+    ),
+  )
+
+/** Active review loop runs for a specific feature. */
+export const useReviewLoopRunsByFeature = (featureId: number): ReviewLoopRun[] =>
+  useSocketStore(
+    useShallow((s) =>
+      Array.from(s.reviewLoopRuns.values()).filter((r) => r.featureId === featureId),
     ),
   )
 

@@ -149,6 +149,61 @@ export class TerminalSessionManager extends EventEmitter {
     if (this.live.has(id)) return undefined
     const existing = getTerminalSession(id)
     if (!existing) return undefined
+    return this.restartInPlace(id, existing, existing.argv)
+  }
+
+  /** Restart a dead Claude CLI session with `--continue` to resume its conversation. */
+  resume(id: string): TerminalSessionDescriptor | undefined {
+    if (this.live.has(id)) return undefined
+    const existing = getTerminalSession(id)
+    if (!existing) return undefined
+    const argv =
+      isClaudeCli(existing.argv) && !existing.argv.includes('--continue')
+        ? [...existing.argv, '--continue']
+        : existing.argv
+    return this.restartInPlace(id, existing, argv)
+  }
+
+  /**
+   * Restart a dead session with a handoff context injected via
+   * `--append-system-prompt` (Claude CLI) or plain restart (other runtimes).
+   * The stored argv is not modified — the flag is runtime-only.
+   */
+  restartWithContext(id: string, markdownContext: string): TerminalSessionDescriptor | undefined {
+    if (this.live.has(id)) return undefined
+    const existing = getTerminalSession(id)
+    if (!existing) return undefined
+    const argv = isClaudeCli(existing.argv)
+      ? [...existing.argv, '--append-system-prompt', markdownContext]
+      : existing.argv
+    return this.restartInPlace(id, existing, argv)
+  }
+
+  /**
+   * Create a NEW shell terminal session in the same working directory and
+   * feature context as `sourceId`. Returns the new session descriptor.
+   */
+  openShellFromSession(sourceId: string): TerminalSessionDescriptor {
+    const source = this.live.get(sourceId)?.session ?? getTerminalSession(sourceId)
+    if (!source) throw new Error(`terminal session ${sourceId} not found`)
+    const profileId: TerminalProfileId = process.platform === 'win32' ? 'powershell' : 'unix-shell'
+    return this.start({
+      profileId,
+      cwd: source.cwd ?? undefined,
+      planetId: source.planetId ?? undefined,
+      featureId: source.featureId ?? undefined,
+      workflowRunId: source.workflowRunId ?? undefined,
+      nodeRunId: source.nodeRunId ?? undefined,
+      agentSessionId: source.agentSessionId ?? undefined,
+      role: source.role ?? undefined,
+    })
+  }
+
+  private restartInPlace(
+    id: string,
+    existing: TerminalSessionDescriptor,
+    argv: string[],
+  ): TerminalSessionDescriptor {
     const env = injectAgentYardEnv(getTerminalSessionEnv(id), {
       sessionId: existing.id,
       planetId: existing.planetId ?? undefined,
@@ -156,11 +211,7 @@ export class TerminalSessionManager extends EventEmitter {
       workflowRunId: existing.workflowRunId ?? undefined,
       nodeRunId: existing.nodeRunId ?? undefined,
     })
-    const proc = this.spawn({
-      argv: existing.argv,
-      cwd: existing.cwd ?? undefined,
-      env,
-    })
+    const proc = this.spawn({ argv, cwd: existing.cwd ?? undefined, env })
     const restarted =
       updateTerminalSession(id, {
         state: 'running',
@@ -224,6 +275,11 @@ export class TerminalSessionManager extends EventEmitter {
       this.emitTerminal({ type: 'exit', sessionId, code, signal, timestamp })
     })
   }
+}
+
+function isClaudeCli(argv: string[]): boolean {
+  const bin = argv[0] ?? ''
+  return bin === 'claude' || bin.endsWith('/claude') || bin.endsWith('\\claude') || bin.endsWith('\\claude.exe')
 }
 
 function resolveTerminalPlan(req: TerminalStartRequest): { argv: string[]; env?: Record<string, string> } {

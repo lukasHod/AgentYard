@@ -131,6 +131,7 @@ export function createStartFeatureTool(deps: StartFeatureDeps) {
         task: args.task,
         manager: deps.manager,
         terminals: deps.terminals,
+        io: deps.io,
         featureId: feature.id,
         planetId: planet.id,
         ctx: { planetProjectPath: planet.projectPath },

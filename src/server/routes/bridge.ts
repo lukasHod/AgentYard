@@ -1,5 +1,6 @@
 import { getTerminalSession } from '../terminalStore.js'
 import { bridgeRegistry } from '../bridgeRegistry.js'
+import { submitReview } from '../reviewLoopStore.js'
 import type { AppContext } from './context.js'
 
 const SESSION_HEADER = 'x-agentyard-session-id'
@@ -17,7 +18,7 @@ const SESSION_HEADER = 'x-agentyard-session-id'
  * `{ error: "..." }` (+ HTTP 4xx/5xx) on failure.
  */
 export function registerBridgeRoutes(ctx: AppContext): void {
-  const { app, pendingQuestions, apiError } = ctx
+  const { app, io, pendingQuestions, apiError } = ctx
 
   /**
    * POST /api/bridge/ask-user
@@ -115,6 +116,39 @@ export function registerBridgeRoutes(ctx: AppContext): void {
       return reply.send({ ok: true })
     },
   )
+
+  /**
+   * POST /api/bridge/submit-review
+   * Body: { decision: 'approved' | 'changes_requested'; findings?: string }
+   *
+   * Called by reviewer CLI agents when they finish evaluating the developer's
+   * output. Records the decision in the review_approvals table. Once all
+   * required reviewers have submitted, the review gate resolves and
+   * `runReviewLoopNode` decides whether to loop back or complete the node.
+   */
+  app.post<{
+    Body: { decision?: string; findings?: string }
+  }>('/api/bridge/submit-review', async (req, reply) => {
+    const sessionId = req.headers[SESSION_HEADER] as string | undefined
+    if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
+
+    if (!getTerminalSession(sessionId)) {
+      return apiError(reply, 404, `terminal session ${sessionId} not found`)
+    }
+
+    const decision = req.body?.decision?.trim()
+    if (decision !== 'approved' && decision !== 'changes_requested') {
+      return apiError(reply, 400, 'decision must be "approved" or "changes_requested"')
+    }
+
+    const result = submitReview(sessionId, decision, req.body?.findings)
+    if (!result.ok) {
+      return apiError(reply, 409, result.error)
+    }
+
+    io.emit('review-loop:update', result.loopRun)
+    return reply.send({ ok: true, allSubmitted: result.allSubmitted })
+  })
 
   /**
    * POST /api/bridge/fail-node
