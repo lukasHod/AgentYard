@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
+import './TerminalPanel.css'
 import {
   useTerminal,
   useTerminalBuffer,
@@ -22,7 +23,7 @@ interface Props {
 }
 
 const TERMINAL_THEME = {
-  background: '#020617',
+  background: 'rgba(2, 6, 23, 0)',
   foreground: '#e2e8f0',
   cursor: '#67e8f9',
   cursorAccent: '#020617',
@@ -68,6 +69,7 @@ export function TerminalPanel({ sessionId, className }: Props) {
       lineHeight: 1.15,
       cursorBlink: true,
       scrollback: 5000,
+      allowTransparency: true,
       allowProposedApi: true,
       theme: TERMINAL_THEME,
     })
@@ -161,8 +163,8 @@ export function TerminalPanel({ sessionId, className }: Props) {
       descriptor.state === 'runtime_lost')
 
   return (
-    <div className={`relative h-full w-full ${className ?? ''}`}>
-      <div ref={containerRef} className="absolute inset-0 bg-slate-950" />
+    <div className={`terminal-panel relative h-full w-full ${className ?? ''}`}>
+      <div ref={containerRef} className="absolute inset-0 overflow-hidden bg-slate-950/25 backdrop-blur-[2px]" />
       {ended && (
         <div className="absolute inset-x-0 bottom-0 px-3 py-1 text-[10px] tracking-widest bg-black/70 border-t border-rose-400/40 text-rose-300 pointer-events-none">
           // {descriptor!.state.toUpperCase()}

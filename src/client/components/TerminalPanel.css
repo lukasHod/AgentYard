@@ -1,0 +1,13 @@
+.terminal-panel .xterm,
+.terminal-panel .xterm-viewport,
+.terminal-panel .xterm-screen,
+.terminal-panel .xterm-helpers,
+.terminal-panel .xterm-accessibility,
+.terminal-panel .xterm-accessibility-tree {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.terminal-panel .xterm-viewport {
+  scrollbar-color: rgba(103, 232, 249, 0.35) transparent;
+}
