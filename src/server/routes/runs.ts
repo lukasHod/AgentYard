@@ -59,4 +59,17 @@ export function registerRunRoutes(ctx: AppContext): void {
     transcripts.clear()
     return { ok: true }
   })
+
+  // Phase 9 dashboard support: list every tracked run snapshot.
+  app.get('/api/runs/snapshots', async () => runState.allSnapshots())
+
+  // Phase 9 quick-action: cancel a specific run by id.
+  app.post<{ Params: { id: string } }>('/api/runs/:id/cancel', async (req, reply) => {
+    const runId = req.params.id
+    if (!runState.snapshotById(runId)) {
+      return reply.code(404).send({ error: 'run not found' })
+    }
+    await runState.abortRun(runId)
+    return { ok: true }
+  })
 }
