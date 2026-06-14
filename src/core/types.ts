@@ -58,6 +58,11 @@ export interface RunSnapshot {
   nodeSummaries: Record<string, string>
   finalSummary?: string
   error?: string
+  /** Phase 7: which feature this run belongs to. Null for ad-hoc /api/runs
+   *  invocations. Sent over the wire so the dashboard can group runs. */
+  featureId?: number | null
+  /** Phase 7: planet that owns the feature, when known. */
+  planetId?: number | null
 }
 
 export interface PlanetSummary {
@@ -110,6 +115,9 @@ export interface ServerEvents {
   'clarification:requested': { agentRunId: string; toolUseId: string; question: string }
   'clarification:resolved':  { agentRunId: string; toolUseId: string }
   'run:snapshot':     RunSnapshot
+  /** Phase 7: emitted on connection so a dashboard tab sees every in-flight
+   *  run, not just the most recent one. Empty array means no active runs. */
+  'run:snapshot:list': RunSnapshot[]
   'run:started':      { runId: string; task: string; nodeIds: string[] }
   'node:started':     { runId: string; nodeId: string; title: string }
   'node:complete':    { runId: string; nodeId: string; title: string; summary: string; outputs?: Record<string, string> }

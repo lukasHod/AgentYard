@@ -18,8 +18,19 @@ export function registerRunRoutes(ctx: AppContext): void {
       const task = body.task?.trim()
       if (!task) return reply.code(400).send({ error: 'task is required' })
 
-      if (runState.isInFlight()) {
-        return reply.code(409).send({ error: 'A run is already in flight; reset first.' })
+      // Phase 7: route through the multi-run admit check. /api/runs is used
+      // for ad-hoc workflow execution without a feature, so we only gate on
+      // global capacity here.
+      const verdict = runState.canBegin({})
+      if (!verdict.ok) {
+        const reason = verdict.reason
+        const message =
+          reason === 'global-capacity'
+            ? 'Global concurrent run limit reached; cancel one or wait.'
+            : reason === 'planet-capacity'
+              ? 'Planet concurrent run limit reached.'
+              : 'This feature already has a run in flight.'
+        return reply.code(409).send({ error: message, reason })
       }
 
       const controller = new AbortController()

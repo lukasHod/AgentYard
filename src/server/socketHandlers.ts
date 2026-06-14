@@ -41,6 +41,8 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     featureChats?.catchUpSocket(socket)
     const snapshot = runState.snapshot()
     if (snapshot) socket.emit('run:snapshot', snapshot)
+    // Phase 7: also push the full registry so dashboards can show every run.
+    socket.emit('run:snapshot:list', runState.allSnapshots())
 
     socket.on('agent:send', (payload: ClientEvents['agent:send']) => {
       if (typeof payload?.agentRunId !== 'string' || typeof payload?.content !== 'string') return
