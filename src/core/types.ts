@@ -111,6 +111,14 @@ export interface ServerEvents {
   'session:removed':  { id: string }
   'agent:message':    { agentRunId: string; role: 'assistant' | 'user' | 'system'; content: string; timestamp: number }
   'agent:state':      { agentRunId: string; state: AgentState }
+  /** Phase 3: agent invoked a tool. Only emitted by adapters whose
+   *  capabilities.supports_structured_events is true. */
+  'agent:tool_use':   { agentRunId: string; tool: string; toolUseId: string; input: unknown; timestamp: number }
+  /** Phase 3: tool returned a result. */
+  'agent:tool_result':{ agentRunId: string; tool: string; toolUseId: string; output: unknown; isError?: boolean; timestamp: number }
+  /** Phase 3: per-turn cost report. Only emitted by adapters whose
+   *  capabilities.supports_cost is true. */
+  'agent:cost':       { agentRunId: string; inputTokens: number; outputTokens: number; timestamp: number }
   'planet:state':     { planetId: number; state: PlanetState }
   'clarification:requested': { agentRunId: string; toolUseId: string; question: string }
   'clarification:resolved':  { agentRunId: string; toolUseId: string }

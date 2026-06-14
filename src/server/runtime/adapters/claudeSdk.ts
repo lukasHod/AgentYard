@@ -73,6 +73,30 @@ export function sessionEventToAgentEvent(ev: SessionEvent): AgentEvent | null {
       // message will appear when it processes the answer. The chat compat
       // layer (Phase 3) emits its own socket event.
       return null
+    case 'tool_use':
+      return {
+        type: 'tool_use',
+        tool: ev.tool,
+        toolUseId: ev.toolUseId,
+        input: ev.input,
+        ts: ev.timestamp,
+      }
+    case 'tool_result':
+      return {
+        type: 'tool_result',
+        tool: ev.tool,
+        toolUseId: ev.toolUseId,
+        output: ev.output,
+        ...(ev.isError !== undefined ? { isError: ev.isError } : {}),
+        ts: ev.timestamp,
+      }
+    case 'cost':
+      return {
+        type: 'cost',
+        inputTokens: ev.inputTokens,
+        outputTokens: ev.outputTokens,
+        ts: ev.timestamp,
+      }
     case 'closed':
       // Handled by the handle so we can set the exit reason explicitly.
       return null

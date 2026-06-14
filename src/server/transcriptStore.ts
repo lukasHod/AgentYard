@@ -70,6 +70,36 @@ export class TranscriptStore {
         this.io.emit('clarification:resolved', { agentRunId: id, toolUseId: ev.id })
         break
       }
+      case 'tool_use': {
+        this.io.emit('agent:tool_use', {
+          agentRunId: id,
+          tool: ev.tool,
+          toolUseId: ev.toolUseId,
+          input: ev.input,
+          timestamp: ev.timestamp,
+        })
+        break
+      }
+      case 'tool_result': {
+        this.io.emit('agent:tool_result', {
+          agentRunId: id,
+          tool: ev.tool,
+          toolUseId: ev.toolUseId,
+          output: ev.output,
+          ...(ev.isError !== undefined ? { isError: ev.isError } : {}),
+          timestamp: ev.timestamp,
+        })
+        break
+      }
+      case 'cost': {
+        this.io.emit('agent:cost', {
+          agentRunId: id,
+          inputTokens: ev.inputTokens,
+          outputTokens: ev.outputTokens,
+          timestamp: ev.timestamp,
+        })
+        break
+      }
       case 'closed': {
         // Logged at the session-manager layer; we don't surface 'closed' to UI.
         break

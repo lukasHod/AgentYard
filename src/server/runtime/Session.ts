@@ -31,6 +31,11 @@ export type SessionEvent =
   | { type: 'state'; agentRunId: string; state: AgentState }
   | { type: 'clarification:requested'; agentRunId: string; req: ClarificationRequest }
   | { type: 'clarification:resolved'; agentRunId: string; id: string }
+  // Phase 3: surface tool calls / results / cost so the chat layer can show
+  // structured tool panes + cost badges instead of dropping them.
+  | { type: 'tool_use'; agentRunId: string; tool: string; toolUseId: string; input: unknown; timestamp: number }
+  | { type: 'tool_result'; agentRunId: string; tool: string; toolUseId: string; output: unknown; isError?: boolean; timestamp: number }
+  | { type: 'cost'; agentRunId: string; inputTokens: number; outputTokens: number; timestamp: number }
   | { type: 'closed'; agentRunId: string }
 
 export type ToolPreset = 'none' | 'claude_code'
@@ -278,6 +283,17 @@ export class Session extends EventEmitter implements ClarificationGateway {
           text += block.text
         } else if (block.type === 'tool_use') {
           toolUseCount++
+          // Phase 3: surface the tool call. Block shape per Anthropic SDK:
+          // { type: 'tool_use', id, name, input }
+          const useBlock = block as { id?: string; name?: string; input?: unknown }
+          this.emitEvent({
+            type: 'tool_use',
+            agentRunId: this.id,
+            tool: useBlock.name ?? '(unknown)',
+            toolUseId: useBlock.id ?? '',
+            input: useBlock.input ?? null,
+            timestamp: Date.now(),
+          })
         }
       }
       if (text.trim().length > 0) {
@@ -293,7 +309,45 @@ export class Session extends EventEmitter implements ClarificationGateway {
       } else {
         this.setState('thinking')
       }
+    } else if (msg.type === 'user') {
+      // Phase 3: tool_result blocks arrive on user messages. Surface them so
+      // the chat layer can pair them with the matching tool_use event.
+      const content = (msg as { message?: { content?: unknown } }).message?.content
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          const tr = block as {
+            type?: string
+            tool_use_id?: string
+            content?: unknown
+            is_error?: boolean
+          }
+          if (tr.type === 'tool_result') {
+            this.emitEvent({
+              type: 'tool_result',
+              agentRunId: this.id,
+              tool: '',
+              toolUseId: tr.tool_use_id ?? '',
+              output: tr.content ?? null,
+              isError: tr.is_error,
+              timestamp: Date.now(),
+            })
+          }
+        }
+      }
     } else if (msg.type === 'result') {
+      // Phase 3: result messages carry the SDK's usage roll-up. Shape varies
+      // across SDK versions; we extract the input/output token counts when
+      // present and emit a single cost event per result boundary.
+      const usage = (msg as { usage?: { input_tokens?: number; output_tokens?: number } }).usage
+      if (usage && (usage.input_tokens || usage.output_tokens)) {
+        this.emitEvent({
+          type: 'cost',
+          agentRunId: this.id,
+          inputTokens: usage.input_tokens ?? 0,
+          outputTokens: usage.output_tokens ?? 0,
+          timestamp: Date.now(),
+        })
+      }
       this.setState('idle')
       this.resolveAsk()
     } else if (msg.type === 'system' && this.opts.logSystemInit) {
