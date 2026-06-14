@@ -22,6 +22,7 @@ import { TranscriptStore } from './transcriptStore.js'
 import { wireSocketHandlers } from './socketHandlers.js'
 import type { TypedIOServer } from './socketTypes.js'
 import { registerFeatureRoutes } from './routes/features.js'
+import { registerAgentKindRoutes } from './routes/agentKinds.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerPlanetRoutes } from './routes/planets.js'
@@ -120,6 +121,7 @@ export async function startServer(opts: ServerOptions) {
     apiError,
   }
   wireSocketHandlers(ctx)
+  registerAgentKindRoutes(ctx)
   registerHealthRoutes(ctx)
   registerWorkflowRoutes(ctx)
   registerToolRoutes(ctx)

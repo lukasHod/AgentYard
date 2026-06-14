@@ -49,6 +49,13 @@ export const WorkflowNodeSchema = z.object({
 
   /** Canvas position for the React Flow editor. */
   position: z.object({ x: z.number(), y: z.number() }).default({ x: 0, y: 0 }),
+
+  /**
+   * Phase 6: optional override for which AgentKind runs this node's
+   * leader (AI nodes only — custom/script nodes ignore it). When
+   * omitted, the cascade falls back to feature → planet → global default.
+   */
+  agentKind: z.enum(['claude-sdk', 'claude-code-cli', 'codex-cli']).optional(),
 })
 
 export const WorkflowEdgeSchema = z.object({

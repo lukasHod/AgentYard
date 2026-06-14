@@ -209,6 +209,20 @@ function runAddChatNameMigration(db: DB) {
   }
 }
 
+function runAddPlanetDefaultAgentKindMigration(db: DB) {
+  if (tableExists(db, 'planets') && !columnExists(db, 'planets', 'default_agent_kind')) {
+    // Phase 6: per-planet default agent backend. Null = inherit from global.
+    db.exec(`ALTER TABLE planets ADD COLUMN default_agent_kind TEXT`)
+  }
+}
+
+function runAddFeatureDefaultAgentKindMigration(db: DB) {
+  if (tableExists(db, 'features') && !columnExists(db, 'features', 'default_agent_kind')) {
+    // Phase 6: per-feature default agent backend. Null = inherit from planet.
+    db.exec(`ALTER TABLE features ADD COLUMN default_agent_kind TEXT`)
+  }
+}
+
 export function getDb(): DB {
   if (_db) return _db
   mkdirSync(dbDir(), { recursive: true })
@@ -222,6 +236,8 @@ export function getDb(): DB {
   runAddHandoffContextMigration(db)
   runAddDescriptionMigration(db)
   runAddChatNameMigration(db)
+  runAddPlanetDefaultAgentKindMigration(db)
+  runAddFeatureDefaultAgentKindMigration(db)
   _db = db
   return db
 }
