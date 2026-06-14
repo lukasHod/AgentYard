@@ -2,16 +2,22 @@ import type { ToolEntry, ToolType } from '../../core/tools.js'
 import { scanScopeType, type ScanContext } from './scanner.js'
 
 /**
- * Resolve a tool by type + name. Walks `planet` → `global` and returns the first match,
- * or null if not found. Catalog scopes (`claude-*`) are NOT consulted — those entries
- * must be adopted into an editable scope first.
+ * Resolve a tool by type + name. Editable scopes shadow read-only catalog scopes.
+ * Agents themselves still resolve only from `planet` → `global`, because workflow
+ * nodes need AgentYard's normalized agent schema. Agent capabilities (skills,
+ * scripts, MCPs) can also come from `.claude/` catalogs so project rules are
+ * selectable without a separate adoption step.
  */
 export async function resolveTool(
   type: ToolType,
   name: string,
   ctx: ScanContext,
 ): Promise<ToolEntry | null> {
-  for (const scope of ['planet', 'global'] as const) {
+  const scopes =
+    type === 'agent'
+      ? (['planet', 'global'] as const)
+      : (['planet', 'global', 'claude-project', 'claude-user'] as const)
+  for (const scope of scopes) {
     const entries = await scanScopeType(scope, type, ctx)
     const match = entries.find((e) => e.data.name === name)
     if (match) return match

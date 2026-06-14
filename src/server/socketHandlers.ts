@@ -6,6 +6,7 @@ import type { RunRegistry } from './runState.js'
 import type { PlanetChatRegistry } from './planetChat.js'
 import type { FeatureChatRegistry } from './featureChat.js'
 import type { TranscriptStore } from './transcriptStore.js'
+import type { PendingQuestionStore } from './pendingQuestionStore.js'
 import type { TerminalSessionManager } from './runtime/TerminalSessionManager.js'
 import type { TypedIOServer, TypedSocket } from './socketTypes.js'
 
@@ -17,6 +18,7 @@ export interface WireSocketDeps {
   testRuns: TestRunRegistry
   runState: RunRegistry
   transcripts: TranscriptStore
+  pendingQuestions: PendingQuestionStore
   planetChats: PlanetChatRegistry
   featureChats?: FeatureChatRegistry
 }
@@ -29,7 +31,7 @@ export interface WireSocketDeps {
  * test-run:*) get forwarded to the SessionManager / TestRunRegistry.
  */
 export function wireSocketHandlers(deps: WireSocketDeps): void {
-  const { app, io, manager, terminals, testRuns, runState, transcripts, planetChats, featureChats } = deps
+  const { app, io, manager, terminals, testRuns, runState, transcripts, pendingQuestions, planetChats, featureChats } = deps
 
   // socket.io's typed-event generics give us static event names / payload
   // shapes (see socketTypes.ts), but the wire is still untrusted at runtime
@@ -40,6 +42,7 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     socket.emit('session:list', manager.describeAll())
     socket.emit('terminal:list', terminals.list())
     transcripts.catchUp(socket)
+    pendingQuestions.catchUp(socket)
     planetChats.catchUpSocket(socket)
     featureChats?.catchUpSocket(socket)
     const snapshot = runState.snapshot()
@@ -67,6 +70,19 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     socket.on('clarification:reply', (payload: ClientEvents['clarification:reply']) => {
       if (!payload?.agentRunId || !payload?.toolUseId || typeof payload.answer !== 'string') return
       manager.get(payload.agentRunId)?.resolveClarification(payload.toolUseId, payload.answer)
+    })
+
+    socket.on('question:answer', (payload: ClientEvents['question:answer']) => {
+      if (typeof payload?.questionId !== 'string' || typeof payload?.answer !== 'string') return
+      const routed = pendingQuestions.answer(payload.questionId, payload.answer)
+      if (!routed) {
+        app.log.warn({ questionId: payload.questionId }, 'question:answer — question not found or already resolved')
+      }
+    })
+
+    socket.on('question:dismiss', (payload: ClientEvents['question:dismiss']) => {
+      if (typeof payload?.questionId !== 'string') return
+      pendingQuestions.dismiss(payload.questionId)
     })
 
     socket.on('terminal:start', (payload: ClientEvents['terminal:start']) => {

@@ -6,15 +6,33 @@ export function AiNodeFields({
   agents,
   onChange,
   onOpenToolEditor,
+  onCreateAgent,
 }: {
   node: WorkflowNode
   agents: ToolSummary[]
   onChange: (patch: Partial<WorkflowNode>) => void
   onOpenToolEditor: (t: ToolSummary) => void
+  onCreateAgent: () => void
 }) {
   const attached = node.agents ?? []
   return (
     <>
+      <div>
+        <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">
+          RUNTIME
+        </label>
+        <select
+          value={node.agentKind ?? ''}
+          onChange={(e) => onChange({ agentKind: (e.target.value as 'claude-sdk' | 'claude-code-cli' | 'codex-cli') || undefined })}
+          className="w-full bg-black border border-cyan-500/40 rounded p-1.5 text-zinc-200 text-xs focus:outline-none focus:border-cyan-300"
+        >
+          <option value="">(inherit from feature → planet → global)</option>
+          <option value="claude-sdk">claude-sdk — in-process SDK agent</option>
+          <option value="claude-code-cli">claude-code-cli — Claude Code CLI in terminal</option>
+          <option value="codex-cli">codex-cli — Codex CLI in terminal</option>
+        </select>
+      </div>
+
       <div>
         <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">
           PROMPT (supports {'{task}'} and {'{upstream_outputs}'})
@@ -28,11 +46,20 @@ export function AiNodeFields({
       </div>
 
       <div>
-        <label className="text-[10px] tracking-widest text-zinc-500 block mb-1">AGENTS</label>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <label className="text-[10px] tracking-widest text-zinc-500 block">AGENTS</label>
+          <button
+            type="button"
+            onClick={onCreateAgent}
+            className="px-2 py-0.5 border border-cyan-500/60 text-cyan-300 hover:bg-cyan-500/20 text-[10px] tracking-wide"
+          >
+            + new agent
+          </button>
+        </div>
         {agents.length === 0 ? (
           <p className="text-[10px] text-zinc-600">
-            // no agents in the global library. seed them from{' '}
-            <span className="text-cyan-400">planets → tools</span>.
+            // no agents in the global library. create one here and it will be attached to this
+            node.
           </p>
         ) : (
           <div className="space-y-1 max-h-60 overflow-y-auto pr-1">

@@ -57,6 +57,16 @@ interface UiState {
   focusPlanet: (planetId: number) => void
   focusSun: () => void
   focusShip: (planetId: number, shipFeatureId: number) => void
+  /**
+   * Navigate directly to a specific feature and, if provided, select a
+   * particular terminal tab within it. All state updates are atomic so React
+   * sees a single render. Use this for notification-click routing.
+   */
+  navigateTo: (target: {
+    planetId: number
+    featureId: number
+    terminalSessionId?: string | null
+  }) => void
   back: () => void
   setSplitterRatio: (r: number) => void
   setNotificationDeckOpen: (open: boolean) => void
@@ -131,6 +141,20 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({
       focus: { lod: 2, planetId, shipFeatureId },
       ...(same ? {} : { infoPanelOpen: true, chatPanelOpen: true }),
+    })
+  },
+  navigateTo: ({ planetId, featureId, terminalSessionId }) => {
+    const cur = get().focus
+    const alreadyHere =
+      cur.lod === 2 && cur.planetId === planetId && cur.shipFeatureId === featureId
+    const tabUpdate = terminalSessionId
+      ? { selectedTabByFeature: { ...get().selectedTabByFeature, [featureId]: terminalSessionId } }
+      : {}
+    set({
+      focus: { lod: 2, planetId, shipFeatureId: featureId },
+      chatPanelOpen: true,
+      ...(alreadyHere ? {} : { infoPanelOpen: true }),
+      ...tabUpdate,
     })
   },
   back: () => {

@@ -142,9 +142,9 @@ test('resolveTool: planet without a project path falls back to global only', asy
   }
 })
 
-test('resolveTool: catalog scopes (.claude/) are NEVER consulted', async () => {
-  // The resolver only walks planet → global. A tool present only in a catalog
-  // scope should remain unresolved until adopted.
+test('resolveTool: catalog agents (.claude/) are not consulted', async () => {
+  // Workflow node agents need AgentYard's normalized agent schema, so they
+  // resolve only from planet → global until adopted.
   const env = makeEnv()
   try {
     const catalogDir = path.join(env.ctx.planetProjectPath, '.claude', 'agents')
@@ -156,6 +156,25 @@ test('resolveTool: catalog scopes (.claude/) are NEVER consulted', async () => {
     )
     const r = await resolveTool('agent', 'cataloged', env.ctx)
     assert.equal(r, null)
+  } finally {
+    env.cleanup()
+  }
+})
+
+test('resolveTool: catalog skills are resolved after editable scopes', async () => {
+  const env = makeEnv()
+  try {
+    const catalogDir = path.join(env.ctx.planetProjectPath, '.claude', 'skills', 'catalog-skill')
+    mkdirSync(catalogDir, { recursive: true })
+    writeFileSync(
+      path.join(catalogDir, 'SKILL.md'),
+      '---\nname: catalog-skill\ndescription: catalog\n---\n\ncatalog body\n',
+      'utf8',
+    )
+    const r = await resolveTool('skill', 'catalog-skill', env.ctx)
+    assert.ok(r && r.type === 'skill')
+    assert.equal(r.scope, 'claude-project')
+    assert.equal(r.data.description, 'catalog')
   } finally {
     env.cleanup()
   }

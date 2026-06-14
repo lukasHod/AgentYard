@@ -6,6 +6,7 @@ import { getPlanet } from './planets.js'
 import type { RunRegistry } from './runState.js'
 import type { Session, SessionEvent } from './runtime/Session.js'
 import type { SessionDescriptor, SessionManager } from './runtime/SessionManager.js'
+import type { TerminalSessionManager } from './runtime/TerminalSessionManager.js'
 import { createUpdateFeatureInfoTool } from './runtime/tools/updateFeatureInfo.js'
 import { createRunFeatureWorkflowTool } from './runtime/tools/runFeatureWorkflow.js'
 import type { TypedIOServer, TypedSocket } from './socketTypes.js'
@@ -103,6 +104,7 @@ function buildSystemPrompt(opts: {
 
 export interface FeatureChatDeps {
   manager: SessionManager
+  terminals?: TerminalSessionManager
   io: TypedIOServer
   runState: RunRegistry
   log: FastifyBaseLogger
@@ -184,6 +186,7 @@ export class FeatureChatRegistry {
       featureId,
       planetId: feature.planetId,
       manager: this.deps.manager,
+      terminals: this.deps.terminals,
       io: this.deps.io,
       runState: this.deps.runState,
       log: this.deps.log,

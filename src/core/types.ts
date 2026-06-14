@@ -104,6 +104,21 @@ export interface HandoffSummary {
   timestamp: number
 }
 
+export interface PendingQuestion {
+  id: string
+  agentSessionId: string
+  toolUseId: string
+  planetId: number | null
+  featureId: number | null
+  workflowRunId: string | null
+  nodeRunId: string | null
+  question: string
+  state: 'pending' | 'answered' | 'dismissed'
+  createdAt: number
+  answeredAt: number | null
+  answer: string | null
+}
+
 export type TerminalProfileId =
   | 'claude-cli'
   | 'codex-cli'
@@ -187,6 +202,10 @@ export interface ServerEvents {
   'node:skipped':     { runId: string; nodeId: string; title: string }
   'run:complete':     { runId: string; finalSummary: string }
   'run:failed':       { runId: string; nodeId?: string; error: string }
+  'question:list':      PendingQuestion[]
+  'question:created':   PendingQuestion
+  'question:answered':  { id: string; answeredAt: number; answer: string | null }
+  'question:dismissed': { id: string }
   'planet:created':   PlanetSummary
   'planet:deleted':   { id: number }
   'feature:created':  FeatureSummary
@@ -225,6 +244,8 @@ export interface ClientEvents {
   'terminal:kill':       { sessionId: string }
   'terminal:restart':    { sessionId: string }
   'terminal:delete':     { sessionId: string }
+  'question:answer':   { questionId: string; answer: string }
+  'question:dismiss':  { questionId: string }
   // ── Sandbox test-run client→server messages ──
   // Forwarded by the server to the test-run's isolated SessionManager.
   'test-run:agent:send':           { testRunId: string; agentRunId: string; content: string }

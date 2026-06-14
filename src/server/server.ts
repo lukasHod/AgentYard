@@ -23,6 +23,7 @@ import { RunRegistry } from './runState.js'
 import { PlanetChatRegistry } from './planetChat.js'
 import { FeatureChatRegistry } from './featureChat.js'
 import { TranscriptStore } from './transcriptStore.js'
+import { PendingQuestionStore } from './pendingQuestionStore.js'
 import { wireSocketHandlers } from './socketHandlers.js'
 import type { TypedIOServer } from './socketTypes.js'
 import { registerFeatureRoutes } from './routes/features.js'
@@ -35,6 +36,7 @@ import { registerToolRoutes } from './routes/tools.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 import { registerBrowseFolderRoute } from './routes/browseFolder.js'
 import { registerHandoffRoutes } from './routes/handoffs.js'
+import { registerBridgeRoutes } from './routes/bridge.js'
 import type { AppContext } from './routes/context.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -105,13 +107,15 @@ export async function startServer(opts: ServerOptions) {
   const runState = new RunRegistry(io)
   const testRuns = new TestRunRegistry(io)
   const planetChats = new PlanetChatRegistry({ manager, io, runState, log: app.log })
-  const featureChats = new FeatureChatRegistry({ manager, io, runState, log: app.log })
+  const featureChats = new FeatureChatRegistry({ manager, terminals, io, runState, log: app.log })
+  const pendingQuestions = new PendingQuestionStore(getDb(), io, manager)
 
   manager.on('session:added', (desc: SessionDescriptor) => transcripts.onSessionAdded(desc))
   manager.on('session:removed', (ev: { id: string }) => transcripts.onSessionRemoved(ev))
   manager.on('event', (ev: SessionEvent) => {
     if (ev.type === 'closed') app.log.info(`Session ${ev.agentRunId} closed`)
     transcripts.onSessionEvent(ev)
+    pendingQuestions.onSessionEvent(ev.agentRunId, ev)
   })
   terminals.on('terminal:event', (ev: TerminalManagerEvent) => {
     switch (ev.type) {
@@ -154,11 +158,13 @@ export async function startServer(opts: ServerOptions) {
     testRuns,
     runState,
     transcripts,
+    pendingQuestions,
     planetChats,
     featureChats,
     apiError,
   }
   wireSocketHandlers(ctx)
+  registerBridgeRoutes(ctx)
   registerAgentKindRoutes(ctx)
   registerHealthRoutes(ctx)
   registerWorkflowRoutes(ctx)
@@ -171,6 +177,8 @@ export async function startServer(opts: ServerOptions) {
   registerHandoffRoutes(ctx)
 
   const address = await app.listen({ port: opts.port, host: '127.0.0.1' })
+  // Expose the bridge URL so terminal sessions inherit it via TerminalSessionManager.
+  process.env.AGENTYARD_BRIDGE_URL = address.replace(/\/$/, '')
 
   /**
    * Tear the server down deterministically on SIGINT/SIGTERM:

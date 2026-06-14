@@ -28,7 +28,7 @@ interface Props {
   planetId: number | null
   library: ToolSummary[]
   onClose: () => void
-  onSaved: () => void
+  onSaved: (data: AnyToolData) => void
 }
 
 const TYPE_TITLE: Record<ToolType, string> = {
@@ -53,7 +53,7 @@ export function ToolEditorModal({ mode, planetId, library, onClose, onSaved }: P
       pushToast('error', `Save failed: ${res.error}`)
       return
     }
-    onSaved()
+    onSaved(data)
     onClose()
   }
 
@@ -105,7 +105,7 @@ export function ToolEditorModal({ mode, planetId, library, onClose, onSaved }: P
 
   return (
     <div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-30"
+      className="fixed inset-0 bg-black/80 flex items-center justify-center z-[70]"
       onClick={onClose}
     >
       <div

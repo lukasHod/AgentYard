@@ -5,6 +5,7 @@ import type {
   AgentState,
   FeatureSummary,
   NodeRunStatus,
+  PendingQuestion,
   RunSnapshot,
   ServerEvents,
   SessionDescriptor,
@@ -41,6 +42,8 @@ interface State {
   sessionsById: Map<string, SessionDescriptor>
   transcripts: Map<string, ChatMessage[]>
   pendings: Map<string, PendingClarification>
+  /** Durable pending questions from the server — survive reconnect and restart. */
+  pendingQuestionsById: Map<string, PendingQuestion>
   activeRun: RunSnapshot | null
   planets: PlanetSummary[]
   features: Map<number, FeatureSummary[]>
@@ -70,6 +73,10 @@ interface Actions {
   applyFeatureCreated: (f: ServerEvents['feature:created']) => void
   applyFeatureUpdated: (f: ServerEvents['feature:updated']) => void
   applyFeatureDeleted: (id: number) => void
+  applyQuestionList: (list: ServerEvents['question:list']) => void
+  applyQuestionCreated: (q: ServerEvents['question:created']) => void
+  applyQuestionAnswered: (ev: ServerEvents['question:answered']) => void
+  applyQuestionDismissed: (ev: ServerEvents['question:dismissed']) => void
   applyTerminalList: (list: ServerEvents['terminal:list']) => void
   applyTerminalAdded: (t: ServerEvents['terminal:session:added']) => void
   applyTerminalUpdate: (t: ServerEvents['terminal:session:update']) => void
@@ -88,6 +95,7 @@ export const useSocketStore = create<State & Actions>((set) => ({
   sessionsById: new Map(),
   transcripts: new Map(),
   pendings: new Map(),
+  pendingQuestionsById: new Map(),
   activeRun: null,
   planets: [],
   features: new Map(),
@@ -260,6 +268,34 @@ export const useSocketStore = create<State & Actions>((set) => ({
       return { features }
     }),
 
+  applyQuestionList: (list) => {
+    set({ pendingQuestionsById: new Map(list.map((q) => [q.id, q])) })
+  },
+
+  applyQuestionCreated: (q) => {
+    set((prev) => ({ pendingQuestionsById: new Map(prev.pendingQuestionsById).set(q.id, q) }))
+  },
+
+  applyQuestionAnswered: (ev) => {
+    set((prev) => {
+      const cur = prev.pendingQuestionsById.get(ev.id)
+      if (!cur) return prev
+      const next = new Map(prev.pendingQuestionsById)
+      next.set(ev.id, { ...cur, state: 'answered', answeredAt: ev.answeredAt, answer: ev.answer })
+      return { pendingQuestionsById: next }
+    })
+  },
+
+  applyQuestionDismissed: (ev) => {
+    set((prev) => {
+      const cur = prev.pendingQuestionsById.get(ev.id)
+      if (!cur) return prev
+      const next = new Map(prev.pendingQuestionsById)
+      next.set(ev.id, { ...cur, state: 'dismissed' })
+      return { pendingQuestionsById: next }
+    })
+  },
+
   applyTerminalList: (list) => {
     set({ terminalsById: new Map(list.map((t) => [t.id, t])) })
   },
@@ -386,6 +422,54 @@ export const useSessionsMap = () => useSocketStore((s) => s.sessionsById)
 
 export const useTranscriptsMap = () => useSocketStore((s) => s.transcripts)
 export const usePendingsMap = () => useSocketStore((s) => s.pendings)
+
+/** All durable pending questions (state === 'pending' only) as a list. */
+export const usePendingQuestions = (): PendingQuestion[] =>
+  useSocketStore(
+    useShallow((s) =>
+      Array.from(s.pendingQuestionsById.values()).filter((q) => q.state === 'pending'),
+    ),
+  )
+
+/** Total pending question count across all planets/features. */
+export const useGlobalWaitingCount = (): number =>
+  useSocketStore((s) => {
+    let n = 0
+    for (const q of s.pendingQuestionsById.values()) if (q.state === 'pending') n++
+    return n
+  })
+
+/** Set of planet ids that currently have at least one pending question. */
+export const useWaitingPlanetIds = (): ReadonlySet<number> =>
+  useSocketStore(
+    useShallow((s) => {
+      const ids = new Set<number>()
+      for (const q of s.pendingQuestionsById.values())
+        if (q.state === 'pending' && q.planetId !== null) ids.add(q.planetId)
+      return ids
+    }),
+  )
+
+/** Set of feature ids that currently have at least one pending question. */
+export const useWaitingFeatureIds = (): ReadonlySet<number> =>
+  useSocketStore(
+    useShallow((s) => {
+      const ids = new Set<number>()
+      for (const q of s.pendingQuestionsById.values())
+        if (q.state === 'pending' && q.featureId !== null) ids.add(q.featureId)
+      return ids
+    }),
+  )
+
+/** Pending question count for a single agent session id. */
+export const useWaitingCountByAgentSession = (agentSessionId: string | null): number =>
+  useSocketStore((s) => {
+    if (!agentSessionId) return 0
+    let n = 0
+    for (const q of s.pendingQuestionsById.values())
+      if (q.state === 'pending' && q.agentSessionId === agentSessionId) n++
+    return n
+  })
 
 /** Subscribe to a single agent's transcript — only re-renders for that agent. */
 export const useTranscript = (agentRunId: string): ChatMessage[] =>

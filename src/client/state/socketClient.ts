@@ -26,6 +26,17 @@ export function initSocketClient(): Socket {
     store.applyClarificationResolved(ev),
   )
 
+  socket.on('question:list', (ev: ServerEvents['question:list']) => store.applyQuestionList(ev))
+  socket.on('question:created', (ev: ServerEvents['question:created']) =>
+    store.applyQuestionCreated(ev),
+  )
+  socket.on('question:answered', (ev: ServerEvents['question:answered']) =>
+    store.applyQuestionAnswered(ev),
+  )
+  socket.on('question:dismissed', (ev: ServerEvents['question:dismissed']) =>
+    store.applyQuestionDismissed(ev),
+  )
+
   socket.on('run:snapshot', (ev: ServerEvents['run:snapshot']) => store.applyRunSnapshot(ev))
   socket.on('run:started', (ev: ServerEvents['run:started']) => store.applyRunStarted(ev))
   socket.on('node:started', (ev: ServerEvents['node:started']) => store.applyNodeStarted(ev))
@@ -129,4 +140,14 @@ export function restartTerminal(sessionId: string) {
 export function deleteTerminal(sessionId: string) {
   useSocketStore.getState().applyTerminalRemoved({ sessionId })
   socket?.emit('terminal:delete', { sessionId })
+}
+
+// ── Pending questions ──────────────────────────────────────────────────────
+
+export function answerQuestion(questionId: string, answer: string) {
+  socket?.emit('question:answer', { questionId, answer })
+}
+
+export function dismissQuestion(questionId: string) {
+  socket?.emit('question:dismiss', { questionId })
 }

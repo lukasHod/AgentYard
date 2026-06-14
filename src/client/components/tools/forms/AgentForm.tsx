@@ -9,12 +9,18 @@ import {
   textareaCls,
 } from './formChrome'
 
-/** Library narrowing — only planet- or global-scoped items of the given type are usable. */
+const PERMISSION_PRESETS = [
+  { label: 'Research', tools: ['Read', 'Glob', 'Grep'] },
+  { label: 'Build', tools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'] },
+  { label: 'Shell', tools: ['Read', 'Glob', 'Grep', 'Bash'] },
+  { label: 'Review', tools: ['Read', 'Glob', 'Grep', 'Bash'] },
+] as const
+
+const COMMON_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash', 'NotebookEdit'] as const
+
+/** Agent capabilities may reference editable tools and read-only catalog tools. */
 function useAvailable(library: ToolSummary[], type: ToolType) {
-  return useMemo(
-    () => library.filter((t) => t.type === type && (t.scope === 'planet' || t.scope === 'global')),
-    [library, type],
-  )
+  return useMemo(() => library.filter((t) => t.type === type), [library, type])
 }
 
 export function AgentForm({
@@ -49,6 +55,25 @@ export function AgentForm({
   const availableSkills = useAvailable(library, 'skill')
   const availableMcps = useAvailable(library, 'mcp')
   const availableScripts = useAvailable(library, 'script')
+  const selectedTools = useMemo(
+    () =>
+      form.allowedToolsText
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [form.allowedToolsText],
+  )
+
+  function setAllowedTools(tools: readonly string[]) {
+    set({ allowedToolsText: tools.join(',') })
+  }
+
+  function toggleAllowedTool(tool: string) {
+    const next = selectedTools.includes(tool)
+      ? selectedTools.filter((t) => t !== tool)
+      : [...selectedTools, tool]
+    setAllowedTools(next)
+  }
 
   function submit() {
     if (!form.name.trim()) return alert('name is required')
@@ -74,85 +99,126 @@ export function AgentForm({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-3">
+    <div className="space-y-4">
+      <section className="rounded border border-cyan-500/20 bg-cyan-500/[0.03] p-3 space-y-3">
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <Label>NAME</Label>
+            <input
+              value={form.name}
+              onChange={(e) => set({ name: e.target.value })}
+              disabled={disableName}
+              placeholder="frontend-builder"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <Label>ROLE</Label>
+            <input
+              value={form.role}
+              onChange={(e) => set({ role: e.target.value })}
+              placeholder="defaults to name"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <Label>MODEL</Label>
+            <input
+              value={form.model}
+              onChange={(e) => set({ model: e.target.value })}
+              placeholder="(SDK default)"
+              className={inputCls}
+            />
+          </div>
+        </div>
         <div>
-          <Label>NAME</Label>
+          <Label>DESCRIPTION</Label>
           <input
-            value={form.name}
-            onChange={(e) => set({ name: e.target.value })}
-            disabled={disableName}
+            value={form.description}
+            onChange={(e) => set({ description: e.target.value })}
+            placeholder="Short summary shown in workflow node agent pickers"
             className={inputCls}
           />
         </div>
+      </section>
+
+      <section className="grid grid-cols-[1.2fr_0.8fr] gap-4">
         <div>
-          <Label>ROLE</Label>
-          <input
-            value={form.role}
-            onChange={(e) => set({ role: e.target.value })}
-            placeholder="defaults to name"
-            className={inputCls}
+          <Label hint="the agent's full role, boundaries, and operating style">
+            AGENT ROLE PROMPT
+          </Label>
+          <textarea
+            value={form.prompt}
+            onChange={(e) => set({ prompt: e.target.value })}
+            rows={16}
+            placeholder="Describe what this agent is responsible for, what good output looks like, and when it should ask for help."
+            className={textareaCls}
           />
         </div>
-        <div>
-          <Label>MODEL</Label>
-          <input
-            value={form.model}
-            onChange={(e) => set({ model: e.target.value })}
-            placeholder="(SDK default)"
-            className={inputCls}
+
+        <div className="space-y-3">
+          <div>
+            <Label hint="leave blank for the full Claude Code preset">PERMISSIONS</Label>
+            <div className="grid grid-cols-2 gap-1.5 mb-2">
+              {PERMISSION_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setAllowedTools(preset.tools)}
+                  className="rounded border border-zinc-700 px-2 py-1 text-left text-[10px] text-zinc-300 hover:border-cyan-400 hover:text-cyan-200"
+                >
+                  <span className="block text-cyan-300">{preset.label}</span>
+                  <span className="text-zinc-600">{preset.tools.join(', ')}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {COMMON_TOOLS.map((tool) => {
+                const active = selectedTools.includes(tool)
+                return (
+                  <button
+                    key={tool}
+                    type="button"
+                    onClick={() => toggleAllowedTool(tool)}
+                    className={`rounded-full border px-2 py-0.5 text-[10px] ${
+                      active
+                        ? 'border-cyan-400 bg-cyan-500/15 text-cyan-100'
+                        : 'border-zinc-700 text-zinc-500 hover:border-zinc-500'
+                    }`}
+                  >
+                    {tool}
+                  </button>
+                )
+              })}
+            </div>
+            <input
+              value={form.allowedToolsText}
+              onChange={(e) => set({ allowedToolsText: e.target.value })}
+              placeholder="Read,Edit,Write,Glob,Grep,Bash"
+              className={inputCls}
+            />
+          </div>
+
+          <CapabilityMultiselect
+            label="SKILLS / RULES"
+            options={availableSkills}
+            selected={form.skills}
+            onChange={(skills) => set({ skills })}
+          />
+          <CapabilityMultiselect
+            label="MCPS"
+            options={availableMcps}
+            selected={form.mcps}
+            onChange={(mcps) => set({ mcps })}
+          />
+          <CapabilityMultiselect
+            label="SCRIPTS"
+            options={availableScripts}
+            selected={form.scripts}
+            onChange={(scripts) => set({ scripts })}
           />
         </div>
-      </div>
-      <div>
-        <Label>DESCRIPTION</Label>
-        <input
-          value={form.description}
-          onChange={(e) => set({ description: e.target.value })}
-          className={inputCls}
-        />
-      </div>
-
-      <div>
-        <Label hint="comma-separated subset of Claude Code's toolset (Read, Edit, Write, Glob, Grep, Bash, NotebookEdit, …); leave blank for the full preset">
-          ALLOWED TOOLS
-        </Label>
-        <input
-          value={form.allowedToolsText}
-          onChange={(e) => set({ allowedToolsText: e.target.value })}
-          placeholder="Read,Edit,Write,Glob,Grep,Bash"
-          className={inputCls}
-        />
-      </div>
-
-      <CapabilityMultiselect
-        label="SKILLS"
-        options={availableSkills}
-        selected={form.skills}
-        onChange={(skills) => set({ skills })}
-      />
-      <CapabilityMultiselect
-        label="MCPS"
-        options={availableMcps}
-        selected={form.mcps}
-        onChange={(mcps) => set({ mcps })}
-      />
-      <CapabilityMultiselect
-        label="SCRIPTS"
-        options={availableScripts}
-        selected={form.scripts}
-        onChange={(scripts) => set({ scripts })}
-      />
-
-      <div>
-        <Label hint="becomes the drone's system prompt">SYSTEM PROMPT</Label>
-        <textarea
-          value={form.prompt}
-          onChange={(e) => set({ prompt: e.target.value })}
-          rows={14}
-          className={textareaCls}
-        />
-      </div>
+      </section>
 
       <FormButtons onCancel={onCancel} onSubmit={submit} saving={saving} />
     </div>

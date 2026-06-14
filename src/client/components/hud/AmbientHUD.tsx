@@ -7,6 +7,7 @@ import {
   usePlanets,
   useFeaturesMap,
   usePendingsMap,
+  useGlobalWaitingCount,
 } from '../../state/socketStore'
 import { useUiStore } from '../../state/uiStore'
 import { NewPlanetModal } from './NewPlanetModal'
@@ -16,6 +17,7 @@ export function AmbientHUD() {
   const planets = usePlanets()
   const features = useFeaturesMap()
   const pendings = usePendingsMap()
+  const globalWaiting = useGlobalWaitingCount()
   const focusPlanet = useUiStore((s) => s.focusPlanet)
   const [newOpen, setNewOpen] = useState(false)
   const [muted, setMuted] = useState(false)
@@ -37,7 +39,9 @@ export function AmbientHUD() {
           <span className="font-semibold tracking-widest text-sm">AGENTYARD</span>
         </GlassPanel>
         <GlassPanel className="px-4 py-2 flex items-center gap-3 text-xs pointer-events-auto">
-          <GlassChip>{pendings.size} pending</GlassChip>
+          <GlassChip className={globalWaiting > 0 ? 'text-amber-300' : undefined}>
+            {globalWaiting > 0 ? `${globalWaiting} waiting` : `${pendings.size} pending`}
+          </GlassChip>
           <button onClick={() => setMuted(!muted)} className="text-slate-300">{muted ? '🔇' : '🔊'}</button>
           <GlassButton onClick={() => setNewOpen(true)}>+ new project</GlassButton>
         </GlassPanel>

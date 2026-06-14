@@ -7,6 +7,7 @@ import { getPlanet } from '../../planets.js'
 import { getWorkflow, listWorkflows } from '../../workflows.js'
 import type { RunRegistry } from '../../runState.js'
 import type { SessionManager } from '../SessionManager.js'
+import type { TerminalSessionManager } from '../TerminalSessionManager.js'
 import type { TypedIOServer } from '../../socketTypes.js'
 import { createFeatureWorktree } from '../worktrees.js'
 import { runWorkflowOnSessions } from '../runWorkflowOnSessions.js'
@@ -15,6 +16,7 @@ export function createRunFeatureWorkflowTool(deps: {
   featureId: number
   planetId: number
   manager: SessionManager
+  terminals?: TerminalSessionManager
   io: TypedIOServer
   runState: RunRegistry
   log: FastifyBaseLogger
@@ -118,6 +120,9 @@ export function createRunFeatureWorkflowTool(deps: {
         workflow: wf,
         task: feature.task,
         manager: deps.manager,
+        terminals: deps.terminals,
+        featureId: deps.featureId,
+        planetId: deps.planetId,
         ctx: { planetProjectPath: planet.projectPath },
         cwd,
         signal: controller.signal,

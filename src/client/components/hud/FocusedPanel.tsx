@@ -12,11 +12,15 @@ import {
   useFeaturesMap,
   useConnected,
   useTerminalsByPlanet,
+  useWaitingFeatureIds,
+  useWaitingCountByAgentSession,
 } from '../../state/socketStore'
 import {
   startTerminal,
   restartTerminal,
   deleteTerminal,
+  answerQuestion,
+  dismissQuestion,
 } from '../../state/socketClient'
 import { ToolsTabContent } from '../ToolsTabContent'
 import { TerminalPanel } from '../TerminalPanel'
@@ -26,6 +30,7 @@ import { HandoffDialog } from '../HandoffDialog'
 import { apiGet, apiPost, apiDelete } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { useNotificationRows } from '../hud/useNotificationRows'
+import { usePendingQuestions } from '../../state/socketStore'
 import type {
   ClientEvents,
   PlanetSummary,
@@ -63,6 +68,7 @@ function FeaturesTab({
   const [creating, setCreating] = useState(false)
   const focusShip = useUiStore((s) => s.focusShip)
   const focus = useUiStore((s) => s.focus)
+  const waitingFeatureIds = useWaitingFeatureIds()
 
   const handleNewFeature = async () => {
     setCreating(true)
@@ -100,19 +106,34 @@ function FeaturesTab({
         <ul className="space-y-2">
           {features.map((f) => {
             const isActive = focus.lod === 2 && focus.shipFeatureId === f.id
+            const isWaiting = waitingFeatureIds.has(f.id)
             return (
               <li
                 key={f.id}
                 className={`border rounded p-2 cursor-pointer transition-colors ${
-                  isActive
-                    ? 'border-sky-400/60 bg-sky-400/10'
-                    : 'border-sky-400/15 hover:border-sky-400/30 hover:bg-sky-400/5'
+                  isWaiting
+                    ? isActive
+                      ? 'border-amber-300/60 bg-amber-400/10'
+                      : 'border-amber-400/30 hover:border-amber-300/60 hover:bg-amber-400/5'
+                    : isActive
+                      ? 'border-sky-400/60 bg-sky-400/10'
+                      : 'border-sky-400/15 hover:border-sky-400/30 hover:bg-sky-400/5'
                 }`}
                 onClick={() => focusShip(planetId, f.id)}
               >
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-sky-300 truncate">{f.chatName ?? f.name}</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {isWaiting && (
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    )}
+                    <span className={`truncate ${isWaiting ? 'text-amber-200' : 'text-sky-300'}`}>
+                      {f.chatName ?? f.name}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {isWaiting && (
+                      <span className="text-[10px] tracking-widest text-amber-300">waiting</span>
+                    )}
                     {f.status !== 'done' && f.status !== 'complete' && (
                       <GlassButton
                         variant="ghost"
@@ -806,12 +827,17 @@ function FeatureTabButton({
   onClose?: () => void
 }) {
   const dotClass = tab.terminal ? TAB_STATE_DOT[tab.terminal.state] : 'bg-slate-600'
+  const waiting = useWaitingCountByAgentSession(tab.terminal?.agentSessionId ?? null)
   return (
     <span
       className={`px-2 py-1 text-[10px] tracking-widest rounded border transition-colors flex items-center gap-2 ${
-        active
-          ? 'border-cyan-300 text-cyan-200 bg-cyan-400/10'
-          : 'border-cyan-400/20 text-slate-300 hover:border-cyan-300/50 hover:text-cyan-100'
+        waiting > 0
+          ? active
+            ? 'border-amber-300 text-amber-200 bg-amber-400/10'
+            : 'border-amber-400/40 text-amber-200 hover:border-amber-300/70 hover:text-amber-100 animate-pulse'
+          : active
+            ? 'border-cyan-300 text-cyan-200 bg-cyan-400/10'
+            : 'border-cyan-400/20 text-slate-300 hover:border-cyan-300/50 hover:text-cyan-100'
       }`}
     >
       <button
@@ -819,8 +845,16 @@ function FeatureTabButton({
         onClick={onClick}
         className="flex items-center gap-2"
       >
-        <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotClass}`} />
+        <span className="relative inline-flex items-center justify-center w-2 h-2">
+          {waiting > 0 && (
+            <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-75" />
+          )}
+          <span className={`relative inline-block w-1.5 h-1.5 rounded-full ${waiting > 0 ? 'bg-amber-300' : dotClass}`} />
+        </span>
         {tab.label}
+        {waiting > 0 && (
+          <span className="text-amber-300 font-bold">{waiting}</span>
+        )}
       </button>
       {onClose && (
         <button
@@ -901,12 +935,64 @@ function ChatOrTerminal({
 }
 
 // ---------------------------------------------------------------------------
+// PendingQuestionInline — compact answer widget for the feature side rail
+// ---------------------------------------------------------------------------
+
+function PendingQuestionInline({ question, questionId }: { question: string; questionId: string }) {
+  const [answer, setAnswer] = useState('')
+  const [answering, setAnswering] = useState(false)
+
+  const submit = () => {
+    const trimmed = answer.trim()
+    if (!trimmed) return
+    setAnswering(true)
+    answerQuestion(questionId, trimmed)
+    setAnswer('')
+    setAnswering(false)
+  }
+
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-slate-200 whitespace-pre-wrap">{question}</p>
+      <div className="flex gap-1">
+        <input
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
+          placeholder="type answer…"
+          disabled={answering}
+          className="flex-1 bg-black/40 border border-amber-400/30 rounded px-2 py-0.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-300"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!answer.trim() || answering}
+          className="px-2 py-0.5 text-[10px] tracking-widest text-amber-300 border border-amber-400/30 rounded hover:border-amber-300 disabled:opacity-40"
+        >
+          send
+        </button>
+        <button
+          type="button"
+          onClick={() => dismissQuestion(questionId)}
+          className="px-2 py-0.5 text-[10px] tracking-widest text-slate-500 border border-slate-600/30 rounded hover:text-slate-300"
+          title="dismiss (hides from inbox; agent keeps waiting)"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // ShipInfoPanel — left panel content at LOD 2
 // ---------------------------------------------------------------------------
 
 function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
   const [markingDone, setMarkingDone] = useState(false)
   const [handoffTarget, setHandoffTarget] = useState<FeatureSummary | null>(null)
+  const allPending = usePendingQuestions()
+  const featurePending = allPending.filter((q) => q.featureId === feature.id)
 
   const handleMarkDone = async () => {
     setMarkingDone(true)
@@ -934,6 +1020,18 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
         <p className="text-sm text-slate-300 mt-2 whitespace-pre-wrap">{feature.description}</p>
       ) : (
         <p className="text-sm text-slate-500 mt-2 italic">Generating description…</p>
+      )}
+
+      {featurePending.length > 0 && (
+        <div className="mt-4 rounded border border-amber-400/30 bg-amber-400/5 p-2 space-y-2">
+          <div className="text-[10px] tracking-widest text-amber-300 flex items-center gap-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            WAITING · {featurePending.length}
+          </div>
+          {featurePending.map((q) => (
+            <PendingQuestionInline key={q.id} question={q.question} questionId={q.id} />
+          ))}
+        </div>
       )}
 
       {feature.task && (
@@ -1011,7 +1109,8 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
 
 function NotificationsTab() {
   const rows = useNotificationRows()
-  const focusShip = useUiStore((s) => s.focusShip)
+  const navigateTo = useUiStore((s) => s.navigateTo)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
 
   if (rows.length === 0) {
     return <EmptyMessage>no pending clarifications</EmptyMessage>
@@ -1021,13 +1120,59 @@ function NotificationsTab() {
       {rows.map((r) => (
         <li
           key={r.agentSessionId}
-          className="border border-amber-300/20 rounded p-2 cursor-pointer hover:bg-amber-300/5"
-          onClick={() => focusShip(r.planetId, r.shipFeatureId)}
+          className="border border-amber-300/20 rounded p-2 hover:bg-amber-300/5 space-y-1"
         >
-          <div className="text-sky-300 text-xs">
+          <button
+            type="button"
+            className="text-sky-300 text-xs text-left hover:text-sky-200 w-full"
+            onClick={() => navigateTo({
+              planetId: r.planetId,
+              featureId: r.shipFeatureId,
+              terminalSessionId: r.terminalSessionId,
+            })}
+          >
             {r.planetName} · {r.featureName}
-          </div>
-          <p className="text-slate-300 text-sm mt-0.5">{r.question}</p>
+            {r.terminalSessionId && (
+              <span className="ml-1 text-[10px] text-amber-300/60">→ agent tab</span>
+            )}
+          </button>
+          <p className="text-slate-300 text-sm">{r.question}</p>
+          {r.questionId && (
+            <div className="flex gap-1">
+              <input
+                value={answers[r.questionId] ?? ''}
+                onChange={(e) => setAnswers((prev) => ({ ...prev, [r.questionId!]: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && r.questionId) {
+                    const t = (answers[r.questionId] ?? '').trim()
+                    if (t) { answerQuestion(r.questionId, t); setAnswers((prev) => ({ ...prev, [r.questionId!]: '' })) }
+                  }
+                }}
+                placeholder="type answer…"
+                className="flex-1 bg-black/40 border border-amber-400/30 rounded px-2 py-0.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-300"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!r.questionId) return
+                  const t = (answers[r.questionId] ?? '').trim()
+                  if (t) { answerQuestion(r.questionId, t); setAnswers((prev) => ({ ...prev, [r.questionId!]: '' })) }
+                }}
+                disabled={!(answers[r.questionId] ?? '').trim()}
+                className="px-2 py-0.5 text-[10px] text-amber-300 border border-amber-400/30 rounded hover:border-amber-300 disabled:opacity-40"
+              >
+                send
+              </button>
+              <button
+                type="button"
+                onClick={() => r.questionId && dismissQuestion(r.questionId)}
+                className="px-2 py-0.5 text-[10px] text-slate-500 border border-slate-600/30 rounded hover:text-slate-300"
+                title="dismiss"
+              >
+                ×
+              </button>
+            </div>
+          )}
         </li>
       ))}
     </ul>
@@ -1277,7 +1422,11 @@ export function FocusedPanel() {
           </div>
         )}
 
-        <WorkflowEditorOverlay open={wfOpen} onClose={() => setWfOpen(false)} />
+        <WorkflowEditorOverlay
+          open={wfOpen}
+          planetId={isSunFocus ? null : planetId}
+          onClose={() => setWfOpen(false)}
+        />
       </div>
     </>
   )

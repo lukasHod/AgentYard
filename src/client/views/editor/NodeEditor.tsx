@@ -9,12 +9,14 @@ export function NodeEditor({
   scripts,
   onChange,
   onOpenToolEditor,
+  onCreateAgent,
 }: {
   node: WorkflowNode
   agents: ToolSummary[]
   scripts: ToolSummary[]
   onChange: (patch: Partial<WorkflowNode>) => void
   onOpenToolEditor: (t: ToolSummary) => void
+  onCreateAgent: () => void
 }) {
   return (
     <div className="space-y-4 text-zinc-300">
@@ -71,6 +73,7 @@ export function NodeEditor({
           agents={agents}
           onChange={onChange}
           onOpenToolEditor={onOpenToolEditor}
+          onCreateAgent={onCreateAgent}
         />
       ) : (
         <CustomNodeFields

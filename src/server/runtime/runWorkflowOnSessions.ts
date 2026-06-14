@@ -7,6 +7,7 @@ import {
   type NodeRunResult,
   type RunEvent,
 } from '../../core/executor.js'
+import type { AgentKind } from '../../core/plugins.js'
 import { SessionManager } from './SessionManager.js'
 import { Session, type SessionEvent } from './Session.js'
 import { createAssignTaskTool } from './tools/assignTask.js'
@@ -18,6 +19,10 @@ import type { ScanContext } from '../tools/scanner.js'
 import type { AgentTool, McpTool, ScriptTool, SkillTool } from '../../core/tools.js'
 import { resolveEnvVarsDeep } from '../secrets.js'
 import { runScriptNode } from './scriptRuntime.js'
+import { resolveAgentKind } from '../agentKindCascade.js'
+import type { TerminalSessionManager } from './TerminalSessionManager.js'
+import type { TerminalManagerEvent } from './TerminalSessionManager.js'
+import { bridgeRegistry } from '../bridgeRegistry.js'
 
 type AnyTool = SdkMcpToolDefinition<any>
 
@@ -46,6 +51,18 @@ export interface RunWorkflowOptions {
    * system prompt. Set when this run is resuming a handed-off feature.
    */
   handoffContext?: string
+  /**
+   * Feature id — used by resolveAgentKind to walk the cascade and by terminal
+   * sessions to tag which feature they belong to. Omit for ad-hoc runs.
+   */
+  featureId?: number | null
+  /** Planet id — same cascade / tagging purpose as featureId. */
+  planetId?: number | null
+  /**
+   * Terminal session manager — required for CLI-kind AI nodes. When absent
+   * and a node resolves to a CLI kind, the SDK path is used as fallback.
+   */
+  terminals?: TerminalSessionManager
 }
 
 const DEFAULT_AI_NODE_TIMEOUT_MS = 30 * 60 * 1000 // 30 min
@@ -57,12 +74,30 @@ interface RunAINodeDeps {
   aiNodeTimeoutMs: number
   signal?: AbortSignal
   handoffContext?: string
+  featureId?: number | null
+  planetId?: number | null
+  terminals?: TerminalSessionManager
 }
 
 /** Spawn leader + agents for an AI node, run it, return the leader's result. */
 async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> {
   const { manager, ctx, input, aiNodeTimeoutMs, signal } = deps
   const node = input.node
+
+  // Resolve which agent runtime this node should use.
+  const agentKind = resolveAgentKind({
+    nodeOverride: node.agentKind,
+    featureId: deps.featureId,
+    planetId: deps.planetId,
+  })
+
+  // CLI kinds (claude-code-cli, codex-cli) run in PTY terminal sessions rather
+  // than in-process SDK sessions. Fall back to SDK if no terminal manager is
+  // available (ad-hoc /api/runs, test runs, etc.).
+  if (agentKind !== 'claude-sdk' && deps.terminals) {
+    return runAINodeOnTerminals(deps, deps.terminals, agentKind)
+  }
+
   const agentNames = node.agents ?? []
   if (agentNames.length === 0) {
     throw new Error(`AI node ${node.id} has no agents connected`)
@@ -133,6 +168,158 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
     leader.off('event', onLeaderEvent)
     gate.dispose()
   }
+}
+
+/**
+ * Run an AI node using PTY terminal sessions (claude-code-cli / codex-cli).
+ *
+ * Spawns a leader terminal with the combined system prompt + task, and one
+ * additional terminal per connected agent drone (fire-and-monitor). The node
+ * completes when the leader terminal process exits, or the timeout elapses.
+ *
+ * The bridge (Step 12 / Phase 7) will later let CLI agents report structured
+ * events; for now, exit code 0 = success and we read the last 2 KB of the
+ * leader transcript as the node summary.
+ */
+async function runAINodeOnTerminals(
+  deps: RunAINodeDeps,
+  terminals: TerminalSessionManager,
+  agentKind: Exclude<AgentKind, 'claude-sdk'>,
+): Promise<NodeRunResult> {
+  const { ctx, input, aiNodeTimeoutMs, signal } = deps
+  const node = input.node
+
+  const profileId = agentKind === 'claude-code-cli' ? 'claude-cli' : 'codex-cli'
+
+  // System prompt = the node's own prompt (leader context) + upstream outputs.
+  const systemPrompt = [
+    input.prompt ?? '',
+    input.upstreamOutputs
+      ? `\n\n## Context from upstream phases\n${input.upstreamOutputs}`
+      : '',
+  ].filter(Boolean).join('').trim()
+
+  // Build argv with system prompt injected where the CLI supports it.
+  const leaderArgv = buildCliArgv(agentKind, systemPrompt)
+
+  // Spawn the leader terminal.
+  const leaderSession = terminals.start({
+    profileId,
+    argv: leaderArgv,
+    cwd: input.cwd,
+    featureId: deps.featureId ?? undefined,
+    planetId: deps.planetId ?? undefined,
+    role: 'leader',
+    env: { CLAUDECODE: '' },
+  })
+
+  // Also spawn drone terminals for each connected agent (fire-and-monitor:
+  // they run independently; the workflow engine doesn't wait for them).
+  const agentNames = node.agents ?? []
+  if (agentNames.length > 0) {
+    const resolvedAgents = await Promise.allSettled(
+      agentNames.map((name) => resolveTool('agent', name, ctx)),
+    )
+    for (const result of resolvedAgents) {
+      if (result.status !== 'fulfilled' || !result.value || result.value.type !== 'agent') continue
+      const agent = result.value.data as AgentTool
+      const droneArgv = buildCliArgv(agentKind, agent.prompt.trim())
+      try {
+        terminals.start({
+          profileId,
+          argv: droneArgv,
+          cwd: input.cwd,
+          featureId: deps.featureId ?? undefined,
+          planetId: deps.planetId ?? undefined,
+          role: agent.role || agent.name,
+          env: { CLAUDECODE: '' },
+        })
+      } catch {
+        // Skip a drone that fails to spawn — don't abort the whole node.
+      }
+    }
+  }
+
+  // Write the initial task to the leader's stdin.
+  // A short delay lets the CLI process start reading before we push data.
+  await new Promise<void>((resolve) => setTimeout(resolve, 300))
+  terminals.write(leaderSession.id, `${input.task}\n`)
+
+  // Race three signals:
+  //   A. Bridge mark-node-complete (preferred — agent explicitly signals done)
+  //   B. Leader process exit (fallback — use transcript as summary)
+  //   C. Timeout / abort
+  return new Promise<NodeRunResult>((resolve, reject) => {
+    let settled = false
+
+    function settle(fn: () => void) {
+      if (settled) return
+      settled = true
+      cleanup()
+      fn()
+    }
+
+    // A. Bridge gate — resolved by POST /api/bridge/mark-node-complete
+    const unregisterGate = bridgeRegistry.registerGate(
+      leaderSession.id,
+      (result) => settle(() => resolve(result)),
+      (err) => settle(() => reject(err)),
+    )
+
+    // B. Process exit
+    function onTerminalEvent(ev: TerminalManagerEvent) {
+      if (ev.type !== 'exit' || ev.sessionId !== leaderSession.id) return
+      settle(() => {
+        const code = ev.code
+        if (code !== null && code !== 0) {
+          reject(new Error(`CLI agent (${agentKind}) exited with code ${code}`))
+          return
+        }
+        const snapshot = terminals.snapshot(leaderSession.id)
+        const raw = snapshot?.data ?? ''
+        const summary = raw.trim().slice(-2000) || `${agentKind} node completed (${node.id})`
+        resolve({ summary })
+      })
+    }
+    terminals.on('terminal:event', onTerminalEvent)
+
+    // C. Timeout / abort
+    const timeoutId =
+      aiNodeTimeoutMs > 0
+        ? setTimeout(() => {
+            settle(() => {
+              void terminals.kill(leaderSession.id)
+              reject(new Error(`CLI node ${node.id} timed out after ${aiNodeTimeoutMs}ms`))
+            })
+          }, aiNodeTimeoutMs)
+        : null
+
+    const onAbort = () => {
+      settle(() => {
+        void terminals.kill(leaderSession.id)
+        reject(new Error('run aborted'))
+      })
+    }
+    signal?.addEventListener('abort', onAbort)
+
+    function cleanup() {
+      unregisterGate()
+      if (timeoutId !== null) clearTimeout(timeoutId)
+      signal?.removeEventListener('abort', onAbort)
+      terminals.off('terminal:event', onTerminalEvent)
+    }
+  })
+}
+
+/** Build the argv for a CLI agent, injecting the system prompt where supported. */
+function buildCliArgv(agentKind: Exclude<AgentKind, 'claude-sdk'>, systemPrompt: string): string[] {
+  if (agentKind === 'claude-code-cli') {
+    const argv = ['claude']
+    if (systemPrompt) argv.push('--append-system-prompt', systemPrompt)
+    return argv
+  }
+  // codex-cli: no append-system-prompt flag; we'll write the context to stdin
+  return ['codex']
 }
 
 /** Spawn a single drone Session for a given agent definition. */
@@ -253,6 +440,9 @@ export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<s
         aiNodeTimeoutMs,
         signal: opts.signal,
         handoffContext: opts.handoffContext,
+        featureId: opts.featureId,
+        planetId: opts.planetId,
+        terminals: opts.terminals,
       })
     },
   })

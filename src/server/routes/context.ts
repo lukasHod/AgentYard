@@ -5,6 +5,7 @@ import type { RunRegistry } from '../runState.js'
 import type { PlanetChatRegistry } from '../planetChat.js'
 import type { FeatureChatRegistry } from '../featureChat.js'
 import type { TranscriptStore } from '../transcriptStore.js'
+import type { PendingQuestionStore } from '../pendingQuestionStore.js'
 import type { TypedIOServer } from '../socketTypes.js'
 import type { TerminalSessionManager } from '../runtime/TerminalSessionManager.js'
 
@@ -21,6 +22,7 @@ export interface AppContext {
   testRuns: TestRunRegistry
   runState: RunRegistry
   transcripts: TranscriptStore
+  pendingQuestions: PendingQuestionStore
   planetChats: PlanetChatRegistry
   featureChats?: FeatureChatRegistry
   apiError: (

@@ -1,6 +1,5 @@
 import { useUiStore } from '../../state/uiStore'
-import { usePlanets, useFeaturesMap } from '../../state/socketStore'
-import { useNotificationRows } from './useNotificationRows'
+import { usePlanets, useFeaturesMap, useWaitingPlanetIds } from '../../state/socketStore'
 import type { PlanetSummary } from '../../../core/types'
 import { getPlanetTexturePath } from '../../scene/lib/planetTextures'
 
@@ -18,7 +17,7 @@ export function getCircleRadius(count: number): number {
 export function getPlanetState(
   planetId: number,
   features: Map<number, { status: string }[]>,
-  pendingPlanetIds: Set<number>,
+  pendingPlanetIds: ReadonlySet<number>,
 ): PlanetState {
   if (pendingPlanetIds.has(planetId)) return 'pending'
   if (features.get(planetId)?.some((f) => f.status === 'running')) return 'running'
@@ -68,10 +67,8 @@ function PlanetPanel({ planet, state, onClick }: PlanetPanelProps) {
 export function PlanetDashboard() {
   const planets = usePlanets()
   const features = useFeaturesMap()
-  const notifRows = useNotificationRows()
+  const pendingPlanetIds = useWaitingPlanetIds()
   const focusPlanet = useUiStore((s) => s.focusPlanet)
-
-  const pendingPlanetIds = new Set(notifRows.map((r) => r.planetId))
 
   if (planets.length === 0) {
     return (

@@ -182,6 +182,27 @@ CREATE TABLE IF NOT EXISTS terminal_transcript_chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_terminal_transcript_chunks_session
   ON terminal_transcript_chunks(session_id, id);
+
+CREATE TABLE IF NOT EXISTS pending_questions (
+  id               TEXT PRIMARY KEY,
+  agent_session_id TEXT NOT NULL,
+  tool_use_id      TEXT NOT NULL,
+  planet_id        INTEGER REFERENCES planets(id) ON DELETE CASCADE,
+  feature_id       INTEGER REFERENCES features(id) ON DELETE CASCADE,
+  workflow_run_id  TEXT,
+  node_run_id      TEXT,
+  question         TEXT NOT NULL,
+  state            TEXT NOT NULL DEFAULT 'pending',
+  created_at       INTEGER NOT NULL,
+  answered_at      INTEGER,
+  answer           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pending_questions_state
+  ON pending_questions(state);
+CREATE INDEX IF NOT EXISTS idx_pending_questions_feature
+  ON pending_questions(feature_id, state);
+CREATE INDEX IF NOT EXISTS idx_pending_questions_agent
+  ON pending_questions(agent_session_id, state);
 `
 
 export type DB = Database.Database
@@ -258,6 +279,33 @@ function runAddFeatureDefaultAgentKindMigration(db: DB) {
   }
 }
 
+function runAddPendingQuestionsTable(db: DB) {
+  if (!tableExists(db, 'pending_questions')) {
+    db.exec(`
+      CREATE TABLE pending_questions (
+        id               TEXT PRIMARY KEY,
+        agent_session_id TEXT NOT NULL,
+        tool_use_id      TEXT NOT NULL,
+        planet_id        INTEGER REFERENCES planets(id) ON DELETE CASCADE,
+        feature_id       INTEGER REFERENCES features(id) ON DELETE CASCADE,
+        workflow_run_id  TEXT,
+        node_run_id      TEXT,
+        question         TEXT NOT NULL,
+        state            TEXT NOT NULL DEFAULT 'pending',
+        created_at       INTEGER NOT NULL,
+        answered_at      INTEGER,
+        answer           TEXT
+      );
+      CREATE INDEX idx_pending_questions_state
+        ON pending_questions(state);
+      CREATE INDEX idx_pending_questions_feature
+        ON pending_questions(feature_id, state);
+      CREATE INDEX idx_pending_questions_agent
+        ON pending_questions(agent_session_id, state);
+    `)
+  }
+}
+
 export function getDb(): DB {
   if (_db) return _db
   mkdirSync(dbDir(), { recursive: true })
@@ -273,6 +321,7 @@ export function getDb(): DB {
   runAddChatNameMigration(db)
   runAddPlanetDefaultAgentKindMigration(db)
   runAddFeatureDefaultAgentKindMigration(db)
+  runAddPendingQuestionsTable(db)
   _db = db
   return db
 }

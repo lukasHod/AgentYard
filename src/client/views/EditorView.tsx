@@ -14,7 +14,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowGraph, WorkflowNode } from '../../core/schema'
-import type { ToolSummary } from '../../core/tools'
+import type { AgentTool, ToolSummary } from '../../core/tools'
 import type { TestRunRequest } from './TestRunModal'
 import type { EditorMode } from '../components/tools/ToolEditorModal'
 import { apiGet } from '../api'
@@ -29,6 +29,7 @@ const ToolEditorModal = lazy(() =>
 
 interface Props {
   workflow: Workflow | null
+  planetId: number | null
   tools: ToolSummary[]
   onSave: (workflow: Workflow) => Promise<void> | void
   onRefreshTools: () => void
@@ -57,7 +58,14 @@ function uniqueId(existing: Set<string>, base: string): string {
   return `${base}-${i}`
 }
 
-export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTestRun }: Props) {
+export function EditorView({
+  workflow,
+  planetId,
+  tools,
+  onSave,
+  onRefreshTools,
+  onOpenTestRun,
+}: Props) {
   const [nodes, setNodes] = useState<WorkflowRFNode[]>([])
   const [edges, setEdges] = useState<RFEdge[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -68,19 +76,23 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
 
   // Click-through from a node's connected-agents list (or chosen script) to
   // open the tool editor modal with that tool's definition prefilled.
-  // Only global-scope tools can be edited from here — claude-user / claude-project
-  // are catalog entries that require adoption first.
   const openToolEditor = useCallback(async (t: ToolSummary) => {
-    if (t.scope !== 'global') {
+    if (t.scope !== 'global' && t.scope !== 'planet') {
       pushToast(
         'error',
         `'${t.name}' has scope=${t.scope}, which can't be edited here — adopt or fork it first via the Tools tab.`,
       )
       return
     }
-    const res = await apiGet<{ data: unknown }>(
-      `/api/global-tools/${t.type}/${encodeURIComponent(t.name)}`,
-    )
+    if (t.scope === 'planet' && planetId === null) {
+      pushToast('error', `'${t.name}' is project-scoped, but no project is active.`)
+      return
+    }
+    const detailUrl =
+      planetId === null
+        ? `/api/global-tools/${t.type}/${encodeURIComponent(t.name)}`
+        : `/api/planets/${planetId}/tools/${t.scope}/${t.type}/${encodeURIComponent(t.name)}`
+    const res = await apiGet<{ data: unknown }>(detailUrl)
     if (!res.ok) {
       pushToast('error', `Could not load ${t.type} '${t.name}': ${res.error}`)
       return
@@ -89,10 +101,14 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
     setToolEditor({
       kind: 'edit',
       type: t.type,
-      scope: 'global',
+      scope: t.scope,
       initial: res.data.data as never,
     })
-  }, [])
+  }, [planetId])
+
+  const openCreateAgent = useCallback(() => {
+    setToolEditor({ kind: 'create', type: 'agent', scope: planetId === null ? 'global' : 'planet' })
+  }, [planetId])
 
   useEffect(() => {
     if (!workflow) return
@@ -108,7 +124,11 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
     onRefreshTools()
   }, [onRefreshTools])
 
-  const agents = useMemo(() => tools.filter((t) => t.type === 'agent'), [tools])
+  const agents = useMemo(
+    () =>
+      tools.filter((t) => t.type === 'agent' && (t.scope === 'planet' || t.scope === 'global')),
+    [tools],
+  )
   const scripts = useMemo(() => tools.filter((t) => t.type === 'script'), [tools])
 
   const onNodesChange = useCallback((changes: NodeChange<WorkflowRFNode>[]) => {
@@ -310,6 +330,7 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
             scripts={scripts}
             onChange={updateSelectedNode}
             onOpenToolEditor={openToolEditor}
+            onCreateAgent={openCreateAgent}
           />
         ) : (
           <EmptyMessage>click a node to edit it, or use the palette to add one</EmptyMessage>
@@ -319,12 +340,27 @@ export function EditorView({ workflow, tools, onSave, onRefreshTools, onOpenTest
         <Suspense fallback={null}>
           <ToolEditorModal
             mode={toolEditor}
-            planetId={null}
+            planetId={planetId}
             library={tools}
             onClose={() => setToolEditor(null)}
-            onSaved={() => {
+            onSaved={(saved) => {
               setToolEditor(null)
               onRefreshTools()
+              if (toolEditor.kind === 'create' && toolEditor.type === 'agent' && selectedId) {
+                const agent = saved as AgentTool
+                setNodes((nds) =>
+                  nds.map((n) => {
+                    if (n.id !== selectedId) return n
+                    const current = n.data.node.agents ?? []
+                    if (current.includes(agent.name)) return n
+                    return {
+                      ...n,
+                      data: { node: { ...n.data.node, agents: [...current, agent.name] } },
+                    }
+                  }),
+                )
+                setDirty(true)
+              }
             }}
           />
         </Suspense>

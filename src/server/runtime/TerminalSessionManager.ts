@@ -233,10 +233,11 @@ function resolveTerminalPlan(req: TerminalStartRequest): { argv: string[]; env?:
     }
     return { argv: req.argv, env: req.env }
   }
-  return {
-    argv: defaultArgv(req.profileId),
-    env: req.env,
-  }
+  // Allow an explicit argv to override the profile default — used when the
+  // workflow engine needs to inject flags (e.g. --append-system-prompt) while
+  // still tagging the session with the correct profile for the UI.
+  const argv = req.argv && req.argv.length > 0 ? req.argv : defaultArgv(req.profileId)
+  return { argv, env: req.env }
 }
 
 function defaultArgv(profileId: TerminalProfileId): string[] {
@@ -275,5 +276,10 @@ function injectAgentYardEnv(
     ...(ctx.featureId !== undefined ? { AGENTYARD_FEATURE_ID: String(ctx.featureId) } : {}),
     ...(ctx.workflowRunId ? { AGENTYARD_WORKFLOW_RUN_ID: ctx.workflowRunId } : {}),
     ...(ctx.nodeRunId ? { AGENTYARD_NODE_RUN_ID: ctx.nodeRunId } : {}),
+    // Bridge URL is set on process.env by the server after it binds to a port.
+    // Terminals inherit it so `agentyard ask-user` etc. know where to call.
+    ...(process.env.AGENTYARD_BRIDGE_URL
+      ? { AGENTYARD_BRIDGE_URL: process.env.AGENTYARD_BRIDGE_URL }
+      : {}),
   }
 }

@@ -18,8 +18,11 @@ export function HudLayer() {
       {focus.lod === 0 && <AmbientHUD />}
       {focus.lod >= 1 && <FocusedPanel />}
       {focus.lod >= 1 && <PanelToggleIcons />}
-      {/* Floating deck only in overview; in planet/ship view notifications live in the INBOX tab */}
-      {focus.lod === 0 && <NotificationDeck />}
+      {/* Floating deck at all LODs — cross-planet questions must surface even
+          when the user is inside a different planet's workspace. At LOD 1+
+          the deck appears alongside the focused panels (it sits at right-4
+          and doesn't overlap the left/center panel area). */}
+      <NotificationDeck />
     </div>
   )
 }
