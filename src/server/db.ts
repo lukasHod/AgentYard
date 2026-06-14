@@ -147,6 +147,41 @@ CREATE TABLE IF NOT EXISTS runner_events (
   payload_json   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runner_events_session ON runner_events(session_id, id);
+
+CREATE TABLE IF NOT EXISTS terminal_sessions (
+  id              TEXT PRIMARY KEY,
+  profile_id      TEXT NOT NULL,
+  runtime_kind    TEXT NOT NULL DEFAULT 'pty',
+  planet_id       INTEGER REFERENCES planets(id) ON DELETE CASCADE,
+  feature_id      INTEGER REFERENCES features(id) ON DELETE CASCADE,
+  workflow_run_id TEXT,
+  node_run_id     TEXT,
+  agent_session_id TEXT,
+  role            TEXT,
+  cwd             TEXT,
+  argv_json       TEXT NOT NULL,
+  env_json        TEXT,
+  state           TEXT NOT NULL DEFAULT 'running',
+  exit_code       INTEGER,
+  exit_signal     INTEGER,
+  pid             INTEGER,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  last_started_at INTEGER,
+  last_exited_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_terminal_sessions_feature ON terminal_sessions(feature_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_terminal_sessions_planet ON terminal_sessions(planet_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_terminal_sessions_state ON terminal_sessions(state);
+
+CREATE TABLE IF NOT EXISTS terminal_transcript_chunks (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id  TEXT NOT NULL REFERENCES terminal_sessions(id) ON DELETE CASCADE,
+  ts          INTEGER NOT NULL,
+  data        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_terminal_transcript_chunks_session
+  ON terminal_transcript_chunks(session_id, id);
 `
 
 export type DB = Database.Database

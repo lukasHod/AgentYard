@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GlassPanel } from '../glass/GlassPanel'
 import { GlassButton } from '../glass/GlassButton'
 import { GlassSplitter } from '../glass/GlassSplitter'
@@ -10,22 +10,29 @@ import {
   useSocketStore,
   usePlanets,
   useFeaturesMap,
-  useSessionList,
-  useTranscriptsMap,
-  usePendingsMap,
   useConnected,
+  useTerminalsByPlanet,
 } from '../../state/socketStore'
-import { sendAgentMessage, replyClarification as emitReply } from '../../state/socketClient'
+import {
+  startTerminal,
+  restartTerminal,
+  deleteTerminal,
+} from '../../state/socketClient'
 import { ToolsTabContent } from '../ToolsTabContent'
-import { AgentChat } from '../AgentChat'
+import { TerminalPanel } from '../TerminalPanel'
 import { EmptyMessage } from '../ui/EmptyMessage'
 import { HandoffsTab } from '../HandoffsTab'
 import { HandoffDialog } from '../HandoffDialog'
 import { apiGet, apiPost, apiDelete } from '../../api'
 import { pushToast } from '../../state/toastStore'
-import { getMockAgentDescription } from '../../state/mockSeed'
 import { useNotificationRows } from '../hud/useNotificationRows'
-import type { PlanetSummary, FeatureSummary, SessionDescriptor } from '../../../core/types'
+import type {
+  ClientEvents,
+  PlanetSummary,
+  FeatureSummary,
+  TerminalProfileId,
+  TerminalSessionDescriptor,
+} from '../../../core/types'
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -279,120 +286,617 @@ function RunTabContent({
 }
 
 // ---------------------------------------------------------------------------
-// ChatPanelBody
+// TerminalsTab
 // ---------------------------------------------------------------------------
 
-function ChatPanelBody({
-  planet,
-  targetSessionId,
-  featureId,
-}: {
-  planet: PlanetSummary
-  /** Explicit session to render; null → auto-open the ambient/feature chat. */
-  targetSessionId: string | null
-  /** When set, we are at LOD 2; auto-open uses the feature chat endpoint. */
-  featureId?: number
-}) {
-  const sessions = useSessionList()
-  const transcripts = useTranscriptsMap()
-  const pendings = usePendingsMap()
+const DEFAULT_TERMINAL_PROFILE: TerminalProfileId =
+  typeof navigator !== 'undefined' && /Win/.test(navigator.platform) ? 'powershell' : 'unix-shell'
+
+const TERMINAL_PROFILE_OPTIONS: { id: TerminalProfileId; label: string }[] = [
+  { id: 'powershell', label: 'powershell' },
+  { id: 'unix-shell', label: 'shell' },
+  { id: 'claude-cli', label: 'claude' },
+  { id: 'codex-cli', label: 'codex' },
+]
+
+const TERMINAL_STATE_COLOR: Record<TerminalSessionDescriptor['state'], string> = {
+  running: 'text-sky-300',
+  exited: 'text-slate-400',
+  killed: 'text-rose-300',
+  failed: 'text-rose-400',
+  runtime_lost: 'text-amber-300',
+}
+
+function TerminalsTab({ planet }: { planet: PlanetSummary }) {
+  const terminals = useTerminalsByPlanet(planet.id)
+  const selectedSessionId = useUiStore(
+    (s) => s.selectedTerminalByPlanet[planet.id] ?? null,
+  )
+  const selectTerminal = useUiStore((s) => s.selectTerminal)
+  const [profileId, setProfileId] = useState<TerminalProfileId>(DEFAULT_TERMINAL_PROFILE)
   const connected = useConnected()
 
-  const chatLabel = `planet:${planet.id}:chat`
-  const ambientSession = useMemo(
-    () => sessions.find((s) => s.label === chatLabel),
-    [sessions, chatLabel],
-  )
-  const session = useMemo(
-    () =>
-      targetSessionId
-        ? (sessions.find((s) => s.id === targetSessionId) ?? null)
-        : featureId !== undefined
-          ? null // feature chat not yet open; handled by auto-open effect below
-          : (ambientSession ?? null),
-    [targetSessionId, sessions, ambientSession, featureId],
-  )
-
-  const [opening, setOpening] = useState(false)
-  const [openErr, setOpenErr] = useState<string | null>(null)
-
-  // Reset the cached error when the user switches planets/features so the next
-  // one gets a fresh auto-open attempt.
+  // After clicking "+ new terminal" we want to auto-select whichever
+  // descriptor the server hands back. Snapshot the current ids; the first
+  // unknown id that arrives after `startTerminal` wins.
+  const pendingSpawnRef = useRef<Set<string> | null>(null)
   useEffect(() => {
-    setOpenErr(null)
-  }, [planet.id, featureId])
-
-  const open = useCallback(async () => {
-    setOpening(true)
-    setOpenErr(null)
-    const url =
-      featureId !== undefined
-        ? `/api/features/${featureId}/chat/open`
-        : `/api/planets/${planet.id}/chat/open`
-    const res = await apiPost(url)
-    setOpening(false)
-    if (!res.ok) {
-      setOpenErr(res.error)
-      pushToast('error', `Couldn't open chat: ${res.error}`)
+    const known = pendingSpawnRef.current
+    if (!known) return
+    const fresh = terminals.find((t) => !known.has(t.id))
+    if (fresh) {
+      pendingSpawnRef.current = null
+      selectTerminal(planet.id, fresh.id)
     }
-    // On success the server emits `session:added` which lands in the store and
-    // the panel re-renders with `session` populated.
-  }, [planet.id, featureId])
+  }, [terminals, planet.id, selectTerminal])
 
-  // Auto-open when entering a planet/feature that has no chat session yet.
-  // At LOD 1 (featureId undefined): opens the planet ambient chat.
-  // At LOD 2 (featureId set): opens the feature's dedicated chat session.
+  const spawn = () => {
+    if (!connected) return
+    pendingSpawnRef.current = new Set(terminals.map((t) => t.id))
+    startTerminal({
+      profileId,
+      planetId: planet.id,
+      cwd: planet.projectPath,
+    })
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] tracking-widest text-slate-500">PROFILE</span>
+        <select
+          value={profileId}
+          onChange={(e) => setProfileId(e.target.value as TerminalProfileId)}
+          className="bg-black border border-sky-400/30 text-xs px-2 py-1 rounded focus:outline-none focus:border-sky-300"
+        >
+          {TERMINAL_PROFILE_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <GlassButton
+          variant="primary"
+          className="text-xs"
+          onClick={spawn}
+          disabled={!connected || !planet.pathExists}
+        >
+          + new terminal
+        </GlassButton>
+      </div>
+      {terminals.length === 0 ? (
+        <EmptyMessage>no terminal sessions yet</EmptyMessage>
+      ) : (
+        <ul className="space-y-1">
+          {terminals.map((t) => {
+            const isActive = selectedSessionId === t.id
+            return (
+              <li
+                key={t.id}
+                className={`border rounded p-2 cursor-pointer transition-colors text-xs ${
+                  isActive
+                    ? 'border-sky-400/60 bg-sky-400/10'
+                    : 'border-sky-400/15 hover:border-sky-400/30 hover:bg-sky-400/5'
+                }`}
+                onClick={() => selectTerminal(planet.id, t.id)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sky-300 font-mono truncate">{t.id}</span>
+                  <span className={`text-[10px] tracking-widest ${TERMINAL_STATE_COLOR[t.state]}`}>
+                    {t.state}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5 truncate font-mono">
+                  {t.argv.join(' ')}
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[10px] text-slate-500">profile: {t.profileId}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (selectedSessionId === t.id) selectTerminal(planet.id, null)
+                      deleteTerminal(t.id)
+                    }}
+                    className="text-[10px] tracking-widest text-rose-300 hover:text-rose-200"
+                    title={t.state === 'running' ? 'kill and remove' : 'remove'}
+                  >
+                    × remove
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ChatOrTerminal — picks between AgentChat and TerminalPanel
+// ---------------------------------------------------------------------------
+
+const TERMINAL_DEAD_STATES: ReadonlySet<TerminalSessionDescriptor['state']> = new Set([
+  'exited',
+  'killed',
+  'failed',
+  'runtime_lost',
+])
+
+/** Pick "the" terminal for a scope: alive ones beat dead ones, newer beats
+ *  older. Returns `null` when no terminal matches the scope yet. */
+function pickScopedTerminal(
+  terminals: TerminalSessionDescriptor[],
+  scope: { planetId: number; featureId: number | null; role: string },
+): TerminalSessionDescriptor | null {
+  const matching = terminals.filter(
+    (t) =>
+      t.planetId === scope.planetId &&
+      t.featureId === scope.featureId &&
+      t.role === scope.role,
+  )
+  if (matching.length === 0) return null
+  matching.sort((a, b) => {
+    const aDead = TERMINAL_DEAD_STATES.has(a.state) ? 1 : 0
+    const bDead = TERMINAL_DEAD_STATES.has(b.state) ? 1 : 0
+    if (aDead !== bDead) return aDead - bDead
+    return b.createdAt - a.createdAt
+  })
+  return matching[0] ?? null
+}
+
+function TerminalHeader({
+  title,
+  subtitle,
+  onClose,
+  onRestart,
+}: {
+  title: string
+  subtitle: string
+  onClose?: () => void
+  onRestart?: () => void
+}) {
+  return (
+    <div className="border-b border-cyan-500/30 px-3 py-2 flex items-center justify-between text-xs shrink-0">
+      <div>
+        <span className="text-fuchsia-300 mr-2 tracking-wide">{title}</span>
+        <span className="text-cyan-200 font-mono">{subtitle}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        {onRestart && (
+          <button
+            type="button"
+            onClick={onRestart}
+            className="text-[10px] tracking-widest text-sky-300 hover:text-sky-200"
+          >
+            ⟳ restart
+          </button>
+        )}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[10px] tracking-widest text-slate-400 hover:text-sky-300"
+          >
+            close ✕
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface ScopedTerminalProps {
+  /** Header label, e.g. "TERMINAL" or "LEADER". */
+  title: string
+  subtitle: string
+  /** Scope keys the descriptor must match. */
+  scope: { planetId: number; featureId: number | null; role: string }
+  spawnReq: ClientEvents['terminal:start']
+  available: boolean
+  unavailableMessage: string
+}
+
+/**
+ * Generic primary-terminal renderer: looks up the active terminal for a
+ * scope (planet/feature/role), auto-spawns when missing, and restarts a
+ * dead one on demand. Session ids are server-generated; we never preassign
+ * them. The in-flight ref guards against StrictMode double-mounts so the
+ * spawn fires exactly once per scope until the descriptor arrives.
+ */
+function ScopedPrimaryTerminal({
+  title,
+  subtitle,
+  scope,
+  spawnReq,
+  available,
+  unavailableMessage,
+}: ScopedTerminalProps) {
+  const connected = useConnected()
+  const terminals = useTerminalsByPlanet(scope.planetId)
+  const descriptor = pickScopedTerminal(terminals, scope)
+  // Guards a single in-flight spawn per scope. We clear it once the matching
+  // descriptor arrives, OR when the scope changes (planet/feature/role).
+  const spawnInFlightRef = useRef(false)
+  const scopeKey = `${scope.planetId}:${scope.featureId ?? ''}:${scope.role}`
+  const lastScopeKeyRef = useRef(scopeKey)
+  if (lastScopeKeyRef.current !== scopeKey) {
+    lastScopeKeyRef.current = scopeKey
+    spawnInFlightRef.current = false
+  }
+  if (descriptor) spawnInFlightRef.current = false
+
   useEffect(() => {
-    if (targetSessionId !== null) return
-    if (session || opening || openErr || !connected || !planet.pathExists) return
-    void open()
-  }, [targetSessionId, session, opening, openErr, connected, planet.pathExists, open])
+    if (!connected || !available) return
+    if (descriptor) return
+    if (spawnInFlightRef.current) return
+    spawnInFlightRef.current = true
+    startTerminal(spawnReq)
+  }, [connected, available, descriptor, spawnReq])
 
-  if (!session) {
-    // At LOD 2 with an explicit targetSessionId: the drone is simply not connected yet.
-    if (targetSessionId !== null) {
-      return (
-        <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
-          <EmptyMessage>this drone has no live session yet.</EmptyMessage>
-        </div>
-      )
-    }
-    // LOD 1 ambient-chat empty state with retry button.
+  const restart = () => {
+    if (!connected || !available || !descriptor) return
+    restartTerminal(descriptor.id)
+  }
+
+  if (!available) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
-        <EmptyMessage>
-          {openErr
-            ? `couldn't open chat: ${openErr}`
-            : opening
-              ? 'opening chat…'
-              : !planet.pathExists
-                ? 'project path is missing on disk — restore the path or delete the project.'
-                : !connected
-                  ? 'offline — reconnect to the server to open the chat.'
-                  : 'no chat yet.'}
-        </EmptyMessage>
-        <GlassButton
-          onClick={() => void open()}
-          disabled={opening || !connected || !planet.pathExists}
-        >
-          {openErr ? '⟳ retry' : '▶ open chat'}
-        </GlassButton>
+        <EmptyMessage>{unavailableMessage}</EmptyMessage>
       </div>
     )
   }
 
+  if (!descriptor) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
+        <EmptyMessage>{connected ? 'spinning up terminal…' : 'offline — reconnect to start a terminal.'}</EmptyMessage>
+      </div>
+    )
+  }
+
+  const dead = TERMINAL_DEAD_STATES.has(descriptor.state)
+
   return (
-    <AgentChat
-      agentRunId={session.id}
-      label={planet.name}
-      role={session.role}
-      state={session.state}
-      transcript={transcripts.get(session.id) ?? []}
-      pending={pendings.get(session.id) ?? null}
-      connected={connected}
-      onSend={(c) => sendAgentMessage(session.id, c)}
-      onReply={(t, a) => emitReply(session.id, t, a)}
+    <div className="flex flex-col h-full text-sm">
+      <TerminalHeader
+        title={title}
+        subtitle={subtitle}
+        onRestart={dead ? restart : undefined}
+      />
+      <div className="flex-1 relative">
+        <TerminalPanel sessionId={descriptor.id} />
+      </div>
+    </div>
+  )
+}
+
+function PrimaryPlanetTerminal({ planet }: { planet: PlanetSummary }) {
+  // Stable identity for the spawn request so `useEffect` doesn't refire
+  // every render. Re-derives only when the planet identity / path changes.
+  const spawnReq = useMemo<ClientEvents['terminal:start']>(
+    () => ({
+      profileId: DEFAULT_TERMINAL_PROFILE,
+      planetId: planet.id,
+      cwd: planet.projectPath,
+      role: 'free',
+    }),
+    [planet.id, planet.projectPath],
+  )
+  return (
+    <ScopedPrimaryTerminal
+      title="TERMINAL"
+      subtitle={planet.name}
+      scope={{ planetId: planet.id, featureId: null, role: 'free' }}
+      spawnReq={spawnReq}
+      available={planet.pathExists}
+      unavailableMessage="project path is missing on disk — restore the path or delete the project."
     />
+  )
+}
+
+/**
+ * Workspace shown at LOD 2 for a focused feature. A tab strip lists every
+ * terminal scoped to the feature (LEADER, SHELL #N, plus any role spawned
+ * by the workflow engine later), with a "+ shell" affordance for ad-hoc
+ * shells. The selected tab's terminal fills the body. The leader tab is
+ * always present even before its terminal exists — clicking it triggers
+ * the auto-spawn through `ScopedPrimaryTerminal`.
+ */
+function FeatureWorkspace({
+  planet,
+  feature,
+}: {
+  planet: PlanetSummary
+  feature: FeatureSummary
+}) {
+  const cwd = feature.worktreePath ?? planet.projectPath
+  const connected = useConnected()
+  const terminals = useTerminalsByPlanet(planet.id)
+  const featureTerminals = useMemo(
+    () => terminals.filter((t) => t.featureId === feature.id),
+    [terminals, feature.id],
+  )
+  const selectedId = useUiStore((s) => s.selectedTabByFeature[feature.id] ?? null)
+  const selectFeatureTab = useUiStore((s) => s.selectFeatureTab)
+
+  const leaderSpawnReq = useMemo<ClientEvents['terminal:start']>(
+    () => ({
+      profileId: DEFAULT_TERMINAL_PROFILE,
+      planetId: planet.id,
+      featureId: feature.id,
+      cwd,
+      role: 'leader',
+    }),
+    [planet.id, feature.id, cwd],
+  )
+
+  const leaderTerminal = pickScopedTerminal(featureTerminals, {
+    planetId: planet.id,
+    featureId: feature.id,
+    role: 'leader',
+  })
+
+  // Build the tab list. Leader is always present. Other roles surface as the
+  // server spawns them. For duplicates within a role we suffix "·2", "·3"
+  // in createdAt order so each terminal stays distinguishable.
+  const tabs = useMemo<FeatureTab[]>(() => {
+    const out: FeatureTab[] = []
+    const leaderTabId = leaderTerminal?.id ?? '__leader_placeholder__'
+    out.push({
+      key: leaderTabId,
+      label: 'LEADER',
+      role: 'leader',
+      terminal: leaderTerminal,
+    })
+    const byRole = new Map<string, TerminalSessionDescriptor[]>()
+    for (const t of featureTerminals) {
+      if (t.role === 'leader') continue
+      const r = t.role ?? t.profileId
+      const arr = byRole.get(r) ?? []
+      arr.push(t)
+      byRole.set(r, arr)
+    }
+    for (const [role, list] of byRole) {
+      list.sort((a, b) => a.createdAt - b.createdAt)
+      list.forEach((t, idx) => {
+        const baseLabel =
+          role === 'shell' || role === t.profileId ? 'SHELL' : role.toUpperCase()
+        const label = list.length > 1 ? `${baseLabel}·${idx + 1}` : baseLabel
+        out.push({ key: t.id, label, role, terminal: t })
+      })
+    }
+    return out
+  }, [featureTerminals, leaderTerminal])
+
+  // Resolve the active tab. If the stored selection still matches, use it;
+  // otherwise default to the leader tab.
+  const activeTab = useMemo(() => {
+    if (selectedId) {
+      const match = tabs.find((t) => t.key === selectedId)
+      if (match) return match
+    }
+    return tabs[0]!
+  }, [tabs, selectedId])
+
+  const spawnShell = () => {
+    if (!connected) return
+    // Snapshot BEFORE sending so the new id is guaranteed not to be in the
+    // baseline even on a fast server. The auto-select effect below promotes
+    // the first unknown 'shell' that arrives.
+    lastShellSnapshotRef.current = new Set(featureTerminals.map((t) => t.id))
+    startTerminal({
+      profileId: DEFAULT_TERMINAL_PROFILE,
+      planetId: planet.id,
+      featureId: feature.id,
+      cwd,
+      role: 'shell',
+    })
+  }
+
+  const closeTab = (tab: FeatureTab) => {
+    if (!tab.terminal) return // placeholder leader — nothing on the server yet
+    // If we just removed the active tab, clear the selection so the workspace
+    // falls back to the leader on the next render.
+    if (selectedId === tab.key) selectFeatureTab(feature.id, null)
+    deleteTerminal(tab.terminal.id)
+  }
+
+  // Auto-select newly spawned shells so the user lands in them immediately.
+  const lastShellSnapshotRef = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    const known = lastShellSnapshotRef.current
+    if (!known) return
+    const fresh = featureTerminals.find((t) => !known.has(t.id) && t.role === 'shell')
+    if (fresh) {
+      lastShellSnapshotRef.current = null
+      selectFeatureTab(feature.id, fresh.id)
+    }
+  }, [featureTerminals, feature.id, selectFeatureTab])
+
+  if (!planet.pathExists) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
+        <EmptyMessage>
+          project path is missing on disk — restore the path or delete the project.
+        </EmptyMessage>
+      </div>
+    )
+  }
+
+  const branchTag = feature.branch ? ` · ${feature.branch}` : ''
+
+  return (
+    <div className="flex flex-col h-full text-sm">
+      <div className="border-b border-cyan-500/30 px-2 py-1 flex items-center gap-1 text-xs shrink-0 overflow-x-auto">
+        {tabs.map((tab) => (
+          <FeatureTabButton
+            key={tab.key}
+            tab={tab}
+            active={activeTab.key === tab.key}
+            onClick={() => selectFeatureTab(feature.id, tab.key)}
+            onClose={tab.terminal ? () => closeTab(tab) : undefined}
+          />
+        ))}
+        <button
+          type="button"
+          onClick={spawnShell}
+          disabled={!connected}
+          className="ml-1 px-2 py-0.5 text-[10px] tracking-widest text-sky-300 border border-sky-400/30 rounded hover:border-sky-300 disabled:opacity-40"
+          title="spawn a new shell in the worktree"
+        >
+          + SHELL
+        </button>
+        <span className="ml-auto text-[10px] text-slate-500 truncate pl-2">
+          {feature.chatName ?? feature.name}
+          {branchTag}
+        </span>
+      </div>
+      <div className="flex-1 relative">
+        {activeTab.role === 'leader' ? (
+          <ScopedPrimaryTerminal
+            title="LEADER"
+            subtitle={`${feature.chatName ?? feature.name}${branchTag}`}
+            scope={{ planetId: planet.id, featureId: feature.id, role: 'leader' }}
+            spawnReq={leaderSpawnReq}
+            available={planet.pathExists}
+            unavailableMessage="project path is missing on disk."
+          />
+        ) : activeTab.terminal ? (
+          <TerminalPanel sessionId={activeTab.terminal.id} />
+        ) : (
+          <div className="h-full flex items-center justify-center">
+            <EmptyMessage>terminal gone — pick another tab.</EmptyMessage>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface FeatureTab {
+  /** Stable identity used by `selectedTabByFeature`. Either a real session
+   *  id, or `__leader_placeholder__` when the leader hasn't spawned yet. */
+  key: string
+  label: string
+  role: string
+  terminal: TerminalSessionDescriptor | null
+}
+
+const TAB_STATE_DOT: Record<TerminalSessionDescriptor['state'], string> = {
+  running: 'bg-sky-400',
+  exited: 'bg-slate-500',
+  killed: 'bg-rose-400',
+  failed: 'bg-rose-500',
+  runtime_lost: 'bg-amber-300',
+}
+
+function FeatureTabButton({
+  tab,
+  active,
+  onClick,
+  onClose,
+}: {
+  tab: FeatureTab
+  active: boolean
+  onClick: () => void
+  /** When present, renders a × that closes the tab. The placeholder leader
+   *  tab gets none — there's nothing to delete until it spawns. */
+  onClose?: () => void
+}) {
+  const dotClass = tab.terminal ? TAB_STATE_DOT[tab.terminal.state] : 'bg-slate-600'
+  return (
+    <span
+      className={`px-2 py-1 text-[10px] tracking-widest rounded border transition-colors flex items-center gap-2 ${
+        active
+          ? 'border-cyan-300 text-cyan-200 bg-cyan-400/10'
+          : 'border-cyan-400/20 text-slate-300 hover:border-cyan-300/50 hover:text-cyan-100'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-2"
+      >
+        <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotClass}`} />
+        {tab.label}
+      </button>
+      {onClose && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose()
+          }}
+          className="text-slate-500 hover:text-rose-300"
+          title={
+            tab.role === 'leader'
+              ? 'kill leader (will respawn)'
+              : 'kill and remove'
+          }
+        >
+          ×
+        </button>
+      )}
+    </span>
+  )
+}
+
+function ChatOrTerminal({
+  planet,
+  featureId,
+}: {
+  planet: PlanetSummary
+  featureId?: number
+}) {
+  const selectedTerminalId = useUiStore(
+    (s) => s.selectedTerminalByPlanet[planet.id] ?? null,
+  )
+  const selectTerminal = useUiStore((s) => s.selectTerminal)
+  const terminals = useTerminalsByPlanet(planet.id)
+  const terminal = selectedTerminalId
+    ? (terminals.find((t) => t.id === selectedTerminalId) ?? null)
+    : null
+  const features = useFeaturesMap()
+  const feature =
+    featureId !== undefined
+      ? (features.get(planet.id) ?? []).find((f) => f.id === featureId) ?? null
+      : null
+
+  // User picked a specific terminal in the TERMS tab → always wins.
+  if (selectedTerminalId && terminal) {
+    return (
+      <div className="flex flex-col h-full text-sm">
+        <TerminalHeader
+          title="TERMINAL"
+          subtitle={terminal.id}
+          onClose={() => selectTerminal(planet.id, null)}
+        />
+        <div className="flex-1 relative">
+          <TerminalPanel sessionId={terminal.id} />
+        </div>
+      </div>
+    )
+  }
+
+  // LOD 1 ambient → planet primary terminal.
+  if (featureId === undefined) {
+    return <PrimaryPlanetTerminal planet={planet} />
+  }
+
+  // LOD 2 → feature workspace with tabs (leader + shells + any role the
+  // workflow engine has spawned).
+  if (feature) {
+    return <FeatureWorkspace planet={planet} feature={feature} />
+  }
+
+  // Feature row not yet hydrated — show a neutral placeholder rather than
+  // flashing the old chat body.
+  return (
+    <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
+      <EmptyMessage>loading feature…</EmptyMessage>
+    </div>
   )
 }
 
@@ -502,68 +1006,6 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
 }
 
 // ---------------------------------------------------------------------------
-// AgentInfoPanel — left panel content at LOD 2 when a drone is selected
-// ---------------------------------------------------------------------------
-
-const ROLE_COLORS: Record<SessionDescriptor['role'], string> = {
-  leader: 'text-amber-300',
-  drone: 'text-sky-300',
-  free: 'text-fuchsia-300',
-}
-
-function AgentInfoPanel({
-  session,
-  pendingQuestion,
-  onBackToFeature,
-}: {
-  session: SessionDescriptor
-  pendingQuestion: string | null
-  onBackToFeature: () => void
-}) {
-  const description = getMockAgentDescription(session.id)
-  return (
-    <>
-      <button
-        type="button"
-        onClick={onBackToFeature}
-        className="text-xs tracking-widest text-slate-400 hover:text-sky-300 cursor-pointer"
-      >
-        ← FEATURE
-      </button>
-      <div className="text-xs tracking-widest text-slate-400 mt-3">AGENT</div>
-      <h3 className="text-sky-100 text-lg mt-1">{session.label ?? session.id.slice(0, 8)}</h3>
-
-      <div className="mt-3 flex gap-4 text-xs">
-        <div>
-          <div className="tracking-widest text-slate-500">ROLE</div>
-          <div className={`${ROLE_COLORS[session.role]} mt-0.5 uppercase`}>{session.role}</div>
-        </div>
-        <div>
-          <div className="tracking-widest text-slate-500">STATE</div>
-          <div className="text-slate-200 mt-0.5">{session.state}</div>
-        </div>
-      </div>
-
-      {description && (
-        <>
-          <div className="text-xs tracking-widest text-slate-400 mt-4">DESCRIPTION</div>
-          <p className="text-sm text-slate-300 mt-1 whitespace-pre-wrap">{description}</p>
-        </>
-      )}
-
-      {pendingQuestion && (
-        <>
-          <div className="text-xs tracking-widest text-amber-300 mt-4">
-            AWAITING CLARIFICATION
-          </div>
-          <p className="text-sm text-amber-100 mt-1 whitespace-pre-wrap">{pendingQuestion}</p>
-        </>
-      )}
-    </>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // NotificationsTab
 // ---------------------------------------------------------------------------
 
@@ -578,12 +1020,12 @@ function NotificationsTab() {
     <ul className="space-y-2 overflow-y-auto">
       {rows.map((r) => (
         <li
-          key={r.droneId}
+          key={r.agentSessionId}
           className="border border-amber-300/20 rounded p-2 cursor-pointer hover:bg-amber-300/5"
-          onClick={() => focusShip(r.planetId, r.shipFeatureId, r.droneId)}
+          onClick={() => focusShip(r.planetId, r.shipFeatureId)}
         >
           <div className="text-sky-300 text-xs">
-            {r.planetName} · {r.featureName} · {r.droneLabel}
+            {r.planetName} · {r.featureName}
           </div>
           <p className="text-slate-300 text-sm mt-0.5">{r.question}</p>
         </li>
@@ -652,6 +1094,9 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
         <GlassTab active={tab === 'handoffs'} onClick={() => switchTab('handoffs')}>
           HANDOFFS
         </GlassTab>
+        <GlassTab active={tab === 'terminals'} onClick={() => switchTab('terminals')}>
+          TERMS
+        </GlassTab>
       </div>
       {tab === 'features' && <FeaturesTab features={features} planetId={planet.id} />}
       {tab === 'tools' && <ToolsTabContent planetId={planet.id} />}
@@ -662,6 +1107,7 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
       {tab === 'run' && <RunTabContent planetId={planet.id} features={features} />}
       {tab === 'notifications' && <NotificationsTab />}
       {tab === 'handoffs' && <HandoffsTab planetId={planet.id} />}
+      {tab === 'terminals' && <TerminalsTab planet={planet} />}
     </>
   )
 }
@@ -673,7 +1119,6 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
 export function FocusedPanel() {
   const focus = useUiStore((s) => s.focus)
   const back = useUiStore((s) => s.back)
-  const bindChatDrone = useUiStore((s) => s.bindChatDrone)
   const splitterRatio = useUiStore((s) => s.splitterRatio)
   const setSplitterRatio = useUiStore((s) => s.setSplitterRatio)
   const infoPanelOpen = useUiStore((s) => s.infoPanelOpen)
@@ -681,9 +1126,7 @@ export function FocusedPanel() {
   const setInfoPanelOpen = useUiStore((s) => s.setInfoPanelOpen)
   const setChatPanelOpen = useUiStore((s) => s.setChatPanelOpen)
   const planets = usePlanets()
-  const sessions = useSessionList()
   const features = useFeaturesMap()
-  const pendings = usePendingsMap()
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const planetId =
@@ -701,14 +1144,6 @@ export function FocusedPanel() {
         : null,
     [focus, features],
   )
-
-  const targetSessionId = useMemo(() => {
-    if (focus.lod !== 2) return null // LOD 1 → null → ChatPanelBody opens the ambient chat
-    if (focus.chatDroneId) return focus.chatDroneId
-    // Default at LOD 2: find the feature's dedicated chat session by label.
-    const label = `feature:${focus.shipFeatureId}:chat`
-    return sessions.find((s) => s.label === label)?.id ?? null
-  }, [focus, sessions])
 
   const [wfOpen, setWfOpen] = useState(false)
 
@@ -786,26 +1221,7 @@ export function FocusedPanel() {
               >
                 <GlassPanel className="h-full p-4 overflow-y-auto relative">
                   <MinimizeButton onClick={() => setInfoPanelOpen(false)} title="hide info panel" />
-                  {focus.lod === 2 && focus.chatDroneId ? (
-                    (() => {
-                      const droneSession = sessions.find((s) => s.id === focus.chatDroneId)
-                      if (droneSession) {
-                        const pending = pendings.get(droneSession.id)
-                        return (
-                          <AgentInfoPanel
-                            session={droneSession}
-                            pendingQuestion={pending?.question ?? null}
-                            onBackToFeature={() => bindChatDrone('')}
-                          />
-                        )
-                      }
-                      return focusedFeature ? (
-                        <ShipInfoPanel feature={focusedFeature} />
-                      ) : (
-                        <InfoPanelBody planet={planet!} />
-                      )
-                    })()
-                  ) : focus.lod === 2 && focusedFeature ? (
+                  {focus.lod === 2 && focusedFeature ? (
                     <ShipInfoPanel feature={focusedFeature} />
                   ) : (
                     <InfoPanelBody planet={planet!} />
@@ -851,9 +1267,8 @@ export function FocusedPanel() {
               >
                 <GlassPanel className="h-full p-4 overflow-hidden relative">
                   <MinimizeButton onClick={() => setChatPanelOpen(false)} title="hide chat panel" />
-                  <ChatPanelBody
+                  <ChatOrTerminal
                     planet={planet!}
-                    targetSessionId={targetSessionId}
                     featureId={focus.lod === 2 ? focus.shipFeatureId : undefined}
                   />
                 </GlassPanel>

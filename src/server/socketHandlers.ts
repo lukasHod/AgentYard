@@ -6,12 +6,14 @@ import type { RunRegistry } from './runState.js'
 import type { PlanetChatRegistry } from './planetChat.js'
 import type { FeatureChatRegistry } from './featureChat.js'
 import type { TranscriptStore } from './transcriptStore.js'
+import type { TerminalSessionManager } from './runtime/TerminalSessionManager.js'
 import type { TypedIOServer, TypedSocket } from './socketTypes.js'
 
 export interface WireSocketDeps {
   app: FastifyInstance
   io: TypedIOServer
   manager: SessionManager
+  terminals: TerminalSessionManager
   testRuns: TestRunRegistry
   runState: RunRegistry
   transcripts: TranscriptStore
@@ -27,7 +29,7 @@ export interface WireSocketDeps {
  * test-run:*) get forwarded to the SessionManager / TestRunRegistry.
  */
 export function wireSocketHandlers(deps: WireSocketDeps): void {
-  const { app, io, manager, testRuns, runState, transcripts, planetChats, featureChats } = deps
+  const { app, io, manager, terminals, testRuns, runState, transcripts, planetChats, featureChats } = deps
 
   // socket.io's typed-event generics give us static event names / payload
   // shapes (see socketTypes.ts), but the wire is still untrusted at runtime
@@ -36,6 +38,7 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     app.log.info(`socket connected: ${socket.id}`)
 
     socket.emit('session:list', manager.describeAll())
+    socket.emit('terminal:list', terminals.list())
     transcripts.catchUp(socket)
     planetChats.catchUpSocket(socket)
     featureChats?.catchUpSocket(socket)
@@ -64,6 +67,68 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
     socket.on('clarification:reply', (payload: ClientEvents['clarification:reply']) => {
       if (!payload?.agentRunId || !payload?.toolUseId || typeof payload.answer !== 'string') return
       manager.get(payload.agentRunId)?.resolveClarification(payload.toolUseId, payload.answer)
+    })
+
+    socket.on('terminal:start', (payload: ClientEvents['terminal:start']) => {
+      if (!payload || typeof payload.profileId !== 'string') return
+      try {
+        terminals.start(payload)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        app.log.warn({ err }, 'terminal:start failed')
+        socket.emit('terminal:data', {
+          sessionId: payload.sessionId ?? 'unknown',
+          data: `\r\n[AgentYard terminal start failed] ${message}\r\n`,
+          timestamp: Date.now(),
+        })
+      }
+    })
+
+    socket.on('terminal:attach', (payload: ClientEvents['terminal:attach']) => {
+      if (typeof payload?.sessionId !== 'string') return
+      const snapshot = terminals.snapshot(payload.sessionId)
+      if (!snapshot) return
+      socket.emit('terminal:snapshot', {
+        sessionId: payload.sessionId,
+        data: snapshot.data,
+        state: snapshot.state,
+      })
+    })
+
+    socket.on('terminal:detach', (payload: ClientEvents['terminal:detach']) => {
+      if (typeof payload?.sessionId !== 'string') return
+      // No server bookkeeping yet; the event exists so clients can keep a
+      // symmetrical attach/detach lifecycle while terminals remain process-owned.
+    })
+
+    socket.on('terminal:input', (payload: ClientEvents['terminal:input']) => {
+      if (typeof payload?.sessionId !== 'string' || typeof payload.data !== 'string') return
+      terminals.write(payload.sessionId, payload.data)
+    })
+
+    socket.on('terminal:resize', (payload: ClientEvents['terminal:resize']) => {
+      if (
+        typeof payload?.sessionId !== 'string' ||
+        typeof payload.cols !== 'number' ||
+        typeof payload.rows !== 'number'
+      )
+        return
+      terminals.resize(payload.sessionId, payload.cols, payload.rows)
+    })
+
+    socket.on('terminal:kill', (payload: ClientEvents['terminal:kill']) => {
+      if (typeof payload?.sessionId !== 'string') return
+      void terminals.kill(payload.sessionId)
+    })
+
+    socket.on('terminal:restart', (payload: ClientEvents['terminal:restart']) => {
+      if (typeof payload?.sessionId !== 'string') return
+      terminals.restart(payload.sessionId)
+    })
+
+    socket.on('terminal:delete', (payload: ClientEvents['terminal:delete']) => {
+      if (typeof payload?.sessionId !== 'string') return
+      void terminals.delete(payload.sessionId)
     })
 
     socket.on('test-run:agent:send', (payload: ClientEvents['test-run:agent:send']) => {

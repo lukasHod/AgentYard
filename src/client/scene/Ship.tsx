@@ -4,10 +4,9 @@ import { useFrame } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { GlbErrorBoundary } from './ErrorBoundaries'
 import { Color, Group, Mesh, MeshStandardMaterial, Material, Vector3 } from 'three'
-import type { FeatureSummary, SessionDescriptor } from '../../core/types'
+import type { FeatureSummary } from '../../core/types'
 import { deriveShipParams } from './lib/shipParams'
 import { useUiStore } from '../state/uiStore'
-import { Drone } from './Drone'
 import { registerShipPosition } from './lib/positionRegistry'
 
 type Phase = 'spawning' | 'idle' | 'completing' | 'failing'
@@ -16,8 +15,6 @@ interface ShipProps {
   feature: FeatureSummary
   orbitRadius: number  // around the parent planet
   orbitAngle: number   // angle on the orbit ring
-  drones: SessionDescriptor[]
-  pendingDroneIds: ReadonlySet<string>
   /** Called once the despawn animation finishes so Planet can unmount us. */
   onDespawned?: () => void
 }
@@ -44,13 +41,11 @@ const BASE_SCALE = 0.0255  // 15 % smaller than previous 0.03
  *  completing → cyan flash (FLASH_DURATION) then fade-out (COMPLETE_FADE_DURATION), then onDespawned
  *  failing    → rose flash (FLASH_DURATION) then fade-out (FAIL_FADE_DURATION), then onDespawned
  */
-function ShipImpl({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds, onDespawned }: ShipProps) {
+function ShipImpl({ feature, orbitRadius, orbitAngle, onDespawned }: ShipProps) {
   const params = useMemo(() => deriveShipParams(feature.id, feature.name), [feature.id, feature.name])
   const gltf = useGLTF(params.modelUrl)
   const groupRef = useRef<Group>(null)
   const focusShip = useUiStore((s) => s.focusShip)
-  const bindChatDrone = useUiStore((s) => s.bindChatDrone)
-  const onDroneClick = (droneId: string) => bindChatDrone(droneId)
 
   // Lifecycle state.
   const [phase, setPhase] = useState<Phase>('spawning')
@@ -121,8 +116,7 @@ function ShipImpl({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds, o
     return c
   }, [gltf.scene, params.hueShift])
 
-  // Baked GLB animation intentionally left unplayed: a ship "under
-  // construction" should sit still while drones swarm around it.
+  // Baked GLB animation intentionally left unplayed: ships stay still.
 
   // Drive lifecycle animation each frame.
   useFrame(({ clock }) => {
@@ -185,17 +179,6 @@ function ShipImpl({ feature, orbitRadius, orbitAngle, drones, pendingDroneIds, o
         {/* Dedicated fill light so the ship is visible even in planet shadow */}
         <pointLight intensity={0.5} distance={3} color="#c8d8ff" />
         <primitive object={cloned} />
-        {drones.map((d, i) => (
-          <Drone
-            key={d.id}
-            session={d}
-            orbitRadius={2.0 + (i % 3) * 0.6}
-            orbitAngle={(i * 2 * Math.PI) / Math.max(1, drones.length)}
-            bobPhase={i * 0.7}
-            pending={pendingDroneIds.has(d.id)}
-            onClick={() => onDroneClick(d.id)}
-          />
-        ))}
       </group>
     </group>
   )

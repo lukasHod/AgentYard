@@ -1,6 +1,11 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import type { AgentCapabilities, AgentKind, AgentRuntimeContext } from '../../core/plugins.js'
+import type {
+  AgentCapabilities,
+  AgentKind,
+  AgentRuntimeContext,
+  RuntimeKind,
+} from '../../core/plugins.js'
 import { createRunnerSession, deleteRunnerSession } from '../runStore.js'
 import { CLAUDE_SDK_CAPABILITIES, sessionEventToAgentEvent } from './adapters/claudeSdk.js'
 import { Session, type SessionEvent, type SessionOptions } from './Session.js'
@@ -13,6 +18,7 @@ export interface SessionDescriptor {
   /** Always 'claude-sdk' until additional adapters land. Wire-compatible
    * addition — older clients ignore it. */
   agentKind: AgentKind
+  runtimeKind: RuntimeKind
   capabilities: AgentCapabilities
 }
 
@@ -127,6 +133,7 @@ export class SessionManager extends EventEmitter {
       label: s.opts.label,
       state: s.state,
       agentKind: 'claude-sdk',
+      runtimeKind: 'sdk',
       capabilities: CLAUDE_SDK_CAPABILITIES,
     }
   }

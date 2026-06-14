@@ -31,12 +31,12 @@ export function NotificationDeck() {
         <ul>
           {rows.map((r) => (
             <li
-              key={r.droneId}
+              key={r.agentSessionId}
               className="px-3 py-2 border-b border-amber-300/10 cursor-pointer hover:bg-amber-300/5"
-              onClick={() => focusShip(r.planetId, r.shipFeatureId, r.droneId)}
+              onClick={() => focusShip(r.planetId, r.shipFeatureId)}
             >
               <div className="text-sky-300 text-xs">
-                {r.planetName} · {r.featureName} · {r.droneLabel}
+                {r.planetName} · {r.featureName}
               </div>
               <p className="text-slate-300 text-sm mt-0.5 line-clamp-2">{r.question}</p>
             </li>

@@ -4,10 +4,18 @@ export type Focus =
   | { lod: 0 }
   | { lod: 1; planetId: number }
   | { lod: 1; sun: true }
-  | { lod: 2; planetId: number; shipFeatureId: number; chatDroneId?: string }
+  | { lod: 2; planetId: number; shipFeatureId: number }
 
 /** Tabs available on the LOD-1 info panel. */
-export type InfoTab = 'features' | 'tools' | 'plans' | 'description' | 'run' | 'notifications' | 'handoffs'
+export type InfoTab =
+  | 'features'
+  | 'tools'
+  | 'plans'
+  | 'description'
+  | 'run'
+  | 'notifications'
+  | 'handoffs'
+  | 'terminals'
 
 const SPLITTER_KEY = 'agentyard.splitterRatio.v2'
 const readSplitter = (): number => {
@@ -30,6 +38,12 @@ interface UiState {
   chatPanelOpen: boolean
   /** Selected tab for the info panel. Persists across panel hide/reopen. */
   infoTab: InfoTab
+  /** Per-planet selected terminal session — when set, the chat panel renders
+   *  the terminal instead of the agent chat. Cleared with selectTerminal(planetId, null). */
+  selectedTerminalByPlanet: Record<number, string>
+  /** Per-feature selected workspace tab (terminal session id). Falls back to
+   *  the leader when the stored id is no longer in the list. */
+  selectedTabByFeature: Record<number, string>
   /** Yaw (rad) of the system-overview camera around the sun. 0 = default view. */
   viewYaw: number
   /** Pitch (rad) of the system-overview camera. Clamped to avoid pole flip. */
@@ -42,8 +56,7 @@ interface UiState {
   viewTargetZ: number
   focusPlanet: (planetId: number) => void
   focusSun: () => void
-  focusShip: (planetId: number, shipFeatureId: number, chatDroneId?: string) => void
-  bindChatDrone: (droneId: string) => void
+  focusShip: (planetId: number, shipFeatureId: number) => void
   back: () => void
   setSplitterRatio: (r: number) => void
   setNotificationDeckOpen: (open: boolean) => void
@@ -55,6 +68,10 @@ interface UiState {
   openInfoTab: (tab: InfoTab) => void
   /** Opens the chat panel. */
   openChat: () => void
+  /** Sets (or clears) the planet's active terminal session. */
+  selectTerminal: (planetId: number, sessionId: string | null) => void
+  /** Sets (or clears) the active workspace tab for a feature. */
+  selectFeatureTab: (featureId: number, sessionId: string | null) => void
   orbitView: (dYaw: number, dPitch: number) => void
   /**
    * Zoom toward a world-space point. Moves both lookAt target and camera
@@ -86,6 +103,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   infoPanelOpen: true,
   chatPanelOpen: true,
   infoTab: 'features',
+  selectedTerminalByPlanet: {},
+  selectedTabByFeature: {},
   // Focus actions reset panel visibility only when the focus *actually changes*.
   // Re-clicking the already-focused planet/ship/sun is a no-op for the panel
   // state, so a user who has hidden the panels stays in the cinematic view.
@@ -105,20 +124,14 @@ export const useUiStore = create<UiState>((set, get) => ({
       ...(same ? {} : { infoPanelOpen: true, chatPanelOpen: true }),
     })
   },
-  focusShip: (planetId, shipFeatureId, chatDroneId) => {
+  focusShip: (planetId, shipFeatureId) => {
     const cur = get().focus
     const same =
       cur.lod === 2 && cur.planetId === planetId && cur.shipFeatureId === shipFeatureId
     set({
-      focus: chatDroneId
-        ? { lod: 2, planetId, shipFeatureId, chatDroneId }
-        : { lod: 2, planetId, shipFeatureId },
+      focus: { lod: 2, planetId, shipFeatureId },
       ...(same ? {} : { infoPanelOpen: true, chatPanelOpen: true }),
     })
-  },
-  bindChatDrone: (droneId) => {
-    const f = get().focus
-    if (f.lod === 2) set({ focus: { ...f, chatDroneId: droneId } })
   },
   back: () => {
     const f = get().focus
@@ -137,6 +150,20 @@ export const useUiStore = create<UiState>((set, get) => ({
   hideAllPanels: () => set({ infoPanelOpen: false, chatPanelOpen: false }),
   openInfoTab: (tab) => set({ infoPanelOpen: true, infoTab: tab }),
   openChat: () => set({ chatPanelOpen: true }),
+  selectTerminal: (planetId, sessionId) =>
+    set((s) => {
+      const next = { ...s.selectedTerminalByPlanet }
+      if (sessionId) next[planetId] = sessionId
+      else delete next[planetId]
+      return { selectedTerminalByPlanet: next, chatPanelOpen: sessionId ? true : s.chatPanelOpen }
+    }),
+  selectFeatureTab: (featureId, sessionId) =>
+    set((s) => {
+      const next = { ...s.selectedTabByFeature }
+      if (sessionId) next[featureId] = sessionId
+      else delete next[featureId]
+      return { selectedTabByFeature: next }
+    }),
   orbitView: (dYaw, dPitch) => {
     const { viewYaw, viewPitch } = get()
     set({

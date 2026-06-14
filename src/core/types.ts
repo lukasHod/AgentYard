@@ -1,5 +1,5 @@
 import type { PlanetTextureName } from './planetTextures'
-import type { AgentCapabilities, AgentKind } from './plugins'
+import type { AgentCapabilities, AgentKind, RuntimeKind } from './plugins'
 
 // Shared types used by both server and client.
 // Authoritative shapes for planets, workflows, agents, messages.
@@ -45,6 +45,7 @@ export interface SessionDescriptor {
    * tool panes / cost badges based on capabilities below.
    */
   agentKind: AgentKind
+  runtimeKind: RuntimeKind
   capabilities: AgentCapabilities
 }
 
@@ -103,12 +104,66 @@ export interface HandoffSummary {
   timestamp: number
 }
 
+export type TerminalProfileId =
+  | 'claude-cli'
+  | 'codex-cli'
+  | 'powershell'
+  | 'unix-shell'
+  | 'custom'
+
+export type TerminalSessionState = 'running' | 'exited' | 'killed' | 'runtime_lost' | 'failed'
+
+export interface TerminalSessionDescriptor {
+  id: string
+  profileId: TerminalProfileId
+  runtimeKind: 'pty'
+  planetId: number | null
+  featureId: number | null
+  workflowRunId: string | null
+  nodeRunId: string | null
+  agentSessionId: string | null
+  role: string | null
+  cwd: string | null
+  argv: string[]
+  state: TerminalSessionState
+  exitCode: number | null
+  exitSignal: number | null
+  pid: number | null
+  createdAt: number
+  updatedAt: number
+  lastStartedAt: number | null
+  lastExitedAt: number | null
+}
+
+export interface TerminalStartRequest {
+  sessionId?: string
+  profileId: TerminalProfileId
+  argv?: string[]
+  cwd?: string
+  env?: Record<string, string>
+  planetId?: number
+  featureId?: number
+  workflowRunId?: string
+  nodeRunId?: string
+  agentSessionId?: string
+  role?: string
+  cols?: number
+  rows?: number
+}
+
 // Wire protocol — messages over Socket.IO.
 // Server → Client events
 export interface ServerEvents {
   'session:list':     SessionDescriptor[]
   'session:added':    SessionDescriptor
   'session:removed':  { id: string }
+  'terminal:list':    TerminalSessionDescriptor[]
+  'terminal:session:added': TerminalSessionDescriptor
+  'terminal:session:update': TerminalSessionDescriptor
+  'terminal:session:removed': { sessionId: string }
+  'terminal:data':    { sessionId: string; data: string; timestamp: number }
+  'terminal:snapshot': { sessionId: string; data: string; state: TerminalSessionState }
+  'terminal:exit':    { sessionId: string; code: number | null; signal: number | null; timestamp: number }
   'agent:message':    { agentRunId: string; role: 'assistant' | 'user' | 'system'; content: string; timestamp: number }
   'agent:state':      { agentRunId: string; state: AgentState }
   /** Phase 3: agent invoked a tool. Only emitted by adapters whose
@@ -162,6 +217,14 @@ export interface ServerEvents {
 export interface ClientEvents {
   'agent:send':          { agentRunId: string; content: string }
   'clarification:reply': { agentRunId: string; toolUseId: string; answer: string }
+  'terminal:start':      TerminalStartRequest
+  'terminal:attach':     { sessionId: string }
+  'terminal:detach':     { sessionId: string }
+  'terminal:input':      { sessionId: string; data: string }
+  'terminal:resize':     { sessionId: string; cols: number; rows: number }
+  'terminal:kill':       { sessionId: string }
+  'terminal:restart':    { sessionId: string }
+  'terminal:delete':     { sessionId: string }
   // ── Sandbox test-run client→server messages ──
   // Forwarded by the server to the test-run's isolated SessionManager.
   'test-run:agent:send':           { testRunId: string; agentRunId: string; content: string }

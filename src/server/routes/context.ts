@@ -6,6 +6,7 @@ import type { PlanetChatRegistry } from '../planetChat.js'
 import type { FeatureChatRegistry } from '../featureChat.js'
 import type { TranscriptStore } from '../transcriptStore.js'
 import type { TypedIOServer } from '../socketTypes.js'
+import type { TerminalSessionManager } from '../runtime/TerminalSessionManager.js'
 
 /**
  * The shared dependency bag handed to every route-registration function.
@@ -16,6 +17,7 @@ export interface AppContext {
   app: FastifyInstance
   io: TypedIOServer
   manager: SessionManager
+  terminals: TerminalSessionManager
   testRuns: TestRunRegistry
   runState: RunRegistry
   transcripts: TranscriptStore

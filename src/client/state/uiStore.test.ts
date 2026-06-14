@@ -25,11 +25,6 @@ describe('uiStore.focus reducer', () => {
     expect(useUiStore.getState().focus).toEqual({ lod: 2, planetId: 42, shipFeatureId: 7 })
   })
 
-  it('focusShip carries chatDroneId if provided', () => {
-    useUiStore.getState().focusShip(42, 7, 'drone-abc')
-    expect(useUiStore.getState().focus).toEqual({ lod: 2, planetId: 42, shipFeatureId: 7, chatDroneId: 'drone-abc' })
-  })
-
   it('back() pops one LOD level', () => {
     useUiStore.getState().focusShip(42, 7)
     useUiStore.getState().back()

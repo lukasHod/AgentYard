@@ -1,5 +1,5 @@
 import { io, type Socket } from 'socket.io-client'
-import type { ServerEvents } from '../../core/types'
+import type { ClientEvents, ServerEvents } from '../../core/types'
 import { useSocketStore } from './socketStore'
 
 let socket: Socket | null = null
@@ -39,6 +39,22 @@ export function initSocketClient(): Socket {
   socket.on('feature:updated', (ev: ServerEvents['feature:updated']) => store.applyFeatureUpdated(ev))
   socket.on('feature:deleted', (ev: ServerEvents['feature:deleted']) => store.applyFeatureDeleted(ev.id))
 
+  socket.on('terminal:list', (ev: ServerEvents['terminal:list']) => store.applyTerminalList(ev))
+  socket.on('terminal:session:added', (ev: ServerEvents['terminal:session:added']) =>
+    store.applyTerminalAdded(ev),
+  )
+  socket.on('terminal:session:update', (ev: ServerEvents['terminal:session:update']) =>
+    store.applyTerminalUpdate(ev),
+  )
+  socket.on('terminal:session:removed', (ev: ServerEvents['terminal:session:removed']) =>
+    store.applyTerminalRemoved(ev),
+  )
+  socket.on('terminal:data', (ev: ServerEvents['terminal:data']) => store.applyTerminalData(ev))
+  socket.on('terminal:snapshot', (ev: ServerEvents['terminal:snapshot']) =>
+    store.applyTerminalSnapshot(ev),
+  )
+  socket.on('terminal:exit', (ev: ServerEvents['terminal:exit']) => store.applyTerminalExit(ev))
+
   return socket
 }
 
@@ -74,4 +90,43 @@ export function replyClarification(agentRunId: string, toolUseId: string, answer
     timestamp: Date.now(),
   })
   store.applyClarificationResolved({ agentRunId, toolUseId })
+}
+
+// ── Terminals ─────────────────────────────────────────────────────────────
+
+export function startTerminal(req: ClientEvents['terminal:start']) {
+  socket?.emit('terminal:start', req)
+}
+
+export function attachTerminal(sessionId: string) {
+  socket?.emit('terminal:attach', { sessionId })
+}
+
+export function detachTerminal(sessionId: string) {
+  socket?.emit('terminal:detach', { sessionId })
+}
+
+export function sendTerminalInput(sessionId: string, data: string) {
+  socket?.emit('terminal:input', { sessionId, data })
+}
+
+export function resizeTerminal(sessionId: string, cols: number, rows: number) {
+  socket?.emit('terminal:resize', { sessionId, cols, rows })
+}
+
+export function killTerminal(sessionId: string) {
+  socket?.emit('terminal:kill', { sessionId })
+}
+
+export function restartTerminal(sessionId: string) {
+  socket?.emit('terminal:restart', { sessionId })
+}
+
+/**
+ * Kills the PTY (if alive) AND removes the descriptor row from the DB. Use
+ * for "remove from UI" affordances. Server broadcasts `terminal:session:removed`.
+ */
+export function deleteTerminal(sessionId: string) {
+  useSocketStore.getState().applyTerminalRemoved({ sessionId })
+  socket?.emit('terminal:delete', { sessionId })
 }

@@ -1,26 +1,28 @@
 import { useMemo } from 'react'
-import { usePendingsMap, useSessionList, usePlanets, useFeaturesMap } from '../../state/socketStore'
+import { usePendingsMap, usePlanets, useFeaturesMap } from '../../state/socketStore'
 
 export interface NotificationRow {
-  droneId: string
+  agentSessionId: string
   planetId: number
   shipFeatureId: number
   planetName: string
   featureName: string
-  droneLabel: string
   question: string
 }
 
+/**
+ * Surfaces pending clarifications as inbox rows. Each row points at the
+ * feature that owns the asking session; clicking it sends the user to that
+ * feature workspace, where they pick the right tab and answer.
+ */
 export function useNotificationRows(): NotificationRow[] {
   const pendings = usePendingsMap()
-  const sessions = useSessionList()
   const planets = usePlanets()
   const features = useFeaturesMap()
 
   return useMemo(() => {
     const out: NotificationRow[] = []
-    for (const [droneId, pending] of pendings) {
-      const session = sessions.find((s) => s.id === droneId)
+    for (const [agentSessionId, pending] of pendings) {
       let foundPlanetId: number | null = null
       let foundFeatureId: number | null = null
       let foundPlanetName = ''
@@ -37,15 +39,14 @@ export function useNotificationRows(): NotificationRow[] {
       }
       if (foundPlanetId === null || foundFeatureId === null) continue
       out.push({
-        droneId,
+        agentSessionId,
         planetId: foundPlanetId,
         shipFeatureId: foundFeatureId,
         planetName: foundPlanetName,
         featureName: foundFeatureName,
-        droneLabel: session?.label ?? session?.role ?? droneId.slice(0, 6),
         question: pending.question,
       })
     }
     return out
-  }, [pendings, sessions, planets, features])
+  }, [pendings, planets, features])
 }

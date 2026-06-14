@@ -10,7 +10,7 @@ import './CloudMaterial'
 import { hashStringToInt, hashByte, deriveHash } from './lib/hash'
 import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
-import { useFeaturesMap, useSessionList, usePendingsMap } from '../state/socketStore'
+import { useFeaturesMap } from '../state/socketStore'
 import { Ship } from './Ship'
 import { ringAngles } from './lib/orbits'
 import { registerPlanetPosition } from './lib/positionRegistry'
@@ -137,17 +137,6 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   const angles          = useMemo(() => ringAngles(visible.length).map(a => a + (3 * Math.PI) / 4), [visible.length])
   const shipOrbitRadius = params.radius * 1.5
 
-  const sessions      = useSessionList()
-  const pendings      = usePendingsMap()
-  const droneSessions = useMemo(
-    () => sessions.filter((s) => s.role === 'drone' || s.role === 'leader'),
-    [sessions],
-  )
-  const pendingDroneIds = useMemo(
-    () => new Set(droneSessions.filter((s) => pendings.has(s.id)).map((s) => s.id)),
-    [droneSessions, pendings],
-  )
-
   useFrame((_, dt) => {
     const sf = speedFactor.current
     if (groupRef.current) groupRef.current.rotation.y += dt * 0.05 * sf
@@ -260,8 +249,6 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
               feature={f}
               orbitRadius={shipOrbitRadius}
               orbitAngle={angles[i]!}
-              drones={droneSessions}
-              pendingDroneIds={pendingDroneIds}
               onDespawned={() => onShipDespawned(f.id)}
             />
           ))}

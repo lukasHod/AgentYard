@@ -6,19 +6,12 @@
 //
 //   • 2 planets (Aurora, Helios)
 //   • Aurora has 1 running feature ("Add solar-wind shader")
-//   • 3 agent sessions on that feature: 1 leader + 2 drones
-//   • drone-test is "awaiting_clarification" (pulses pending in 3D)
-//   • leader has a short seeded transcript
-//   • per-planet ambient chat sessions so LOD-1 chat opens cleanly
 //
-// Plus a small per-session "description" registry — the FocusedPanel reads
-// this to show agent info in the left panel when a drone is selected.
+// The chat/terminal UIs require a live server; in mock mode they fall back
+// to their "offline" empty state, which is enough for visual smoke-testing
+// of the scene.
 
-import type {
-  FeatureSummary,
-  PlanetSummary,
-  SessionDescriptor,
-} from '../../core/types'
+import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { useSocketStore } from './socketStore'
 
 export const MOCK_ENABLED =
@@ -26,61 +19,6 @@ export const MOCK_ENABLED =
   new URLSearchParams(window.location.search).get('mock') === '1'
 
 const NOW = Date.now()
-
-interface MockAgent {
-  id: string
-  role: SessionDescriptor['role']
-  label: string
-  state: SessionDescriptor['state']
-  description: string
-}
-
-const MOCK_AGENTS: MockAgent[] = [
-  {
-    id: 'mock-leader-1',
-    role: 'leader',
-    label: 'arch-leader',
-    state: 'thinking',
-    description:
-      'Architecture leader. Decomposes the feature into subtasks, allocates work to drones, and arbitrates design decisions. Has read access to the entire worktree.',
-  },
-  {
-    id: 'mock-drone-impl-1',
-    role: 'drone',
-    label: 'drone-impl',
-    state: 'tool_running',
-    description:
-      'Implementation drone. Writes and edits source code under the worktree. Holds the write lock on src/client/scene/* for the current task slice.',
-  },
-  {
-    id: 'mock-drone-test-1',
-    role: 'drone',
-    label: 'drone-test',
-    state: 'awaiting_clarification',
-    description:
-      'Verification drone. Runs the test suite and visual regressions. Currently blocked on a question for the leader about the expected sun-flare colour.',
-  },
-  {
-    id: 'mock-chat-1',
-    role: 'free',
-    label: 'planet:1:chat',
-    state: 'idle',
-    description: 'Ambient planet chat session.',
-  },
-  {
-    id: 'mock-chat-2',
-    role: 'free',
-    label: 'planet:2:chat',
-    state: 'idle',
-    description: 'Ambient planet chat session.',
-  },
-]
-
-const DESCRIPTIONS = new Map(MOCK_AGENTS.map((a) => [a.id, a.description]))
-
-export function getMockAgentDescription(sessionId: string): string | undefined {
-  return DESCRIPTIONS.get(sessionId)
-}
 
 const MOCK_PLANETS: PlanetSummary[] = [
   {
@@ -117,6 +55,8 @@ const MOCK_FEATURES: Map<number, FeatureSummary[]> = new Map([
         name: 'solar-wind-shader',
         task:
           'Add a procedural solar-wind shader that streams particles from the sun toward each planet. The colour should track the sun palette and intensity should fall off with distance.',
+        description: null,
+        chatName: null,
         branch: 'feat/solar-wind-shader',
         worktreePath: 'C:/mock/aurora-wt/solar-wind-shader',
         status: 'running',
@@ -130,26 +70,6 @@ const MOCK_FEATURES: Map<number, FeatureSummary[]> = new Map([
   [2, []],
 ])
 
-const MOCK_TRANSCRIPT_LEADER = [
-  {
-    role: 'system' as const,
-    content: 'Session started. Workflow: standard-3agent. Worktree ready.',
-    timestamp: NOW - 1000 * 60 * 11,
-  },
-  {
-    role: 'assistant' as const,
-    content:
-      'Decomposing "Add solar-wind shader" into:\n  1. shader source (GLSL particle field)\n  2. R3F integration in <Sun>\n  3. visual regression test\nAssigning (1+2) → drone-impl, (3) → drone-test.',
-    timestamp: NOW - 1000 * 60 * 10,
-  },
-  {
-    role: 'assistant' as const,
-    content:
-      'drone-test is asking what the expected hue range is for the wind streamers when the sun is in its "flare" state. Pausing for your input.',
-    timestamp: NOW - 1000 * 60 * 2,
-  },
-]
-
 /**
  * Seeds the socket store with the mock scenario above. Call once at app
  * startup when MOCK_ENABLED is true; safe to call multiple times (idempotent
@@ -157,48 +77,9 @@ const MOCK_TRANSCRIPT_LEADER = [
  */
 export function installMockData(): void {
   const store = useSocketStore.getState()
-
   store.setPlanets(MOCK_PLANETS)
   store.setFeatures(MOCK_FEATURES)
-
-  // Sessions: applySessionList replaces the whole map.
-  store.applySessionList(
-    MOCK_AGENTS.map(({ id, role, label, state }) => ({
-      id,
-      role,
-      label,
-      state,
-      agentKind: 'claude-sdk' as const,
-      capabilities: {
-        supports_tools: true,
-        supports_structured_events: true,
-        supports_clarification_tool: true,
-        supports_resume: false,
-        supports_cost: true,
-        supports_mcp: true,
-        supports_working_directory: true,
-      },
-    })),
-  )
-
-  // Seed leader transcript.
-  for (const m of MOCK_TRANSCRIPT_LEADER) {
-    store.applyAgentMessage({
-      agentRunId: 'mock-leader-1',
-      role: m.role,
-      content: m.content,
-      timestamp: m.timestamp,
-    })
-  }
-
-  // drone-test has an open clarification → pending pulse in 3D.
-  store.applyClarificationRequested({
-    agentRunId: 'mock-drone-test-1',
-    toolUseId: 'mock-tool-1',
-    question:
-      'What hue range should the wind streamers use when the sun is in its "flare" state? The current shader hard-codes #ffb347 but the design doc mentions a violet shift.',
-  })
-
-  // Pretend the socket connected so chat input is enabled.
+  // Pretend the socket connected so terminal panels show their "spinning up"
+  // state instead of "offline".
   store.setConnected(true)
 }

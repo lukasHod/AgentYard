@@ -39,6 +39,7 @@ const descriptor = (id: string): SessionDescriptor => ({
   label: id,
   state: 'idle',
   agentKind: 'claude-sdk',
+  runtimeKind: 'sdk',
   capabilities: {
     supports_tools: true,
     supports_structured_events: true,

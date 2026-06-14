@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { statSync } from 'node:fs'
+import path from 'node:path'
 import pty from '@lydell/node-pty'
 import type { IPty } from '@lydell/node-pty'
 
@@ -59,17 +61,11 @@ function resolveProgramSync(name: string): string {
   // Search PATH for `<name>.exe` / `.cmd` / `.bat`.
   const pathExt = (process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';')
   const dirs = (process.env.PATH ?? '').split(';').filter(Boolean)
-  // Lazy require — keep `node:path` / `node:fs` out of the import section
-  // since this helper is the only place inside the runtime that needs them.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require('node:fs') as typeof import('node:fs')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const path = require('node:path') as typeof import('node:path')
   for (const dir of dirs) {
     for (const ext of pathExt) {
       const cand = path.join(dir, `${name}${ext}`)
       try {
-        if (fs.statSync(cand).isFile()) return cand
+        if (statSync(cand).isFile()) return cand
       } catch {
         // continue
       }

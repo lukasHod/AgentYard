@@ -4,6 +4,7 @@ import type {
   FeatureSummary,
   SessionDescriptor,
   PlanetSummary,
+  TerminalSessionDescriptor,
 } from '../../core/types'
 
 const baseState = useSocketStore.getState()
@@ -14,6 +15,7 @@ const session = (id: string, state: SessionDescriptor['state'] = 'idle'): Sessio
   label: id,
   state,
   agentKind: 'claude-sdk',
+  runtimeKind: 'sdk',
   capabilities: {
     supports_tools: true,
     supports_structured_events: true,
@@ -42,6 +44,8 @@ const feature = (id: number, planetId: number): FeatureSummary => ({
   planetId,
   name: `f${id}`,
   task: 'task',
+  description: null,
+  chatName: null,
   branch: null,
   worktreePath: null,
   status: 'pending',
@@ -49,6 +53,32 @@ const feature = (id: number, planetId: number): FeatureSummary => ({
   error: null,
   workflowId: 0,
   createdAt: 0,
+})
+
+const terminal = (
+  id: string,
+  patch: Partial<TerminalSessionDescriptor> = {},
+): TerminalSessionDescriptor => ({
+  id,
+  profileId: 'custom',
+  runtimeKind: 'pty',
+  planetId: null,
+  featureId: null,
+  workflowRunId: null,
+  nodeRunId: null,
+  agentSessionId: null,
+  role: null,
+  cwd: null,
+  argv: ['echo', 'hi'],
+  state: 'running',
+  exitCode: null,
+  exitSignal: null,
+  pid: 1234,
+  createdAt: 0,
+  updatedAt: 0,
+  lastStartedAt: 0,
+  lastExitedAt: null,
+  ...patch,
 })
 
 beforeEach(() => {
@@ -60,6 +90,8 @@ beforeEach(() => {
     activeRun: null,
     planets: [],
     features: new Map(),
+    terminalsById: new Map(),
+    terminalBuffers: new Map(),
   })
 })
 
@@ -271,5 +303,50 @@ describe('socketStore — planets & features', () => {
     const updated = { ...feature(10, 1), status: 'complete' as const }
     baseState.applyFeatureUpdated(updated)
     expect(useSocketStore.getState().features.get(1)?.[0]?.status).toBe('complete')
+  })
+})
+
+describe('socketStore — terminals', () => {
+  it('replaces all terminals on terminal:list', () => {
+    baseState.applyTerminalAdded(terminal('t1'))
+    baseState.applyTerminalList([terminal('t2'), terminal('t3')])
+    const map = useSocketStore.getState().terminalsById
+    expect(map.size).toBe(2)
+    expect(map.has('t1')).toBe(false)
+    expect(map.has('t2')).toBe(true)
+  })
+
+  it('appends data into the rolling buffer', () => {
+    baseState.applyTerminalAdded(terminal('t1'))
+    baseState.applyTerminalData({ sessionId: 't1', data: 'hello ', timestamp: 1 })
+    baseState.applyTerminalData({ sessionId: 't1', data: 'world', timestamp: 2 })
+    expect(useSocketStore.getState().terminalBuffers.get('t1')).toBe('hello world')
+  })
+
+  it('snapshot replaces the buffer and syncs descriptor state', () => {
+    baseState.applyTerminalAdded(terminal('t1', { state: 'running' }))
+    baseState.applyTerminalData({ sessionId: 't1', data: 'stale', timestamp: 1 })
+    baseState.applyTerminalSnapshot({ sessionId: 't1', data: 'fresh', state: 'exited' })
+    const s = useSocketStore.getState()
+    expect(s.terminalBuffers.get('t1')).toBe('fresh')
+    expect(s.terminalsById.get('t1')?.state).toBe('exited')
+  })
+
+  it('exit transitions descriptor state and records the code', () => {
+    baseState.applyTerminalAdded(terminal('t1', { state: 'running' }))
+    baseState.applyTerminalExit({ sessionId: 't1', code: 1, signal: null, timestamp: 5 })
+    const t = useSocketStore.getState().terminalsById.get('t1')!
+    expect(t.state).toBe('failed')
+    expect(t.exitCode).toBe(1)
+    expect(t.pid).toBeNull()
+  })
+
+  it('terminal:session:update is identity-stable when nothing changed', () => {
+    const t = terminal('t1', { state: 'running', updatedAt: 7 })
+    baseState.applyTerminalAdded(t)
+    const before = useSocketStore.getState().terminalsById
+    baseState.applyTerminalUpdate({ ...t })
+    const after = useSocketStore.getState().terminalsById
+    expect(after).toBe(before)
   })
 })

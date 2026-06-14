@@ -9,6 +9,7 @@ import type {
   ServerEvents,
   SessionDescriptor,
   PlanetSummary,
+  TerminalSessionDescriptor,
 } from '../../core/types'
 
 export interface ChatMessage {
@@ -31,6 +32,10 @@ const nextMessageId = () => `m${++messageIdCounter}`
 const EMPTY_TRANSCRIPT: ChatMessage[] = []
 const EMPTY_FEATURES: FeatureSummary[] = []
 
+// Cap the per-terminal scrollback we hold in the browser so a runaway PTY
+// doesn't grow memory without bound. The server keeps the full transcript.
+const TERMINAL_BUFFER_LIMIT = 200_000
+
 interface State {
   connected: boolean
   sessionsById: Map<string, SessionDescriptor>
@@ -39,6 +44,10 @@ interface State {
   activeRun: RunSnapshot | null
   planets: PlanetSummary[]
   features: Map<number, FeatureSummary[]>
+  terminalsById: Map<string, TerminalSessionDescriptor>
+  /** Rolling text buffer per terminal session — kept so a remount of the
+   *  TerminalPanel can repaint without round-tripping `terminal:attach`. */
+  terminalBuffers: Map<string, string>
 }
 
 interface Actions {
@@ -61,6 +70,13 @@ interface Actions {
   applyFeatureCreated: (f: ServerEvents['feature:created']) => void
   applyFeatureUpdated: (f: ServerEvents['feature:updated']) => void
   applyFeatureDeleted: (id: number) => void
+  applyTerminalList: (list: ServerEvents['terminal:list']) => void
+  applyTerminalAdded: (t: ServerEvents['terminal:session:added']) => void
+  applyTerminalUpdate: (t: ServerEvents['terminal:session:update']) => void
+  applyTerminalRemoved: (ev: ServerEvents['terminal:session:removed']) => void
+  applyTerminalData: (ev: ServerEvents['terminal:data']) => void
+  applyTerminalSnapshot: (ev: ServerEvents['terminal:snapshot']) => void
+  applyTerminalExit: (ev: ServerEvents['terminal:exit']) => void
   setPlanets: (planets: PlanetSummary[]) => void
   setFeatures: (features: Map<number, FeatureSummary[]>) => void
   setPlanetFeatures: (planetId: number, features: FeatureSummary[]) => void
@@ -75,6 +91,8 @@ export const useSocketStore = create<State & Actions>((set) => ({
   activeRun: null,
   planets: [],
   features: new Map(),
+  terminalsById: new Map(),
+  terminalBuffers: new Map(),
 
   setConnected: (b) => set({ connected: b }),
 
@@ -242,6 +260,97 @@ export const useSocketStore = create<State & Actions>((set) => ({
       return { features }
     }),
 
+  applyTerminalList: (list) => {
+    set({ terminalsById: new Map(list.map((t) => [t.id, t])) })
+  },
+
+  applyTerminalAdded: (t) => {
+    set((prev) => ({ terminalsById: new Map(prev.terminalsById).set(t.id, t) }))
+  },
+
+  applyTerminalUpdate: (t) => {
+    set((prev) => {
+      const cur = prev.terminalsById.get(t.id)
+      // A late update can race with a removal (the kill flow emits one update
+      // after the descriptor has already been deleted on the server). Treat
+      // updates as a no-op if the descriptor is gone — never resurrect it.
+      if (!cur) return prev
+      if (cur.state === t.state && cur.updatedAt === t.updatedAt) return prev
+      return { terminalsById: new Map(prev.terminalsById).set(t.id, t) }
+    })
+  },
+
+  applyTerminalRemoved: (ev) => {
+    set((prev) => {
+      if (!prev.terminalsById.has(ev.sessionId) && !prev.terminalBuffers.has(ev.sessionId)) {
+        return prev
+      }
+      const terminalsById = new Map(prev.terminalsById)
+      terminalsById.delete(ev.sessionId)
+      const terminalBuffers = new Map(prev.terminalBuffers)
+      terminalBuffers.delete(ev.sessionId)
+      return { terminalsById, terminalBuffers }
+    })
+  },
+
+  applyTerminalData: (ev) => {
+    set((prev) => {
+      const buffers = new Map(prev.terminalBuffers)
+      const cur = (buffers.get(ev.sessionId) ?? '') + ev.data
+      buffers.set(
+        ev.sessionId,
+        cur.length > TERMINAL_BUFFER_LIMIT ? cur.slice(cur.length - TERMINAL_BUFFER_LIMIT) : cur,
+      )
+      return { terminalBuffers: buffers }
+    })
+  },
+
+  applyTerminalSnapshot: (ev) => {
+    set((prev) => {
+      const buffers = new Map(prev.terminalBuffers)
+      buffers.set(
+        ev.sessionId,
+        ev.data.length > TERMINAL_BUFFER_LIMIT
+          ? ev.data.slice(ev.data.length - TERMINAL_BUFFER_LIMIT)
+          : ev.data,
+      )
+      const terminalsById = prev.terminalsById.has(ev.sessionId)
+        ? new Map(prev.terminalsById).set(ev.sessionId, {
+            ...prev.terminalsById.get(ev.sessionId)!,
+            state: ev.state,
+          })
+        : prev.terminalsById
+      return { terminalBuffers: buffers, terminalsById }
+    })
+  },
+
+  applyTerminalExit: (ev) => {
+    set((prev) => {
+      const cur = prev.terminalsById.get(ev.sessionId)
+      if (!cur) return prev
+      // Mirror the server-side end state on the client. `terminal:session:update`
+      // also fires and carries the authoritative state — this is a fast-path
+      // for the common case so the UI flips immediately on exit.
+      const state =
+        cur.state === 'killed' || cur.state === 'failed' || cur.state === 'exited'
+          ? cur.state
+          : ev.code === 0
+            ? 'exited'
+            : ev.code === null
+              ? cur.state
+              : 'failed'
+      const next: TerminalSessionDescriptor = {
+        ...cur,
+        state,
+        exitCode: ev.code,
+        exitSignal: ev.signal,
+        pid: null,
+        lastExitedAt: ev.timestamp,
+      }
+      return { terminalsById: new Map(prev.terminalsById).set(ev.sessionId, next) }
+    })
+  },
+
   setPlanets: (planets) => set({ planets }),
   setFeatures: (features) => set({ features }),
   setPlanetFeatures: (planetId, fs) =>
@@ -295,3 +404,27 @@ export const useFeaturesMap = () => useSocketStore((s) => s.features)
 /** Subscribe to a single planet's features — only re-renders for that planet. */
 export const useFeaturesByPlanet = (planetId: number): FeatureSummary[] =>
   useSocketStore((s) => s.features.get(planetId) ?? EMPTY_FEATURES)
+
+const EMPTY_TERMINALS: TerminalSessionDescriptor[] = []
+
+/** All terminal sessions as a list. */
+export const useTerminalList = (): TerminalSessionDescriptor[] =>
+  useSocketStore(useShallow((s) => Array.from(s.terminalsById.values())))
+
+/** Terminal sessions scoped to a planet. */
+export const useTerminalsByPlanet = (planetId: number | null): TerminalSessionDescriptor[] =>
+  useSocketStore(
+    useShallow((s) =>
+      planetId === null
+        ? EMPTY_TERMINALS
+        : Array.from(s.terminalsById.values()).filter((t) => t.planetId === planetId),
+    ),
+  )
+
+/** Subscribe to a single terminal's descriptor. */
+export const useTerminal = (sessionId: string | null): TerminalSessionDescriptor | null =>
+  useSocketStore((s) => (sessionId ? (s.terminalsById.get(sessionId) ?? null) : null))
+
+/** Subscribe to a single terminal's rolling buffer. */
+export const useTerminalBuffer = (sessionId: string | null): string =>
+  useSocketStore((s) => (sessionId ? (s.terminalBuffers.get(sessionId) ?? '') : ''))

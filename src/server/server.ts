@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { closeDb, getDb } from './db.js'
 import { SessionManager } from './runtime/SessionManager.js'
+import {
+  TerminalSessionManager,
+  type TerminalManagerEvent,
+} from './runtime/TerminalSessionManager.js'
 import { createPersistingRuntimeContext } from './runtime/runtimeContext.js'
 import { reconcileStaleSessions } from './runtime/reconcile.js'
 import type { SessionEvent } from './runtime/Session.js'
@@ -86,6 +90,7 @@ export async function startServer(opts: ServerOptions) {
   }
 
   const manager = new SessionManager()
+  const terminals = new TerminalSessionManager()
   manager.setRuntimeContext(createPersistingRuntimeContext(app.log))
   // Reconcile any non-terminal runner_sessions left from a prior process —
   // SDK sessions can't survive restart, so they're force-terminated.
@@ -108,11 +113,44 @@ export async function startServer(opts: ServerOptions) {
     if (ev.type === 'closed') app.log.info(`Session ${ev.agentRunId} closed`)
     transcripts.onSessionEvent(ev)
   })
+  terminals.on('terminal:event', (ev: TerminalManagerEvent) => {
+    switch (ev.type) {
+      case 'session:added':
+        io.emit('terminal:session:added', ev.session)
+        break
+      case 'session:update':
+        io.emit('terminal:session:update', ev.session)
+        break
+      case 'session:removed':
+        io.emit('terminal:session:removed', { sessionId: ev.sessionId })
+        break
+      case 'data':
+        io.emit('terminal:data', {
+          sessionId: ev.sessionId,
+          data: ev.data,
+          timestamp: ev.timestamp,
+        })
+        break
+      case 'exit':
+        io.emit('terminal:exit', {
+          sessionId: ev.sessionId,
+          code: ev.code,
+          signal: ev.signal,
+          timestamp: ev.timestamp,
+        })
+        break
+      default: {
+        const exhaustive: never = ev
+        app.log.warn(`unknown terminal event: ${JSON.stringify(exhaustive)}`)
+      }
+    }
+  })
 
   const ctx: AppContext = {
     app,
     io,
     manager,
+    terminals,
     testRuns,
     runState,
     transcripts,
@@ -153,6 +191,11 @@ export async function startServer(opts: ServerOptions) {
       await testRuns.abortAll()
     } catch (err) {
       app.log.error({ err }, 'shutdown: abort test runs')
+    }
+    try {
+      await terminals.destroyAll()
+    } catch (err) {
+      app.log.error({ err }, 'shutdown: destroy terminal sessions')
     }
     try {
       await manager.destroyAll()
