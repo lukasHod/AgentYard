@@ -157,3 +157,158 @@ DELEGATION RULES:
     { from: 'develop', to: 'deploy' },
   ],
 }
+
+/**
+ * Phase 8a: AO-style default workflow. Seeded alongside the simple
+ * analyze/develop/deploy template and chosen as the default for newly
+ * created features. The SCM-touching steps (open-pr, watch-ci,
+ * watch-review) ship as placeholder script nodes that write marker
+ * files — Phase 8b swaps them for real `gh`-backed implementations.
+ *
+ * Pipeline:
+ *   analyze (AI) → create-branch (script) → implement (AI) →
+ *   self-review (AI) → run-tests (script) → commit (script) →
+ *   open-pr (script) → watch-ci (script) → watch-review (script) →
+ *   mark-ready (script)
+ */
+export const AO_WORKFLOW_GRAPH: WorkflowGraph = {
+  nodes: [
+    {
+      id: 'analyze',
+      type: 'ai',
+      title: 'Analyze',
+      prompt: `You are the LEADER of the ANALYZE phase. The user provided this task:
+
+{task}
+
+Your job: produce a concise plan (3–5 bullets) describing what needs to be built and how. Delegate to the planner agent and the reviewer agent, then call mark_node_complete with the final plan and a short slug (kebab-case, max 4 words) that the next node will use as the branch name. Format the summary as:
+
+slug: <kebab-slug>
+plan:
+- bullet 1
+- bullet 2
+...`,
+      agents: ['planner', 'reviewer'],
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: 'create-branch',
+      type: 'custom',
+      title: 'Create branch',
+      customType: 'script',
+      scriptName: 'ao-create-branch',
+      args: {
+        // Plan node prefixes its summary with `slug: <name>`. We just pass
+        // upstream_outputs through; the script's git checkout consumes the
+        // first line after `slug:`. In Phase 8b the create-branch step
+        // becomes a smarter helper that parses the slug deterministically.
+        branch: 'feature/{upstream_outputs}',
+      },
+      position: { x: 350, y: 0 },
+    },
+    {
+      id: 'implement',
+      type: 'ai',
+      title: 'Implement',
+      prompt: `You are the LEADER of the IMPLEMENT phase.
+
+Task: {task}
+
+Plan from analyze:
+{upstream_outputs}
+
+Delegate to the developer agent to write the code (Read/Edit/Write/Glob/Grep/Bash all in the feature worktree). Then delegate to the tester agent to verify by reading the files actually produced and running smoke checks.
+
+Call mark_node_complete with a 1–2 paragraph summary of what was written to disk (file paths + brief description).`,
+      agents: ['developer', 'tester'],
+      position: { x: 700, y: 0 },
+    },
+    {
+      id: 'self-review',
+      type: 'ai',
+      title: 'Self-review',
+      prompt: `You are the LEADER of the SELF-REVIEW phase.
+
+Implementation summary:
+{upstream_outputs}
+
+Delegate to the reviewer agent to read each changed file and flag bugs, dead code, missing tests, or unclear naming. The reviewer should produce a numbered list of concrete fixes — anything more than 3 items means we'll loop back to implement.
+
+Call mark_node_complete with the review findings. If there are no blocking issues, end the summary with the line "review-ok".`,
+      agents: ['reviewer'],
+      position: { x: 1050, y: 0 },
+    },
+    {
+      id: 'run-tests',
+      type: 'custom',
+      title: 'Run tests',
+      customType: 'script',
+      scriptName: 'ao-run-tests',
+      args: {},
+      position: { x: 1400, y: 0 },
+    },
+    {
+      id: 'commit',
+      type: 'custom',
+      title: 'Commit',
+      customType: 'script',
+      scriptName: 'ao-commit',
+      args: {
+        message: 'agentyard: {task}',
+      },
+      position: { x: 1750, y: 0 },
+    },
+    {
+      id: 'open-pr',
+      type: 'custom',
+      title: 'Open PR',
+      customType: 'script',
+      scriptName: 'ao-open-pr',
+      args: {
+        title: '{task}',
+        body: '{upstream_outputs}',
+      },
+      position: { x: 2100, y: 0 },
+    },
+    {
+      id: 'watch-ci',
+      type: 'custom',
+      title: 'Watch CI',
+      customType: 'script',
+      scriptName: 'ao-watch-ci',
+      args: {},
+      position: { x: 2450, y: 0 },
+    },
+    {
+      id: 'watch-review',
+      type: 'custom',
+      title: 'Watch review',
+      customType: 'script',
+      scriptName: 'ao-watch-review',
+      args: {},
+      position: { x: 2800, y: 0 },
+    },
+    {
+      id: 'mark-ready',
+      type: 'custom',
+      title: 'Ready to merge',
+      customType: 'script',
+      scriptName: 'ao-mark-ready',
+      args: {
+        summary: 'Feature {task} is ready to merge.',
+      },
+      position: { x: 3150, y: 0 },
+    },
+  ],
+  edges: [
+    { from: 'analyze', to: 'create-branch' },
+    { from: 'create-branch', to: 'implement' },
+    { from: 'implement', to: 'self-review' },
+    { from: 'self-review', to: 'run-tests' },
+    { from: 'run-tests', to: 'commit' },
+    { from: 'commit', to: 'open-pr' },
+    { from: 'open-pr', to: 'watch-ci' },
+    { from: 'watch-ci', to: 'watch-review' },
+    { from: 'watch-review', to: 'mark-ready' },
+  ],
+}

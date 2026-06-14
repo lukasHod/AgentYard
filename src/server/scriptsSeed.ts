@@ -29,6 +29,68 @@ const SEED_SCRIPTS: ScriptTool[] = [
       },
     ],
   },
+  // ── Phase 8a: AO-style workflow scripts ────────────────────────────
+  // Placeholder implementations — every node prints a deterministic
+  // marker line so the workflow runs end-to-end against an empty repo.
+  // Phase 8b swaps the SCM-touching ones (open-pr, watch-ci, watch-review)
+  // for real `gh`-backed implementations behind the ScmAdapter interface.
+  {
+    name: 'ao-create-branch',
+    description:
+      'Create a feature branch from the current HEAD. Runs inside the feature worktree (the workflow passes the worktree as cwd).',
+    cmd: 'git checkout -b {branch}',
+    args: [
+      { name: 'branch', description: 'Branch name', required: true },
+    ],
+  },
+  {
+    name: 'ao-run-tests',
+    description:
+      'Run the project test suite. Defaults to `npm test`; override the cmd in your planet to run pytest / cargo test / etc.',
+    cmd: 'npm test',
+    args: [],
+  },
+  {
+    name: 'ao-commit',
+    description: 'Stage everything in the worktree and commit with the given message.',
+    cmd: 'node -e require(\'node:child_process\').execSync(`git add -A && git commit -m ${JSON.stringify(process.argv[1])}`,{stdio:\'inherit\'}) {message}',
+    args: [
+      { name: 'message', description: 'Commit message', required: true },
+    ],
+  },
+  {
+    name: 'ao-open-pr',
+    description:
+      'PHASE 8a PLACEHOLDER — writes PR-PENDING.md describing the intended PR. Phase 8b replaces this with `gh pr create` via the ScmAdapter.',
+    cmd: 'node -e require(\'node:fs\').writeFileSync(\'PR-PENDING.md\',`Title: ${process.argv[1]}\\n\\n${process.argv[2]}\\n`) {title} {body}',
+    args: [
+      { name: 'title', description: 'PR title', required: true },
+      { name: 'body', description: 'PR body', required: true },
+    ],
+  },
+  {
+    name: 'ao-watch-ci',
+    description:
+      'PHASE 8a PLACEHOLDER — writes CI-OK.md and exits. Phase 8b polls real `gh pr checks`.',
+    cmd: 'node -e require(\'node:fs\').writeFileSync(\'CI-OK.md\',\'ok\')',
+    args: [],
+  },
+  {
+    name: 'ao-watch-review',
+    description:
+      'PHASE 8a PLACEHOLDER — writes REVIEW-OK.md and exits. Phase 8b polls real review comments.',
+    cmd: 'node -e require(\'node:fs\').writeFileSync(\'REVIEW-OK.md\',\'ok\')',
+    args: [],
+  },
+  {
+    name: 'ao-mark-ready',
+    description:
+      'Print a ready-to-merge marker. The workflow node treats this as the terminal step before manual merge.',
+    cmd: 'node -e console.log(`ready-to-merge: ${process.argv[1]}`) {summary}',
+    args: [
+      { name: 'summary', description: 'One-line summary of the feature', required: true },
+    ],
+  },
 ]
 
 /**
