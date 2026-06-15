@@ -24,20 +24,35 @@ export function FeaturesTab({
   planetId: number
 }) {
   const [handoffTarget, setHandoffTarget] = useState<FeatureSummary | null>(null)
-  const [creating, setCreating] = useState(false)
+  const [showForm, setShowForm] = useState(false)
+  const [formName, setFormName] = useState('')
+  const [formTask, setFormTask] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const focusShip = useUiStore((s) => s.focusShip)
   const focus = useUiStore((s) => s.focus)
   const waitingFeatureIds = useWaitingFeatureIds()
 
-  const handleNewFeature = async () => {
-    setCreating(true)
-    const res = await apiPost<FeatureSummary>(`/api/planets/${planetId}/features`)
-    setCreating(false)
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    const res = await apiPost<FeatureSummary>(`/api/planets/${planetId}/features`, {
+      name: formName.trim() || undefined,
+      task: formTask.trim(),
+    })
+    setSubmitting(false)
     if (res.ok) {
+      setShowForm(false)
+      setFormName('')
+      setFormTask('')
       focusShip(planetId, res.data.id)
     } else {
       pushToast('error', `Couldn't create feature: ${res.error}`)
     }
+  }
+
+  const handleCancel = () => {
+    setShowForm(false)
+    setFormName('')
+    setFormTask('')
   }
 
   return (
@@ -49,16 +64,60 @@ export function FeaturesTab({
           onClose={() => setHandoffTarget(null)}
         />
       )}
-      <div className="mb-3">
-        <GlassButton
-          variant="primary"
-          className="text-xs"
-          onClick={() => void handleNewFeature()}
-          disabled={creating}
-        >
-          {creating ? 'creating…' : '+ New Feature'}
-        </GlassButton>
-      </div>
+
+      {showForm ? (
+        <div className="mb-3 space-y-2">
+          <input
+            className="w-full bg-black/40 border border-sky-400/30 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-300"
+            placeholder="feature-name"
+            value={formName}
+            onChange={(e) => setFormName(e.target.value)}
+            autoFocus
+          />
+          <textarea
+            className="w-full bg-black/40 border border-sky-400/30 rounded px-2 py-1 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-300 resize-none"
+            placeholder="Describe what to build…"
+            rows={4}
+            value={formTask}
+            onChange={(e) => setFormTask(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                void handleSubmit()
+              }
+            }}
+          />
+          <div className="flex gap-2">
+            <GlassButton
+              variant="primary"
+              className="text-xs"
+              onClick={() => void handleSubmit()}
+              disabled={submitting || !formTask.trim()}
+            >
+              {submitting ? 'Starting…' : 'Start'}
+            </GlassButton>
+            <GlassButton
+              variant="ghost"
+              className="text-xs"
+              onClick={handleCancel}
+              disabled={submitting}
+            >
+              Cancel
+            </GlassButton>
+          </div>
+          <p className="text-[10px] text-slate-500">Cmd/Ctrl+Enter to submit</p>
+        </div>
+      ) : (
+        <div className="mb-3">
+          <GlassButton
+            variant="primary"
+            className="text-xs"
+            onClick={() => setShowForm(true)}
+          >
+            + New Feature
+          </GlassButton>
+        </div>
+      )}
       {features.length === 0 ? (
         <EmptyMessage>no features yet</EmptyMessage>
       ) : (
