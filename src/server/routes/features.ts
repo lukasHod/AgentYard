@@ -35,16 +35,19 @@ export function registerFeatureRoutes(ctx: AppContext): void {
 
   app.post<{
     Params: { id: string }
+    Body: { name?: string; task?: string }
   }>('/api/planets/:id/features', async (req, reply) => {
     const planetId = parseRouteId('planet id', req.params.id, reply)
     if (planetId === null) return
     const planet = getPlanet(planetId)
     if (!planet) return reply.code(404).send({ error: 'planet not found' })
 
-    const name = `feature-${Date.now()}`
+    const rawName = (req.body?.name ?? '').trim()
+    const name = rawName || `feature-${Date.now()}`
+    const task = (req.body?.task ?? '').trim()
     // Phase 8a: new features default to the AO development lifecycle.
     const workflowId = getDefaultWorkflowIdForNewFeatures()
-    const feature = createFeature({ planetId: planet.id, name, task: '', workflowId })
+    const feature = createFeature({ planetId: planet.id, name, task, workflowId })
     io.emit('feature:created', feature)
     return feature
   })
