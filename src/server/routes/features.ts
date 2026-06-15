@@ -5,9 +5,10 @@ import {
   listFeatures,
   updateFeature,
 } from '../features.js'
-import { removeFeatureWorktree } from '../runtime/worktrees.js'
+import { removeFeatureWorktree, createFeatureWorktree } from '../runtime/worktrees.js'
 import { getPlanet } from '../planets.js'
-import { getDefaultWorkflowIdForNewFeatures } from '../workflows.js'
+import { getDefaultWorkflowIdForNewFeatures, getWorkflow } from '../workflows.js'
+import { runWorkflowOnSessions } from '../runtime/runWorkflowOnSessions.js'
 import type { AppContext } from './context.js'
 import { parseRequestPart, parseRouteId } from './validation.js'
 import { z } from 'zod/v4'
@@ -15,7 +16,7 @@ import { z } from 'zod/v4'
 const WatchingBodySchema = z.object({ enabled: z.boolean().optional() }).default({})
 
 export function registerFeatureRoutes(ctx: AppContext): void {
-  const { app, io, manager, apiError } = ctx
+  const { app, io, apiError } = ctx
 
   app.get<{ Params: { id: string } }>('/api/planets/:id/features', async (req, reply) => {
     const planetId = parseRouteId('planet id', req.params.id, reply)
@@ -49,6 +50,52 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     const workflowId = getDefaultWorkflowIdForNewFeatures()
     const feature = createFeature({ planetId: planet.id, name, task, workflowId })
     io.emit('feature:created', feature)
+
+    if (task && workflowId !== null) {
+      const wf = getWorkflow(workflowId)
+      if (wf) {
+        void (async () => {
+          let f = feature
+          try {
+            const wt = await createFeatureWorktree({
+              planetPath: planet.projectPath,
+              featureId: f.id,
+              featureName: f.name,
+            })
+            f = updateFeature(f.id, { branch: wt.branch, worktreePath: wt.path, status: 'running' })!
+            io.emit('feature:updated', f)
+
+            await runWorkflowOnSessions({
+              workflow: wf,
+              task,
+              manager: ctx.manager,
+              terminals: ctx.terminals,
+              io,
+              scm: ctx.scm,
+              featureId: f.id,
+              planetId: planet.id,
+              ctx: { planetProjectPath: planet.projectPath },
+              cwd: wt.path,
+              emit: (ev) => {
+                if (ev.type === 'run:complete') {
+                  const done = updateFeature(f.id, { status: 'complete', finalSummary: ev.finalSummary })
+                  if (done) io.emit('feature:updated', done)
+                } else if (ev.type === 'run:failed') {
+                  const failed = updateFeature(f.id, { status: 'failed', error: ev.error })
+                  if (failed) io.emit('feature:updated', failed)
+                }
+              },
+            })
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            app.log.error({ err }, 'feature workflow failed')
+            const failed = updateFeature(f.id, { status: 'failed', error: msg })
+            if (failed) io.emit('feature:updated', failed)
+          }
+        })()
+      }
+    }
+
     return feature
   })
 
@@ -62,7 +109,7 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     }
     try {
       const session = ctx.featureChats.openChat(featureId)
-      return manager.describe(session)
+      return ctx.manager.describe(session)
     } catch (e) {
       return apiError(reply, 500, 'failed to open feature chat', e)
     }

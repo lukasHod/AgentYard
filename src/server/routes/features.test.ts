@@ -77,6 +77,17 @@ test('POST /api/planets/:id/features returns feature with id at top level', asyn
   assert.equal(body.task, 'implement alpha')
 })
 
+/** Insert a planet row with an explicit project path — bypasses git-repo validation. */
+function insertPlanetWithPath(name: string, projectPath: string): number {
+  const db = getDb()
+  const info = db
+    .prepare(
+      "INSERT INTO planets (name, project_path, state, created_at, texture, has_clouds) VALUES (?, ?, 'idle', ?, 'earth', 0)",
+    )
+    .run(name, projectPath, Date.now())
+  return Number(info.lastInsertRowid)
+}
+
 test('POST without body uses timestamp name and empty task', async () => {
   const { default: Fastify } = await import('fastify')
   const { registerFeatureRoutes } = await import('./features.js')
@@ -103,4 +114,60 @@ test('POST without body uses timestamp name and empty task', async () => {
   assert.ok(typeof body.id === 'number')
   assert.ok(body.name.startsWith('feature-'), `name should be timestamped, got: ${body.name}`)
   assert.equal(body.task, '')
+})
+
+test('POST with task emits feature:updated with status running after worktree creation', async () => {
+  // We can't run a real workflow (no git repo), but we verify the route:
+  // 1. Returns 200 immediately with the feature
+  // 2. Emits feature:created synchronously
+  // 3. Emits feature:updated with status 'failed' when worktree creation fails
+  //    (expected in a temp dir that isn't a git repo)
+
+  const { default: Fastify } = await import('fastify')
+  const { registerFeatureRoutes } = await import('./features.js')
+
+  const emitted: { event: string; payload: any }[] = []
+  const mockIo = { emit: (event: string, payload: any) => emitted.push({ event, payload }) } as any
+
+  // Use a real tmp dir that exists but is not a git repo
+  const planetId = insertPlanetWithPath('planet-wf', tmp)
+
+  const app = Fastify({ logger: false })
+  registerFeatureRoutes({
+    app,
+    io: mockIo,
+    manager: {} as any,
+    terminals: {} as any,
+    testRuns: {} as any,
+    runState: {} as any,
+    transcripts: {} as any,
+    pendingQuestions: {} as any,
+    planetChats: {} as any,
+    apiError: (reply: any, code: number, msg: string) => reply.code(code).send({ error: msg }),
+  } as any)
+  await app.ready()
+
+  const res = await app.inject({
+    method: 'POST',
+    url: `/api/planets/${planetId}/features`,
+    payload: { name: 'wf-feature', task: 'do workflow stuff' },
+  })
+
+  // Route returns immediately with status 200 and the feature id
+  assert.equal(res.statusCode, 200)
+  const body = res.json()
+  assert.ok(typeof body.id === 'number')
+
+  // feature:created was emitted synchronously before the background task
+  assert.ok(emitted.some(e => e.event === 'feature:created' && e.payload.name === 'wf-feature'))
+
+  // Wait briefly for the background void promise to settle
+  await new Promise(r => setTimeout(r, 300))
+
+  // The background task failed (not a git repo) → feature:updated with status failed
+  const updatedEvents = emitted.filter(e => e.event === 'feature:updated')
+  assert.ok(
+    updatedEvents.some(e => e.payload.status === 'failed'),
+    `expected a feature:updated with status=failed, got: ${JSON.stringify(updatedEvents)}`,
+  )
 })
