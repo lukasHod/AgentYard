@@ -93,6 +93,16 @@ export interface FeatureSummary {
   error: string | null
   workflowId: number
   createdAt: number
+  // Phase 15: PR/CI watcher
+  prNumber: number | null
+  prUrl: string | null
+  prRepo: string | null
+  prHeadSha: string | null
+  ciState: 'pending' | 'running' | 'success' | 'failed' | null
+  reviewState: 'pending' | 'approved' | 'changes_requested' | null
+  prMergeable: boolean | null
+  lastWatchedAt: number | null
+  watchingEnabled: boolean
 }
 
 export interface HandoffSummary {

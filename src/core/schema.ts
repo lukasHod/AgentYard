@@ -15,7 +15,7 @@ import { z } from 'zod/v4'
 export const WorkflowNodeTypeSchema = z.enum(['ai', 'custom'])
 export type WorkflowNodeType = z.infer<typeof WorkflowNodeTypeSchema>
 
-export const CustomNodeKindSchema = z.enum(['script'])
+export const CustomNodeKindSchema = z.enum(['script', 'open-pr', 'pr-gate'])
 export type CustomNodeKind = z.infer<typeof CustomNodeKindSchema>
 
 export const WorkflowNodeSchema = z.object({
@@ -46,6 +46,19 @@ export const WorkflowNodeSchema = z.object({
    * substituted before being passed into the script's `cmd:`.
    */
   args: z.record(z.string(), z.string()).optional(),
+
+  /**
+   * Phase 15: for customType='pr-gate' — which GitHub gate to wait for.
+   * 'ci' waits until all CI checks pass; 'review' waits until the PR is
+   * approved by at least one reviewer.
+   */
+  prGateKind: z.enum(['ci', 'review']).optional(),
+
+  /**
+   * Phase 15: for customType='open-pr' — the base branch for the PR.
+   * Defaults to 'main'.
+   */
+  prBase: z.string().optional(),
 
   /** Canvas position for the React Flow editor. */
   position: z.object({ x: z.number(), y: z.number() }).default({ x: 0, y: 0 }),
@@ -294,30 +307,24 @@ Call mark_node_complete with the review findings. If there are no blocking issue
       id: 'open-pr',
       type: 'custom',
       title: 'Open PR',
-      customType: 'script',
-      scriptName: 'ao-open-pr',
-      args: {
-        title: '{task}',
-        body: '{upstream_outputs}',
-      },
+      customType: 'open-pr',
+      prBase: 'main',
       position: { x: 2100, y: 0 },
     },
     {
       id: 'watch-ci',
       type: 'custom',
-      title: 'Watch CI',
-      customType: 'script',
-      scriptName: 'ao-watch-ci',
-      args: {},
+      title: 'Wait for CI',
+      customType: 'pr-gate',
+      prGateKind: 'ci',
       position: { x: 2450, y: 0 },
     },
     {
       id: 'watch-review',
       type: 'custom',
-      title: 'Watch review',
-      customType: 'script',
-      scriptName: 'ao-watch-review',
-      args: {},
+      title: 'Wait for review',
+      customType: 'pr-gate',
+      prGateKind: 'review',
       position: { x: 2800, y: 0 },
     },
     {

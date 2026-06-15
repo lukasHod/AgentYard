@@ -53,6 +53,15 @@ const feature = (id: number, planetId: number): FeatureSummary => ({
   error: null,
   workflowId: 0,
   createdAt: 0,
+  prNumber: null,
+  prUrl: null,
+  prRepo: null,
+  prHeadSha: null,
+  ciState: null,
+  reviewState: null,
+  prMergeable: null,
+  lastWatchedAt: null,
+  watchingEnabled: false,
 })
 
 const terminal = (

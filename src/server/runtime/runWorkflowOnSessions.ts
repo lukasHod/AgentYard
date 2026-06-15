@@ -31,6 +31,8 @@ import {
   reviewLoopEmitter,
 } from '../reviewLoopStore.js'
 import type { TypedIOServer } from '../socketTypes.js'
+import { runOpenPrNode, runPrGateNode } from './scmRuntime.js'
+import type { ScmAdapter } from '../scm/types.js'
 
 type AnyTool = SdkMcpToolDefinition<any>
 
@@ -76,6 +78,11 @@ export interface RunWorkflowOptions {
    * `review-loop:update` events as loop state changes.
    */
   io?: TypedIOServer
+  /**
+   * SCM adapter — required for `open-pr` custom nodes. When absent, those
+   * nodes throw a descriptive error at runtime.
+   */
+  scm?: ScmAdapter
 }
 
 const DEFAULT_AI_NODE_TIMEOUT_MS = 30 * 60 * 1000 // 30 min
@@ -91,6 +98,7 @@ interface RunAINodeDeps {
   planetId?: number | null
   terminals?: TerminalSessionManager
   io?: TypedIOServer
+  scm?: ScmAdapter
 }
 
 /** Spawn leader + agents for an AI node, run it, return the leader's result. */
@@ -711,7 +719,15 @@ export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<s
     signal: opts.signal,
     emit: opts.emit,
     runNode: (input) => {
-      if (input.node.type === 'custom') return runScriptNode(input, opts.ctx, opts.signal)
+      if (input.node.type === 'custom') {
+        if (input.node.customType === 'open-pr') {
+          return runOpenPrNode(input, opts.featureId, opts.scm, opts.io)
+        }
+        if (input.node.customType === 'pr-gate') {
+          return runPrGateNode(input, opts.featureId, opts.signal)
+        }
+        return runScriptNode(input, opts.ctx, opts.signal)
+      }
       return runAINodeOnSessions({
         manager: opts.manager,
         ctx: opts.ctx,
@@ -723,6 +739,7 @@ export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<s
         planetId: opts.planetId,
         terminals: opts.terminals,
         io: opts.io,
+        scm: opts.scm,
       })
     },
   })

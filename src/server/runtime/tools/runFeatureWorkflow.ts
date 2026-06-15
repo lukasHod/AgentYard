@@ -11,6 +11,7 @@ import type { TerminalSessionManager } from '../TerminalSessionManager.js'
 import type { TypedIOServer } from '../../socketTypes.js'
 import { createFeatureWorktree } from '../worktrees.js'
 import { runWorkflowOnSessions } from '../runWorkflowOnSessions.js'
+import type { ScmAdapter } from '../../scm/types.js'
 
 export function createRunFeatureWorkflowTool(deps: {
   featureId: number
@@ -20,6 +21,7 @@ export function createRunFeatureWorkflowTool(deps: {
   io: TypedIOServer
   runState: RunRegistry
   log: FastifyBaseLogger
+  scm?: ScmAdapter
 }): SdkMcpToolDefinition<any> {
   return tool(
     'run_workflow',
@@ -122,6 +124,7 @@ export function createRunFeatureWorkflowTool(deps: {
         manager: deps.manager,
         terminals: deps.terminals,
         io: deps.io,
+        scm: deps.scm,
         featureId: deps.featureId,
         planetId: deps.planetId,
         ctx: { planetProjectPath: planet.projectPath },

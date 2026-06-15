@@ -108,6 +108,7 @@ export interface FeatureChatDeps {
   io: TypedIOServer
   runState: RunRegistry
   log: FastifyBaseLogger
+  scm?: import('./scm/types.js').ScmAdapter
 }
 
 /**
@@ -190,6 +191,7 @@ export class FeatureChatRegistry {
       io: this.deps.io,
       runState: this.deps.runState,
       log: this.deps.log,
+      scm: this.deps.scm,
     }) as AnyTool
 
     const session = this.deps.manager.spawn({

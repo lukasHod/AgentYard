@@ -1079,6 +1079,97 @@ function ReviewLoopStatusPanel({ loopRun }: { loopRun: ReviewLoopRun }) {
 }
 
 // ---------------------------------------------------------------------------
+// PrCiPanel — PR/CI watcher toggle + live status badges
+// ---------------------------------------------------------------------------
+
+function CiBadge({ state }: { state: FeatureSummary['ciState'] }) {
+  if (!state) return null
+  const map: Record<NonNullable<typeof state>, { cls: string; label: string }> = {
+    pending: { cls: 'text-slate-400', label: '⌛ CI pending' },
+    running: { cls: 'text-cyan-300 animate-pulse', label: '↻ CI running' },
+    success: { cls: 'text-emerald-400', label: '✓ CI passed' },
+    failed: { cls: 'text-rose-400', label: '✗ CI failed' },
+  }
+  const { cls, label } = map[state]
+  return <span className={`text-[11px] font-medium ${cls}`}>{label}</span>
+}
+
+function ReviewBadge({ state }: { state: FeatureSummary['reviewState'] }) {
+  if (!state) return null
+  const map: Record<NonNullable<typeof state>, { cls: string; label: string }> = {
+    pending: { cls: 'text-slate-400', label: '⌛ Review pending' },
+    approved: { cls: 'text-emerald-400', label: '✓ Approved' },
+    changes_requested: { cls: 'text-amber-400', label: '✗ Changes requested' },
+  }
+  const { cls, label } = map[state]
+  return <span className={`text-[11px] font-medium ${cls}`}>{label}</span>
+}
+
+function PrCiPanel({ feature }: { feature: FeatureSummary }) {
+  const [toggling, setToggling] = useState(false)
+
+  const toggle = async () => {
+    setToggling(true)
+    await apiPost(`/api/features/${feature.id}/watching`, { enabled: !feature.watchingEnabled })
+    setToggling(false)
+  }
+
+  if (!feature.branch) return null
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs tracking-widest text-slate-400">PR / CI</div>
+        <button
+          onClick={() => void toggle()}
+          disabled={toggling}
+          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+            feature.watchingEnabled
+              ? 'border-cyan-600/60 text-cyan-300 hover:bg-cyan-900/40'
+              : 'border-slate-600/60 text-slate-500 hover:bg-slate-700/40'
+          }`}
+        >
+          {toggling ? '…' : feature.watchingEnabled ? '● Watching' : '○ Watch'}
+        </button>
+      </div>
+
+      {feature.prUrl && (
+        <a
+          href={feature.prUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-sky-400 hover:text-sky-300 mt-1 block truncate"
+        >
+          PR #{feature.prNumber}
+        </a>
+      )}
+
+      {feature.watchingEnabled && (feature.ciState || feature.reviewState) && (
+        <div className="flex flex-wrap gap-2 mt-1.5">
+          <CiBadge state={feature.ciState} />
+          <ReviewBadge state={feature.reviewState} />
+          {feature.prMergeable === false && (
+            <span className="text-[11px] font-medium text-rose-400">⚠ Conflict</span>
+          )}
+        </div>
+      )}
+
+      {feature.watchingEnabled && feature.lastWatchedAt && (
+        <p className="text-[10px] text-slate-600 mt-1">
+          last polled {new Date(feature.lastWatchedAt).toLocaleTimeString()}
+        </p>
+      )}
+
+      {!feature.watchingEnabled && !feature.prUrl && (
+        <p className="text-[11px] text-slate-600 mt-1">
+          Enable to track PR creation, CI, and review state.
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // ShipInfoPanel — left panel content at LOD 2
 // ---------------------------------------------------------------------------
 
@@ -1189,6 +1280,9 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
           <p className="text-xs font-mono text-slate-300 mt-1 break-all">{feature.branch}</p>
         </>
       )}
+
+      {/* PR/CI watcher toggle + live status */}
+      <PrCiPanel feature={feature} />
 
       {feature.finalSummary && (
         <>

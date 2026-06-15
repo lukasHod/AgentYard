@@ -13,6 +13,7 @@ import type { RunRegistry } from '../../runState.js'
 import type { SessionManager } from '../SessionManager.js'
 import type { TerminalSessionManager } from '../TerminalSessionManager.js'
 import type { TypedIOServer } from '../../socketTypes.js'
+import type { ScmAdapter } from '../../scm/types.js'
 import { createFeatureWorktree } from '../worktrees.js'
 import { runWorkflowOnSessions } from '../runWorkflowOnSessions.js'
 
@@ -23,6 +24,7 @@ export interface StartFeatureDeps {
   io: TypedIOServer
   runState: RunRegistry
   log: FastifyBaseLogger
+  scm?: ScmAdapter
 }
 
 /**
@@ -132,6 +134,7 @@ export function createStartFeatureTool(deps: StartFeatureDeps) {
         manager: deps.manager,
         terminals: deps.terminals,
         io: deps.io,
+        scm: deps.scm,
         featureId: feature.id,
         planetId: planet.id,
         ctx: { planetProjectPath: planet.projectPath },

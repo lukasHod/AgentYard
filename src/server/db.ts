@@ -279,6 +279,22 @@ function runAddFeatureDefaultAgentKindMigration(db: DB) {
   }
 }
 
+function runAddFeaturePrStateMigration(db: DB) {
+  if (!tableExists(db, 'features')) return
+  const cols = ['pr_number', 'pr_url', 'pr_repo', 'pr_head_sha', 'ci_state', 'review_state', 'pr_mergeable', 'last_watched_at', 'watching_enabled']
+  for (const col of cols) {
+    if (!columnExists(db, 'features', col)) {
+      const def = col === 'watching_enabled'
+        ? 'INTEGER NOT NULL DEFAULT 0'
+        : 'TEXT'
+      // pr_number and pr_mergeable are INTEGER, everything else TEXT
+      const type = (col === 'pr_number' || col === 'pr_mergeable' || col === 'last_watched_at') ? 'INTEGER' : 'TEXT'
+      const full = col === 'watching_enabled' ? 'INTEGER NOT NULL DEFAULT 0' : type
+      db.exec(`ALTER TABLE features ADD COLUMN ${col} ${full}`)
+    }
+  }
+}
+
 function runAddReviewLoopTables(db: DB) {
   if (!tableExists(db, 'review_loop_runs')) {
     db.exec(`
@@ -365,6 +381,7 @@ export function getDb(): DB {
   runAddFeatureDefaultAgentKindMigration(db)
   runAddPendingQuestionsTable(db)
   runAddReviewLoopTables(db)
+  runAddFeaturePrStateMigration(db)
   _db = db
   return db
 }

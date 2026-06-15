@@ -40,6 +40,8 @@ import { registerBridgeRoutes } from './routes/bridge.js'
 import { registerTerminalRoutes } from './routes/terminals.js'
 import { reviewLoopEmitter } from './reviewLoopStore.js'
 import type { ReviewLoopRun } from '../core/types.js'
+import { GitHubScmAdapter } from './scm/githubScm.js'
+import { PrWatcher } from './watchers/prWatcher.js'
 import type { AppContext } from './routes/context.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -109,8 +111,17 @@ export async function startServer(opts: ServerOptions) {
   const transcripts = new TranscriptStore(io)
   const runState = new RunRegistry(io)
   const testRuns = new TestRunRegistry(io)
+
+  // Phase 15: probe gh CLI early so featureChats can receive scm.
+  const scm = new GitHubScmAdapter()
+  const scmProbe = await scm.probe()
+  if (!scmProbe.ok) {
+    app.log.warn(`PR/CI watcher disabled: ${scmProbe.reason}`)
+  }
+  const scmForContext = scmProbe.ok ? scm : undefined
+
   const planetChats = new PlanetChatRegistry({ manager, io, runState, log: app.log })
-  const featureChats = new FeatureChatRegistry({ manager, terminals, io, runState, log: app.log })
+  const featureChats = new FeatureChatRegistry({ manager, terminals, io, runState, log: app.log, scm: scmForContext })
   const pendingQuestions = new PendingQuestionStore(getDb(), io, manager)
 
   manager.on('session:added', (desc: SessionDescriptor) => transcripts.onSessionAdded(desc))
@@ -158,6 +169,14 @@ export async function startServer(opts: ServerOptions) {
     io.emit('review-loop:update', loopRun)
   })
 
+  // Phase 15: start the PR/CI watcher if gh is available.
+  let prWatcher: PrWatcher | undefined
+  if (scmProbe.ok) {
+    prWatcher = new PrWatcher(scm, io, pendingQuestions)
+    prWatcher.start(30_000)
+    app.log.info('PR/CI watcher started (polling every 30s)')
+  }
+
   const ctx: AppContext = {
     app,
     io,
@@ -169,6 +188,8 @@ export async function startServer(opts: ServerOptions) {
     pendingQuestions,
     planetChats,
     featureChats,
+    prWatcher,
+    scm: scmForContext,
     apiError,
   }
   wireSocketHandlers(ctx)
@@ -208,6 +229,11 @@ export async function startServer(opts: ServerOptions) {
       await testRuns.abortAll()
     } catch (err) {
       app.log.error({ err }, 'shutdown: abort test runs')
+    }
+    try {
+      prWatcher?.stop()
+    } catch (err) {
+      app.log.error({ err }, 'shutdown: stop pr watcher')
     }
     try {
       await terminals.destroyAll()

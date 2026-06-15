@@ -1,6 +1,7 @@
 import { getTerminalSession } from '../terminalStore.js'
 import { bridgeRegistry } from '../bridgeRegistry.js'
 import { submitReview } from '../reviewLoopStore.js'
+import { getFeature, updateFeature } from '../features.js'
 import type { AppContext } from './context.js'
 
 const SESSION_HEADER = 'x-agentyard-session-id'
@@ -116,6 +117,51 @@ export function registerBridgeRoutes(ctx: AppContext): void {
       return reply.send({ ok: true })
     },
   )
+
+  /**
+   * POST /api/bridge/set-pr
+   * Body: { prUrl: string }
+   *
+   * Called by CLI agents after successfully creating a PR (e.g. via `gh pr create`).
+   * Parses the PR number and repo from the GitHub URL, persists them on the feature,
+   * enables watching, and triggers an immediate poll.
+   *
+   * URL format: https://github.com/owner/repo/pull/123
+   */
+  app.post<{ Body: { prUrl?: string } }>('/api/bridge/set-pr', async (req, reply) => {
+    const sessionId = req.headers[SESSION_HEADER] as string | undefined
+    if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
+
+    const session = getTerminalSession(sessionId)
+    if (!session) return apiError(reply, 404, `terminal session ${sessionId} not found`)
+    if (!session.featureId) return apiError(reply, 400, 'this terminal session has no associated feature')
+
+    const prUrl = req.body?.prUrl?.trim()
+    if (!prUrl) return apiError(reply, 400, 'prUrl is required')
+
+    const m = prUrl.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/)
+    if (!m) return apiError(reply, 400, `cannot parse GitHub PR URL: ${prUrl}`)
+
+    const prRepo = m[1]!
+    const prNumber = Number(m[2])
+
+    const updated = updateFeature(session.featureId, {
+      prNumber,
+      prUrl,
+      prRepo,
+      ciState: 'pending',
+      reviewState: 'pending',
+      watchingEnabled: true,
+    })
+    if (updated) io.emit('feature:updated', updated)
+
+    // Trigger an immediate poll so the UI reflects CI state without waiting 30s.
+    if (ctx.prWatcher && updated) {
+      void ctx.prWatcher.pollFeature(updated)
+    }
+
+    return reply.send({ ok: true, prNumber, prRepo })
+  })
 
   /**
    * POST /api/bridge/submit-review

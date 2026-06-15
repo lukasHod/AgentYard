@@ -54,6 +54,23 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     }
   })
 
+  app.post<{ Params: { id: string }; Body: { enabled?: boolean } }>(
+    '/api/features/:id/watching',
+    async (req, reply) => {
+      const featureId = Number(req.params.id)
+      const feature = getFeature(featureId)
+      if (!feature) return reply.code(404).send({ error: 'feature not found' })
+      const enabled = Boolean(req.body?.enabled)
+      const updated = updateFeature(featureId, { watchingEnabled: enabled })
+      if (updated) io.emit('feature:updated', updated)
+      // If enabling and PR metadata is already present, trigger an immediate poll.
+      if (enabled && feature.prNumber && ctx.prWatcher) {
+        void ctx.prWatcher.pollFeature({ ...feature, watchingEnabled: true })
+      }
+      return { ok: true, watchingEnabled: enabled }
+    },
+  )
+
   app.post<{ Params: { id: string } }>('/api/features/:id/done', async (req, reply) => {
     const featureId = Number(req.params.id)
     const feature = getFeature(featureId)
