@@ -172,6 +172,12 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
       void terminals.delete(payload.sessionId)
     })
 
+    socket.on('terminal:rename', (payload: ClientEvents['terminal:rename']) => {
+      if (typeof payload?.sessionId !== 'string') return
+      if (payload.label !== null && typeof payload.label !== 'string') return
+      terminals.rename(payload.sessionId, payload.label)
+    })
+
     socket.on('test-run:agent:send', (payload: ClientEvents['test-run:agent:send']) => {
       if (
         typeof payload?.testRunId !== 'string' ||

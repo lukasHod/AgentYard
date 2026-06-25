@@ -21,6 +21,7 @@ import {
   startTerminal,
   restartTerminal,
   deleteTerminal,
+  renameTerminal,
   answerQuestion,
   dismissQuestion,
   forceCompleteReviewLoop,
@@ -666,7 +667,7 @@ function FeatureWorkspace({
     const leaderTabId = leaderTerminal?.id ?? '__leader_placeholder__'
     out.push({
       key: leaderTabId,
-      label: 'LEADER',
+      label: leaderTerminal?.label ?? 'LEADER',
       role: 'leader',
       terminal: leaderTerminal,
     })
@@ -681,6 +682,10 @@ function FeatureWorkspace({
     for (const [role, list] of byRole) {
       list.sort((a, b) => a.createdAt - b.createdAt)
       list.forEach((t, idx) => {
+        if (t.label) {
+          out.push({ key: t.id, label: t.label, role, terminal: t })
+          return
+        }
         const baseLabel =
           role === 'shell' || role === t.profileId ? 'SHELL' : role.toUpperCase()
         const label = list.length > 1 ? `${baseLabel}·${idx + 1}` : baseLabel
@@ -751,33 +756,53 @@ function FeatureWorkspace({
 
   return (
     <div className="flex flex-col h-full text-sm">
-      <div className="border-b border-cyan-500/30 px-2 py-1 flex items-center gap-1 text-xs shrink-0 overflow-x-auto">
-        {tabs.map((tab) => (
-          <FeatureTabButton
-            key={tab.key}
-            tab={tab}
-            state={activeTab.key === tab.key ? 'active' : 'idle'}
-            onClick={() => selectFeatureTab(feature.id, tab.key)}
-            onClose={tab.terminal ? () => closeTab(tab) : undefined}
-          />
-        ))}
+      <div className="border-b border-cyan-500/30 px-2 py-1 flex items-center gap-1 text-xs shrink-0">
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {tabs.map((tab) => (
+            <FeatureTabButton
+              key={tab.key}
+              tab={tab}
+              state={activeTab.key === tab.key ? 'active' : 'idle'}
+              onClick={() => selectFeatureTab(feature.id, tab.key)}
+              onClose={tab.terminal ? () => closeTab(tab) : undefined}
+            />
+          ))}
+        </div>
         {profilePickerOpen ? (
-          <select
-            autoFocus
-            defaultValue={planet.defaultTerminalProfile ?? DEFAULT_TERMINAL_PROFILE}
-            onChange={(e) => {
-              spawnShell(e.target.value as TerminalProfileId)
-              setProfilePickerOpen(false)
-            }}
-            onBlur={() => setProfilePickerOpen(false)}
-            className="ml-1 bg-black border border-sky-400/30 text-[10px] px-1 py-0.5 rounded focus:outline-none focus:border-sky-300"
-          >
-            {TERMINAL_PROFILE_OPTIONS.map((opt) => (
-              <option key={opt.id} value={opt.id}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+          <div className="relative ml-1">
+            <div
+              role="listbox"
+              tabIndex={-1}
+              onBlur={() => setProfilePickerOpen(false)}
+              className="absolute top-full left-0 z-10 mt-1 flex flex-col bg-black border border-sky-400/30 rounded overflow-hidden whitespace-nowrap"
+            >
+              {TERMINAL_PROFILE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  // onMouseDown (not onClick) fires before the blur triggered by
+                  // the click's own focus shift, so a re-pick of the already
+                  // selected profile still spawns a terminal.
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    spawnShell(opt.id)
+                    setProfilePickerOpen(false)
+                  }}
+                  className="px-2 py-1 text-left text-[10px] tracking-widest text-sky-300 hover:bg-sky-400/15"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              autoFocus
+              onClick={() => setProfilePickerOpen(false)}
+              className="px-2 py-0.5 text-[10px] tracking-widest text-sky-300 border border-sky-400/30 rounded"
+            >
+              + ▾
+            </button>
+          </div>
         ) : (
           <button
             type="button"
@@ -851,6 +876,22 @@ function FeatureTabButton({
 }) {
   const dotClass = tab.terminal ? TAB_STATE_DOT[tab.terminal.state] : 'bg-slate-600'
   const waiting = useWaitingCountByAgentSession(tab.terminal?.agentSessionId ?? null)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(tab.label)
+
+  const startEditing = () => {
+    if (!tab.terminal) return // placeholder leader — nothing to persist a label against yet
+    setDraft(tab.label)
+    setEditing(true)
+  }
+
+  const commit = () => {
+    setEditing(false)
+    if (!tab.terminal) return
+    const trimmed = draft.trim()
+    renameTerminal(tab.terminal.id, trimmed.length > 0 ? trimmed : null)
+  }
+
   return (
     <span
       className={`px-2 py-1 text-[10px] tracking-widest rounded border transition-colors flex items-center gap-2 ${
@@ -863,22 +904,44 @@ function FeatureTabButton({
             : 'border-cyan-400/20 text-slate-300 hover:border-cyan-300/50 hover:text-cyan-100'
       }`}
     >
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex items-center gap-2"
-      >
-        <span className="relative inline-flex items-center justify-center w-2 h-2">
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commit()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              setEditing(false)
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-black border border-sky-400/40 text-[10px] tracking-widest px-1 py-0 rounded w-20 focus:outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onClick}
+          onDoubleClick={startEditing}
+          className="flex items-center gap-2"
+          title="double-click to rename"
+        >
+          <span className="relative inline-flex items-center justify-center w-2 h-2">
+            {waiting > 0 && (
+              <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-75" />
+            )}
+            <span className={`relative inline-block w-1.5 h-1.5 rounded-full ${waiting > 0 ? 'bg-amber-300' : dotClass}`} />
+          </span>
+          {tab.label}
           {waiting > 0 && (
-            <span className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-75" />
+            <span className="text-amber-300 font-bold">{waiting}</span>
           )}
-          <span className={`relative inline-block w-1.5 h-1.5 rounded-full ${waiting > 0 ? 'bg-amber-300' : dotClass}`} />
-        </span>
-        {tab.label}
-        {waiting > 0 && (
-          <span className="text-amber-300 font-bold">{waiting}</span>
-        )}
-      </button>
+        </button>
+      )}
       {onClose && (
         <button
           type="button"

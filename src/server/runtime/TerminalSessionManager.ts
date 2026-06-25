@@ -145,6 +145,15 @@ export class TerminalSessionManager extends EventEmitter {
     return true
   }
 
+  rename(id: string, label: string | null): TerminalSessionDescriptor | undefined {
+    const updated = updateTerminalSession(id, { label })
+    if (!updated) return undefined
+    const live = this.live.get(id)
+    if (live) live.session = updated
+    this.emitTerminal({ type: 'session:update', session: updated })
+    return updated
+  }
+
   restart(id: string): TerminalSessionDescriptor | undefined {
     if (this.live.has(id)) return undefined
     const existing = getTerminalSession(id)

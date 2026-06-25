@@ -78,6 +78,7 @@ const terminal = (
   nodeRunId: null,
   agentSessionId: null,
   role: null,
+  label: null,
   cwd: null,
   argv: ['echo', 'hi'],
   state: 'running',
