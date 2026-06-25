@@ -105,6 +105,10 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
 
     socket.on('terminal:attach', (payload: ClientEvents['terminal:attach']) => {
       if (typeof payload?.sessionId !== 'string') return
+      // Join a room named after the session so `terminal:data` broadcasts
+      // (which can be very high frequency while an agent is streaming) only
+      // reach sockets actually viewing that terminal, not every connected tab.
+      void socket.join(payload.sessionId)
       const snapshot = terminals.snapshot(payload.sessionId)
       if (!snapshot) return
       socket.emit('terminal:snapshot', {
@@ -116,8 +120,7 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
 
     socket.on('terminal:detach', (payload: ClientEvents['terminal:detach']) => {
       if (typeof payload?.sessionId !== 'string') return
-      // No server bookkeeping yet; the event exists so clients can keep a
-      // symmetrical attach/detach lifecycle while terminals remain process-owned.
+      void socket.leave(payload.sessionId)
     })
 
     socket.on('terminal:input', (payload: ClientEvents['terminal:input']) => {

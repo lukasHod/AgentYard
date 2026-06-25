@@ -35,10 +35,21 @@ interface TerminalSessionManagerOptions {
   reconcileStaleSessions?: boolean
 }
 
+interface PendingChunkWrite {
+  parts: string[]
+  timestamp: number
+}
+
 export class TerminalSessionManager extends EventEmitter {
   private live = new Map<string, LiveTerminal>()
   private killRequested = new Set<string>()
   private readonly spawn: typeof spawnPty
+  // PTY output can arrive in a tight burst (e.g. a CLI agent streaming many
+  // small writes). Broadcasting each chunk live is cheap, but a synchronous
+  // SQLite insert per chunk on the same event-loop turn as `terminal:input`
+  // handling can back up the queue and stall typing in *other* terminals.
+  // Coalesce same-tick chunks into a single deferred insert per session.
+  private pendingChunkWrites = new Map<string, PendingChunkWrite>()
 
   constructor(opts: TerminalSessionManagerOptions = {}) {
     super()
@@ -111,6 +122,29 @@ export class TerminalSessionManager extends EventEmitter {
 
     this.emitTerminal({ type: 'session:added', session })
     return session
+  }
+
+  /** Coalesce chunks emitted within the same event-loop turn into one insert. */
+  private queueChunkWrite(sessionId: string, data: string, timestamp: number): void {
+    const pending = this.pendingChunkWrites.get(sessionId)
+    if (pending) {
+      pending.parts.push(data)
+      return
+    }
+    this.pendingChunkWrites.set(sessionId, { parts: [data], timestamp })
+    setImmediate(() => this.flushChunkWrite(sessionId))
+  }
+
+  private flushChunkWrite(sessionId: string): void {
+    const pending = this.pendingChunkWrites.get(sessionId)
+    if (!pending) return
+    this.pendingChunkWrites.delete(sessionId)
+    try {
+      appendTerminalChunk(sessionId, pending.parts.join(''), pending.timestamp)
+    } catch {
+      // Session row may have been deleted between the write and this flush
+      // (FK is ON DELETE CASCADE) — transcript history is best-effort.
+    }
   }
 
   write(id: string, data: string): boolean {
@@ -247,6 +281,10 @@ export class TerminalSessionManager extends EventEmitter {
     if (this.live.has(id)) {
       await this.kill(id)
     }
+    // Flush any chunk still waiting on its setImmediate before the row goes
+    // away — once deleted, a deferred insert would violate the FK and be
+    // silently dropped.
+    this.flushChunkWrite(id)
     const existed = deleteTerminalSession(id)
     if (existed) this.emitTerminal({ type: 'session:removed', sessionId: id })
     return existed
@@ -263,12 +301,15 @@ export class TerminalSessionManager extends EventEmitter {
   private bindProcess(sessionId: string, live: LiveTerminal): void {
     live.process.events.on('data', (data: string) => {
       const timestamp = Date.now()
-      appendTerminalChunk(sessionId, data, timestamp)
       this.emitTerminal({ type: 'data', sessionId, data, timestamp })
+      this.queueChunkWrite(sessionId, data, timestamp)
     })
 
     live.process.events.on('exit', ({ code, signal }: { code: number | null; signal: number | null }) => {
       this.live.delete(sessionId)
+      // Flush any chunk still waiting on its setImmediate so the transcript
+      // is complete the moment callers observe the exit (snapshot(), tests).
+      this.flushChunkWrite(sessionId)
       const timestamp = Date.now()
       const wasKilled = this.killRequested.delete(sessionId)
       const updated =

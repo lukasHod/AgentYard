@@ -4,11 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import './TerminalPanel.css'
-import {
-  useTerminal,
-  useTerminalBuffer,
-  useSocketStore,
-} from '../state/socketStore'
+import { useTerminal, useSocketStore } from '../state/socketStore'
 import {
   attachTerminal,
   detachTerminal,
@@ -18,12 +14,18 @@ import {
   resumeTerminal,
   openShellFromTerminal,
   restartTerminalWithContext,
+  onTerminalRawEvent,
 } from '../state/socketClient'
 
 interface Props {
   sessionId: string
   className?: string
 }
+
+// Mirrors TERMINAL_BUFFER_LIMIT in socketStore.ts — bounds the local "what
+// have we already painted" tracker the same way the server-cached buffer is
+// bounded, so a long-running session doesn't grow this string unboundedly.
+const WRITTEN_BUFFER_LIMIT = 200_000
 
 const TERMINAL_THEME = {
   background: 'rgba(2, 6, 23, 0)',
@@ -65,7 +67,6 @@ export function TerminalPanel({ sessionId, className }: Props) {
   const writtenBufferRef = useRef('')
 
   const descriptor = useTerminal(sessionId)
-  const buffer = useTerminalBuffer(sessionId)
 
   const [contextMarkdown, setContextMarkdown] = useState<string | null>(null)
   const [loadingContext, setLoadingContext] = useState(false)
@@ -140,19 +141,30 @@ export function TerminalPanel({ sessionId, className }: Props) {
   }, [sessionId])
 
   useEffect(() => {
-    const term = termRef.current
-    if (!term) return
-    const written = writtenBufferRef.current
-    if (buffer === written) return
-    if (buffer.startsWith(written)) {
-      term.write(buffer.slice(written.length))
-      writtenBufferRef.current = buffer
-      return
-    }
-    term.reset()
-    term.write(buffer)
-    writtenBufferRef.current = buffer
-  }, [buffer])
+    return onTerminalRawEvent(sessionId, (ev) => {
+      const term = termRef.current
+      if (!term) return
+      if (ev.type === 'data') {
+        // Already know the exact delta — just write it, no diffing needed.
+        term.write(ev.data)
+        const next = writtenBufferRef.current + ev.data
+        writtenBufferRef.current =
+          next.length > WRITTEN_BUFFER_LIMIT ? next.slice(next.length - WRITTEN_BUFFER_LIMIT) : next
+        return
+      }
+      // 'snapshot' — a full replay, sent once per attach. Diff it against
+      // what's on screen so reattaching to the same content doesn't flicker.
+      const written = writtenBufferRef.current
+      if (ev.data === written) return
+      if (ev.data.startsWith(written)) {
+        term.write(ev.data.slice(written.length))
+      } else {
+        term.reset()
+        term.write(ev.data)
+      }
+      writtenBufferRef.current = ev.data
+    })
+  }, [sessionId])
 
   const ended =
     descriptor &&

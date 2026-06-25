@@ -4,6 +4,35 @@ import { useSocketStore } from './socketStore'
 
 let socket: Socket | null = null
 
+// ── Raw terminal output ─────────────────────────────────────────────────────
+// `terminalBuffers` in the zustand store exists so a freshly mounted panel
+// can repaint instantly from cache. But subscribing a mounted TerminalPanel
+// to that reactive buffer means every incoming chunk forces a React
+// re-render plus an O(buffer length) string diff to find what's new — for a
+// long-running session that's redundant work on every single keystroke echo.
+// Live-mounted panels instead listen here directly and write the raw chunk
+// (or snapshot) straight to xterm, bypassing React state entirely.
+export type TerminalRawEvent = { type: 'data'; data: string } | { type: 'snapshot'; data: string }
+type TerminalRawListener = (ev: TerminalRawEvent) => void
+const terminalRawListeners = new Map<string, Set<TerminalRawListener>>()
+
+function notifyTerminalRaw(sessionId: string, ev: TerminalRawEvent) {
+  terminalRawListeners.get(sessionId)?.forEach((fn) => fn(ev))
+}
+
+export function onTerminalRawEvent(sessionId: string, listener: TerminalRawListener): () => void {
+  let set = terminalRawListeners.get(sessionId)
+  if (!set) {
+    set = new Set()
+    terminalRawListeners.set(sessionId, set)
+  }
+  set.add(listener)
+  return () => {
+    set!.delete(listener)
+    if (set!.size === 0) terminalRawListeners.delete(sessionId)
+  }
+}
+
 export function initSocketClient(): Socket {
   if (socket) return socket
   socket = io({ transports: ['websocket', 'polling'] })
@@ -68,10 +97,14 @@ export function initSocketClient(): Socket {
   socket.on('terminal:session:removed', (ev: ServerEvents['terminal:session:removed']) =>
     store.applyTerminalRemoved(ev),
   )
-  socket.on('terminal:data', (ev: ServerEvents['terminal:data']) => store.applyTerminalData(ev))
-  socket.on('terminal:snapshot', (ev: ServerEvents['terminal:snapshot']) =>
-    store.applyTerminalSnapshot(ev),
-  )
+  socket.on('terminal:data', (ev: ServerEvents['terminal:data']) => {
+    store.applyTerminalData(ev)
+    notifyTerminalRaw(ev.sessionId, { type: 'data', data: ev.data })
+  })
+  socket.on('terminal:snapshot', (ev: ServerEvents['terminal:snapshot']) => {
+    store.applyTerminalSnapshot(ev)
+    notifyTerminalRaw(ev.sessionId, { type: 'snapshot', data: ev.data })
+  })
   socket.on('terminal:exit', (ev: ServerEvents['terminal:exit']) => store.applyTerminalExit(ev))
 
   return socket
