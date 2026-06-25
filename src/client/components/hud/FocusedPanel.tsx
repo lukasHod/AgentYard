@@ -4,7 +4,9 @@ import { GlassButton } from '../glass/GlassButton'
 import { GlassSplitter } from '../glass/GlassSplitter'
 import { GlassTab } from '../glass/GlassTab'
 import { WorkflowEditorOverlay } from './WorkflowEditorOverlay'
+import { PlanetSettingsOverlay } from './PlanetSettingsOverlay'
 import { SunPanelInfo } from './SunPanel'
+import { DEFAULT_TERMINAL_PROFILE, TERMINAL_PROFILE_OPTIONS } from '../../terminalProfiles'
 import { useUiStore, type InfoTab } from '../../state/uiStore'
 import {
   useSocketStore,
@@ -312,16 +314,6 @@ function RunTabContent({
 // ---------------------------------------------------------------------------
 // TerminalsTab
 // ---------------------------------------------------------------------------
-
-const DEFAULT_TERMINAL_PROFILE: TerminalProfileId =
-  typeof navigator !== 'undefined' && /Win/.test(navigator.platform) ? 'powershell' : 'unix-shell'
-
-const TERMINAL_PROFILE_OPTIONS: { id: TerminalProfileId; label: string }[] = [
-  { id: 'powershell', label: 'powershell' },
-  { id: 'unix-shell', label: 'shell' },
-  { id: 'claude-cli', label: 'claude' },
-  { id: 'codex-cli', label: 'codex' },
-]
 
 const TERMINAL_STATE_COLOR: Record<TerminalSessionDescriptor['state'], string> = {
   running: 'text-sky-300',
@@ -651,13 +643,13 @@ function FeatureWorkspace({
 
   const leaderSpawnReq = useMemo<ClientEvents['terminal:start']>(
     () => ({
-      profileId: DEFAULT_TERMINAL_PROFILE,
+      profileId: planet.defaultTerminalProfile ?? DEFAULT_TERMINAL_PROFILE,
       planetId: planet.id,
       featureId: feature.id,
       cwd,
       role: 'leader',
     }),
-    [planet.id, feature.id, cwd],
+    [planet.id, planet.defaultTerminalProfile, feature.id, cwd],
   )
 
   const leaderTerminal = pickScopedTerminal(featureTerminals, {
@@ -708,20 +700,22 @@ function FeatureWorkspace({
     return tabs[0]!
   }, [tabs, selectedId])
 
-  const spawnShell = () => {
+  const spawnShell = (profileId: TerminalProfileId) => {
     if (!connected) return
     // Snapshot BEFORE sending so the new id is guaranteed not to be in the
     // baseline even on a fast server. The auto-select effect below promotes
     // the first unknown 'shell' that arrives.
     lastShellSnapshotRef.current = new Set(featureTerminals.map((t) => t.id))
     startTerminal({
-      profileId: DEFAULT_TERMINAL_PROFILE,
+      profileId,
       planetId: planet.id,
       featureId: feature.id,
       cwd,
       role: 'shell',
     })
   }
+
+  const [profilePickerOpen, setProfilePickerOpen] = useState(false)
 
   const closeTab = (tab: FeatureTab) => {
     if (!tab.terminal) return // placeholder leader — nothing on the server yet
@@ -767,15 +761,34 @@ function FeatureWorkspace({
             onClose={tab.terminal ? () => closeTab(tab) : undefined}
           />
         ))}
-        <button
-          type="button"
-          onClick={spawnShell}
-          disabled={!connected}
-          className="ml-1 px-2 py-0.5 text-[10px] tracking-widest text-sky-300 border border-sky-400/30 rounded hover:border-sky-300 disabled:opacity-40"
-          title="spawn a new shell in the worktree"
-        >
-          + SHELL
-        </button>
+        {profilePickerOpen ? (
+          <select
+            autoFocus
+            defaultValue={planet.defaultTerminalProfile ?? DEFAULT_TERMINAL_PROFILE}
+            onChange={(e) => {
+              spawnShell(e.target.value as TerminalProfileId)
+              setProfilePickerOpen(false)
+            }}
+            onBlur={() => setProfilePickerOpen(false)}
+            className="ml-1 bg-black border border-sky-400/30 text-[10px] px-1 py-0.5 rounded focus:outline-none focus:border-sky-300"
+          >
+            {TERMINAL_PROFILE_OPTIONS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setProfilePickerOpen(true)}
+            disabled={!connected}
+            className="ml-1 px-2 py-0.5 text-[10px] tracking-widest text-sky-300 border border-sky-400/30 rounded hover:border-sky-300 disabled:opacity-40"
+            title="spawn a new terminal in the worktree"
+          >
+            +
+          </button>
+        )}
         <span className="ml-auto text-[10px] text-slate-500 truncate pl-2">
           {feature.chatName ?? feature.name}
           {branchTag}
@@ -1500,6 +1513,7 @@ export function FocusedPanel() {
   )
 
   const [wfOpen, setWfOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const isSunFocus = focus.lod === 1 && 'sun' in focus && focus.sun === true
 
@@ -1539,6 +1553,9 @@ export function FocusedPanel() {
           </div>
           <div className="flex items-center gap-2">
             <GlassButton variant="ghost" onClick={() => setWfOpen(true)}>⚙ workflow editor</GlassButton>
+            {!isSunFocus && (
+              <GlassButton variant="ghost" onClick={() => setSettingsOpen(true)}>⚙ settings</GlassButton>
+            )}
             {!isSunFocus && (
               confirmingDelete ? (
                 <>
@@ -1636,6 +1653,9 @@ export function FocusedPanel() {
             planetId={isSunFocus ? null : planetId}
             onClose={() => setWfOpen(false)}
           />
+        )}
+        {settingsOpen && !isSunFocus && planet && (
+          <PlanetSettingsOverlay planet={planet} onClose={() => setSettingsOpen(false)} />
         )}
       </div>
     </>

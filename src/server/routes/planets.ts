@@ -1,9 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { simpleGit } from 'simple-git'
-import { createPlanet, deletePlanet, getPlanet, listPlanets } from '../planets.js'
+import {
+  createPlanet,
+  deletePlanet,
+  getPlanet,
+  listPlanets,
+  setPlanetDefaultTerminalProfile,
+} from '../planets.js'
 import { listFeatures } from '../features.js'
 import type { AppContext } from './context.js'
+import type { TerminalProfileId } from '../../core/types.js'
 
 export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }: AppContext): void {
   app.get('/api/planets', async () => listPlanets())
@@ -82,6 +89,22 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
     }
 
     return listFeatures(planet.id)
+  })
+
+  app.put<{
+    Params: { id: string }
+    Body: { defaultTerminalProfile: TerminalProfileId | null }
+  }>('/api/planets/:id/settings', async (req, reply) => {
+    try {
+      const updated = setPlanetDefaultTerminalProfile(
+        Number(req.params.id),
+        req.body.defaultTerminalProfile,
+      )
+      io.emit('planet:updated', updated)
+      return updated
+    } catch (e) {
+      return apiError(reply, 400, e instanceof Error ? e.message : 'invalid settings', e)
+    }
   })
 
   app.get<{ Params: { id: string } }>('/api/planets/:id/description', async (req, reply) => {

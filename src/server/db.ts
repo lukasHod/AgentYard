@@ -279,6 +279,13 @@ function runAddFeatureDefaultAgentKindMigration(db: DB) {
   }
 }
 
+function runAddPlanetDefaultTerminalProfileMigration(db: DB) {
+  if (tableExists(db, 'planets') && !columnExists(db, 'planets', 'default_terminal_profile')) {
+    // Null = inherit DEFAULT_TERMINAL_PROFILE (platform shell default).
+    db.exec(`ALTER TABLE planets ADD COLUMN default_terminal_profile TEXT`)
+  }
+}
+
 function runAddFeaturePrStateMigration(db: DB) {
   if (!tableExists(db, 'features')) return
   const cols = ['pr_number', 'pr_url', 'pr_repo', 'pr_head_sha', 'ci_state', 'review_state', 'pr_mergeable', 'last_watched_at', 'watching_enabled']
@@ -379,6 +386,7 @@ export function getDb(): DB {
   runAddChatNameMigration(db)
   runAddPlanetDefaultAgentKindMigration(db)
   runAddFeatureDefaultAgentKindMigration(db)
+  runAddPlanetDefaultTerminalProfileMigration(db)
   runAddPendingQuestionsTable(db)
   runAddReviewLoopTables(db)
   runAddFeaturePrStateMigration(db)

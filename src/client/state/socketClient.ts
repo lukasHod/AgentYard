@@ -45,6 +45,7 @@ export function initSocketClient(): Socket {
   socket.on('run:failed', (ev: ServerEvents['run:failed']) => store.applyRunFailed(ev))
 
   socket.on('planet:created', (ev: ServerEvents['planet:created']) => store.applyPlanetCreated(ev))
+  socket.on('planet:updated', (ev: ServerEvents['planet:updated']) => store.applyPlanetUpdated(ev))
   socket.on('planet:deleted', (ev: ServerEvents['planet:deleted']) => store.applyPlanetDeleted(ev))
   socket.on('feature:created', (ev: ServerEvents['feature:created']) => store.applyFeatureCreated(ev))
   socket.on('feature:updated', (ev: ServerEvents['feature:updated']) => store.applyFeatureUpdated(ev))
