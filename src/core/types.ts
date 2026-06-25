@@ -77,6 +77,8 @@ export interface PlanetSummary {
   hasClouds: boolean
   /** True if projectPath exists on disk (computed server-side at read time). */
   pathExists: boolean
+  /** Terminal profile used when a feature's LEADER terminal first opens. Null = platform shell default. */
+  defaultTerminalProfile: TerminalProfileId | null
 }
 
 export interface FeatureSummary {
@@ -255,6 +257,7 @@ export interface ServerEvents {
   'question:answered':  { id: string; answeredAt: number; answer: string | null }
   'question:dismissed': { id: string }
   'planet:created':   PlanetSummary
+  'planet:updated':   PlanetSummary
   'planet:deleted':   { id: number }
   'feature:created':  FeatureSummary
   'feature:updated':  FeatureSummary

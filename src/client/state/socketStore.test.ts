@@ -37,6 +37,7 @@ const planet = (id: number, name: string): PlanetSummary => ({
   texture: 'Alpine',
   pathExists: true,
   hasClouds: false,
+  defaultTerminalProfile: null,
 })
 
 const feature = (id: number, planetId: number): FeatureSummary => ({

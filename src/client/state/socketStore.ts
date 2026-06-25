@@ -72,6 +72,7 @@ interface Actions {
   applyRunComplete: (ev: ServerEvents['run:complete']) => void
   applyRunFailed: (ev: ServerEvents['run:failed']) => void
   applyPlanetCreated: (s: ServerEvents['planet:created']) => void
+  applyPlanetUpdated: (s: ServerEvents['planet:updated']) => void
   applyPlanetDeleted: (ev: ServerEvents['planet:deleted']) => void
   applyFeatureCreated: (f: ServerEvents['feature:created']) => void
   applyFeatureUpdated: (f: ServerEvents['feature:updated']) => void
@@ -234,6 +235,9 @@ export const useSocketStore = create<State & Actions>((set) => ({
     ),
 
   applyPlanetCreated: (s) => set((prev) => ({ planets: [s, ...prev.planets] })),
+
+  applyPlanetUpdated: (s) =>
+    set((prev) => ({ planets: prev.planets.map((p) => (p.id === s.id ? s : p)) })),
 
   applyPlanetDeleted: (ev) => {
     set((prev) => {
