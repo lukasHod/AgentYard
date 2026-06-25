@@ -36,6 +36,7 @@ import { apiGet, apiPost, apiDelete } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { useNotificationRows } from '../hud/useNotificationRows'
 import { usePendingQuestions, useReviewLoopRunsByFeature } from '../../state/socketStore'
+import { planetSetting } from '../../../core/types'
 import type {
   ClientEvents,
   PlanetSummary,
@@ -644,13 +645,15 @@ function FeatureWorkspace({
 
   const leaderSpawnReq = useMemo<ClientEvents['terminal:start']>(
     () => ({
-      profileId: planet.defaultTerminalProfile ?? DEFAULT_TERMINAL_PROFILE,
+      profileId:
+        (planetSetting(planet.settings, 'default-terminal-type') as TerminalProfileId | null) ??
+        DEFAULT_TERMINAL_PROFILE,
       planetId: planet.id,
       featureId: feature.id,
       cwd,
       role: 'leader',
     }),
-    [planet.id, planet.defaultTerminalProfile, feature.id, cwd],
+    [planet.id, planet.settings, feature.id, cwd],
   )
 
   const leaderTerminal = pickScopedTerminal(featureTerminals, {
@@ -780,9 +783,6 @@ function FeatureWorkspace({
                 <button
                   key={opt.id}
                   type="button"
-                  // onMouseDown (not onClick) fires before the blur triggered by
-                  // the click's own focus shift, so a re-pick of the already
-                  // selected profile still spawns a terminal.
                   onMouseDown={(e) => {
                     e.preventDefault()
                     spawnShell(opt.id)

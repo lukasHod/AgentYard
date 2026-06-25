@@ -77,8 +77,8 @@ export interface PlanetSummary {
   hasClouds: boolean
   /** True if projectPath exists on disk (computed server-side at read time). */
   pathExists: boolean
-  /** Terminal profile used when a feature's LEADER terminal first opens. Null = platform shell default. */
-  defaultTerminalProfile: TerminalProfileId | null
+  /** Generic per-planet settings (e.g. 'default-terminal-type', 'claude-cli-args'). */
+  settings: Record<string, string>
 }
 
 export interface FeatureSummary {
@@ -175,6 +175,11 @@ export type TerminalProfileId =
   | 'powershell'
   | 'unix-shell'
   | 'custom'
+
+/** Looks up a generic planet setting by key, returning null if unset. */
+export function planetSetting(settings: Record<string, string>, key: string): string | null {
+  return settings[key] ?? null
+}
 
 export type TerminalSessionState = 'running' | 'exited' | 'killed' | 'runtime_lost' | 'failed'
 

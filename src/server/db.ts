@@ -204,6 +204,14 @@ CREATE INDEX IF NOT EXISTS idx_pending_questions_feature
   ON pending_questions(feature_id, state);
 CREATE INDEX IF NOT EXISTS idx_pending_questions_agent
   ON pending_questions(agent_session_id, state);
+
+CREATE TABLE IF NOT EXISTS planet_settings (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  planet_id INTEGER NOT NULL REFERENCES planets(id) ON DELETE CASCADE,
+  key       TEXT NOT NULL,
+  value     TEXT,
+  UNIQUE (planet_id, key)
+);
 `
 
 export type DB = Database.Database
@@ -290,6 +298,18 @@ function runAddPlanetDefaultTerminalProfileMigration(db: DB) {
 function runAddTerminalSessionLabelMigration(db: DB) {
   if (tableExists(db, 'terminal_sessions') && !columnExists(db, 'terminal_sessions', 'label')) {
     db.exec(`ALTER TABLE terminal_sessions ADD COLUMN label TEXT`)
+  }
+}
+
+function runMigratePlanetDefaultTerminalProfileToSettings(db: DB) {
+  if (tableExists(db, 'planets') && columnExists(db, 'planets', 'default_terminal_profile')) {
+    db.exec(`
+      INSERT INTO planet_settings (planet_id, key, value)
+      SELECT id, 'default-terminal-type', default_terminal_profile FROM planets
+      WHERE default_terminal_profile IS NOT NULL
+      ON CONFLICT(planet_id, key) DO NOTHING
+    `)
+    db.exec(`ALTER TABLE planets DROP COLUMN default_terminal_profile`)
   }
 }
 
@@ -394,6 +414,7 @@ export function getDb(): DB {
   runAddPlanetDefaultAgentKindMigration(db)
   runAddFeatureDefaultAgentKindMigration(db)
   runAddPlanetDefaultTerminalProfileMigration(db)
+  runMigratePlanetDefaultTerminalProfileToSettings(db)
   runAddPendingQuestionsTable(db)
   runAddReviewLoopTables(db)
   runAddFeaturePrStateMigration(db)

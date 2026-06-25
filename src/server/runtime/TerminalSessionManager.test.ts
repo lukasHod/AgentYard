@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { closeDb, getDb, setDbPathForTesting } from '../db.js'
 import { listTerminalChunks } from '../terminalStore.js'
+import { setPlanetSetting } from '../planetSettings.js'
 import { TerminalSessionManager } from './TerminalSessionManager.js'
 import type { PtyProcess, PtySpawnOptions } from './runtimes/ptyRuntime.js'
 
@@ -184,4 +185,41 @@ test('TerminalSessionManager: restart keeps the same session id', async () => {
   assert.ok(snapshot?.data.includes('run-1'), JSON.stringify(snapshot?.data))
   assert.ok(snapshot?.data.includes('run-2'), JSON.stringify(snapshot?.data))
   assert.equal(manager.list().filter((s) => s.id === 'term-restart').length, 1)
+})
+
+test('TerminalSessionManager: appends planet-level extra args to the default argv', async () => {
+  setPlanetSetting(1, 'claude-cli-args', '--dangerously-skip-permissions')
+  let capturedArgv: string[] = []
+  const manager = new TerminalSessionManager({
+    spawn: (opts) => {
+      capturedArgv = opts.argv
+      return createFakeSpawner()(opts)
+    },
+    reconcileStaleSessions: false,
+  })
+  const exitPromise = waitForExit(manager, 'term-claude')
+  manager.start({ sessionId: 'term-claude', profileId: 'claude-cli', planetId: 1 })
+  await exitPromise
+  assert.deepEqual(capturedArgv, ['claude', '--dangerously-skip-permissions'])
+})
+
+test('TerminalSessionManager: explicit argv bypasses planet-level extra args', async () => {
+  setPlanetSetting(1, 'claude-cli-args', '--dangerously-skip-permissions')
+  let capturedArgv: string[] = []
+  const manager = new TerminalSessionManager({
+    spawn: (opts) => {
+      capturedArgv = opts.argv
+      return createFakeSpawner()(opts)
+    },
+    reconcileStaleSessions: false,
+  })
+  const exitPromise = waitForExit(manager, 'term-claude-override')
+  manager.start({
+    sessionId: 'term-claude-override',
+    profileId: 'claude-cli',
+    planetId: 1,
+    argv: ['claude', '--model', 'opus'],
+  })
+  await exitPromise
+  assert.deepEqual(capturedArgv, ['claude', '--model', 'opus'])
 })

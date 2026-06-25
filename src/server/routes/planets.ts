@@ -6,11 +6,10 @@ import {
   deletePlanet,
   getPlanet,
   listPlanets,
-  setPlanetDefaultTerminalProfile,
 } from '../planets.js'
+import { setPlanetSetting } from '../planetSettings.js'
 import { listFeatures } from '../features.js'
 import type { AppContext } from './context.js'
-import type { TerminalProfileId } from '../../core/types.js'
 
 export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }: AppContext): void {
   app.get('/api/planets', async () => listPlanets())
@@ -93,18 +92,19 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
 
   app.put<{
     Params: { id: string }
-    Body: { defaultTerminalProfile: TerminalProfileId | null }
+    Body: { key: string; value: string | null }
   }>('/api/planets/:id/settings', async (req, reply) => {
-    try {
-      const updated = setPlanetDefaultTerminalProfile(
-        Number(req.params.id),
-        req.body.defaultTerminalProfile,
-      )
-      io.emit('planet:updated', updated)
-      return updated
-    } catch (e) {
-      return apiError(reply, 400, e instanceof Error ? e.message : 'invalid settings', e)
+    const { key, value } = req.body
+    if (typeof key !== 'string' || !key) return apiError(reply, 400, 'key required')
+    if (value !== null && typeof value !== 'string') {
+      return apiError(reply, 400, 'value must be string or null')
     }
+    const planetId = Number(req.params.id)
+    setPlanetSetting(planetId, key, value)
+    const updated = getPlanet(planetId)
+    if (!updated) return reply.code(404).send({ error: 'planet not found' })
+    io.emit('planet:updated', updated)
+    return updated
   })
 
   app.get<{ Params: { id: string } }>('/api/planets/:id/description', async (req, reply) => {

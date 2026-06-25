@@ -6,6 +6,7 @@ import type {
   TerminalStartRequest,
 } from '../../core/types.js'
 import { spawnPty, type PtyProcess } from './runtimes/ptyRuntime.js'
+import { getPlanetSetting } from '../planetSettings.js'
 import {
   appendTerminalChunk,
   createTerminalSession,
@@ -342,8 +343,29 @@ function resolveTerminalPlan(req: TerminalStartRequest): { argv: string[]; env?:
   // Allow an explicit argv to override the profile default — used when the
   // workflow engine needs to inject flags (e.g. --append-system-prompt) while
   // still tagging the session with the correct profile for the UI.
-  const argv = req.argv && req.argv.length > 0 ? req.argv : defaultArgv(req.profileId)
+  if (req.argv && req.argv.length > 0) {
+    return { argv: req.argv, env: req.env }
+  }
+  const argv = defaultArgv(req.profileId)
+  const PROFILE_ARG_DEFAULTS: Partial<Record<string, string>> = {
+    'claude-cli': '--dangerously-skip-permissions',
+  }
+  const savedArgs =
+    req.planetId !== undefined ? getPlanetSetting(req.planetId, `${req.profileId}-args`) : null
+  const extraArgs = savedArgs ?? PROFILE_ARG_DEFAULTS[req.profileId] ?? null
+  if (extraArgs) argv.push(...splitArgsString(extraArgs))
   return { argv, env: req.env }
+}
+
+/** Whitespace-split, double-quote aware (so `--append-system-prompt "hi there"` survives). */
+function splitArgsString(input: string): string[] {
+  const out: string[] = []
+  const re = /"([^"]*)"|(\S+)/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(input)) !== null) {
+    out.push(match[1] ?? match[2] ?? '')
+  }
+  return out
 }
 
 function defaultArgv(profileId: TerminalProfileId): string[] {
