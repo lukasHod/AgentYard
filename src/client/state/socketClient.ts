@@ -162,6 +162,10 @@ export function deleteTerminal(sessionId: string) {
   socket?.emit('terminal:delete', { sessionId })
 }
 
+export function renameTerminal(sessionId: string, label: string | null) {
+  socket?.emit('terminal:rename', { sessionId, label })
+}
+
 // ── Review loop manual overrides ─────────────────────────────────────────────
 
 export function forceCompleteReviewLoop(loopRunId: string) {

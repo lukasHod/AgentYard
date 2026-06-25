@@ -15,6 +15,7 @@ interface TerminalSessionRow {
   node_run_id: string | null
   agent_session_id: string | null
   role: string | null
+  label: string | null
   cwd: string | null
   argv_json: string
   env_json: string | null
@@ -39,6 +40,7 @@ function rowToDescriptor(row: TerminalSessionRow): TerminalSessionDescriptor {
     nodeRunId: row.node_run_id,
     agentSessionId: row.agent_session_id,
     role: row.role,
+    label: row.label,
     cwd: row.cwd,
     argv: JSON.parse(row.argv_json) as string[],
     state: row.state as TerminalSessionState,
@@ -125,6 +127,7 @@ export function updateTerminalSession(
     pid: number | null
     lastStartedAt: number | null
     lastExitedAt: number | null
+    label: string | null
   }>,
 ): TerminalSessionDescriptor | undefined {
   const sets: string[] = ['updated_at = ?']
@@ -132,6 +135,10 @@ export function updateTerminalSession(
   if ('state' in patch) {
     sets.push('state = ?')
     vals.push(patch.state)
+  }
+  if ('label' in patch) {
+    sets.push('label = ?')
+    vals.push(patch.label)
   }
   if ('exitCode' in patch) {
     sets.push('exit_code = ?')

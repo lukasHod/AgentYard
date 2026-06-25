@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS terminal_sessions (
   node_run_id     TEXT,
   agent_session_id TEXT,
   role            TEXT,
+  label           TEXT,
   cwd             TEXT,
   argv_json       TEXT NOT NULL,
   env_json        TEXT,
@@ -286,6 +287,12 @@ function runAddPlanetDefaultTerminalProfileMigration(db: DB) {
   }
 }
 
+function runAddTerminalSessionLabelMigration(db: DB) {
+  if (tableExists(db, 'terminal_sessions') && !columnExists(db, 'terminal_sessions', 'label')) {
+    db.exec(`ALTER TABLE terminal_sessions ADD COLUMN label TEXT`)
+  }
+}
+
 function runAddFeaturePrStateMigration(db: DB) {
   if (!tableExists(db, 'features')) return
   const cols = ['pr_number', 'pr_url', 'pr_repo', 'pr_head_sha', 'ci_state', 'review_state', 'pr_mergeable', 'last_watched_at', 'watching_enabled']
@@ -390,6 +397,7 @@ export function getDb(): DB {
   runAddPendingQuestionsTable(db)
   runAddReviewLoopTables(db)
   runAddFeaturePrStateMigration(db)
+  runAddTerminalSessionLabelMigration(db)
   _db = db
   return db
 }

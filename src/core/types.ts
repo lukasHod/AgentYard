@@ -188,6 +188,8 @@ export interface TerminalSessionDescriptor {
   nodeRunId: string | null
   agentSessionId: string | null
   role: string | null
+  /** User-assigned tab name. Null = derive a label from role/profileId. */
+  label: string | null
   cwd: string | null
   argv: string[]
   state: TerminalSessionState
@@ -300,6 +302,7 @@ export interface ClientEvents {
   'terminal:open-shell': { sessionId: string }
   'terminal:restart-with-context': { sessionId: string; markdown: string }
   'terminal:delete':     { sessionId: string }
+  'terminal:rename':     { sessionId: string; label: string | null }
   'question:answer':   { questionId: string; answer: string }
   'question:dismiss':  { questionId: string }
   'review-loop:force-complete': { loopRunId: string }

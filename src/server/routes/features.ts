@@ -36,7 +36,7 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     const workflowId = getDefaultWorkflowIdForNewFeatures()
     const feature = createFeature({ planetId: planet.id, name, task: '', workflowId })
     io.emit('feature:created', feature)
-    return { ok: true, feature }
+    return feature
   })
 
   app.post<{ Params: { id: string } }>('/api/features/:id/chat/open', async (req, reply) => {
