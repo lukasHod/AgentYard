@@ -36,15 +36,35 @@ const { terminalInstances, MockTerminal } = vi.hoisted(() => {
 vi.mock('@xterm/xterm', () => ({ Terminal: MockTerminal }))
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit() {} } }))
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
+
+type RawEvent = { type: 'data'; data: string } | { type: 'snapshot'; data: string }
+const { rawListeners, fireTerminalRaw } = vi.hoisted(() => {
+  const rawListeners = new Map<string, Set<(ev: RawEvent) => void>>()
+  function fireTerminalRaw(sessionId: string, ev: RawEvent) {
+    rawListeners.get(sessionId)?.forEach((fn) => fn(ev))
+  }
+  return { rawListeners, fireTerminalRaw }
+})
+
 vi.mock('../state/socketClient', () => ({
   attachTerminal: vi.fn(),
   detachTerminal: vi.fn(),
   resizeTerminal: vi.fn(),
   sendTerminalInput: vi.fn(),
+  onTerminalRawEvent: (sessionId: string, listener: (ev: RawEvent) => void) => {
+    let set = rawListeners.get(sessionId)
+    if (!set) {
+      set = new Set()
+      rawListeners.set(sessionId, set)
+    }
+    set.add(listener)
+    return () => set!.delete(listener)
+  },
 }))
 
 beforeEach(() => {
   terminalInstances.length = 0
+  rawListeners.clear()
   useSocketStore.setState({
     connected: false,
     sessionsById: new Map(),
@@ -84,11 +104,7 @@ describe('TerminalPanel', () => {
     render(<TerminalPanel sessionId="term-1" />)
 
     act(() => {
-      useSocketStore.getState().applyTerminalData({
-        sessionId: 'term-1',
-        data: 'def',
-        timestamp: 1,
-      })
+      fireTerminalRaw('term-1', { type: 'data', data: 'def' })
     })
 
     const term = terminalInstances[0]!
@@ -106,11 +122,7 @@ describe('TerminalPanel', () => {
     render(<TerminalPanel sessionId="term-1" />)
 
     act(() => {
-      useSocketStore.getState().applyTerminalSnapshot({
-        sessionId: 'term-1',
-        data: 'fresh',
-        state: 'running',
-      })
+      fireTerminalRaw('term-1', { type: 'snapshot', data: 'fresh' })
     })
 
     const term = terminalInstances[0]!

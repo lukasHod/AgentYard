@@ -143,7 +143,9 @@ export async function startServer(opts: ServerOptions) {
         io.emit('terminal:session:removed', { sessionId: ev.sessionId })
         break
       case 'data':
-        io.emit('terminal:data', {
+        // High-frequency — only the sockets attached to this session (joined
+        // via `terminal:attach`) need it, not every connected client.
+        io.to(ev.sessionId).emit('terminal:data', {
           sessionId: ev.sessionId,
           data: ev.data,
           timestamp: ev.timestamp,
