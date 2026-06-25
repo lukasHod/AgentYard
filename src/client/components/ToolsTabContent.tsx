@@ -43,6 +43,8 @@ const SCOPE_CLASS: Record<ToolScope, string> = {
   'claude-user': 'border-zinc-500/60 text-zinc-300',
 }
 
+type ToolActionContext = { kind: 'planet' } | { kind: 'global' }
+
 export function ToolsTabContent({ planetId }: Props) {
   const [tools, setTools] = useState<ToolSummary[] | null>(null)
   const [clis, setClis] = useState<CLIInfo[] | null>(null)
@@ -215,7 +217,10 @@ export function ToolsTabContent({ planetId }: Props) {
                             edit
                           </button>
                         )}
-                        {actionsForScope(t.scope, planetId !== null).map((action) => (
+                        {actionsForScope(
+                          t.scope,
+                          planetId === null ? { kind: 'global' } : { kind: 'planet' },
+                        ).map((action) => (
                           <button
                             key={action}
                             disabled={isBusy}
@@ -280,15 +285,15 @@ export function ToolsTabContent({ planetId }: Props) {
   )
 }
 
-function actionsForScope(scope: ToolScope, hasPlanet: boolean): string[] {
+function actionsForScope(scope: ToolScope, context: ToolActionContext): string[] {
   switch (scope) {
     case 'claude-project':
-      return hasPlanet ? ['adopt → planet'] : []
+      return context.kind === 'planet' ? ['adopt → planet'] : []
     case 'claude-user':
       return ['adopt → global']
     case 'planet':
-      return hasPlanet ? ['↑ elevate', 'delete'] : []
+      return context.kind === 'planet' ? ['↑ elevate', 'delete'] : []
     case 'global':
-      return hasPlanet ? ['↓ fork', 'delete'] : ['delete']
+      return context.kind === 'planet' ? ['↓ fork', 'delete'] : ['delete']
   }
 }

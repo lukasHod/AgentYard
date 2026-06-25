@@ -1,20 +1,28 @@
 import type { ScriptArg, ScriptTool } from '../../../../core/tools'
 import { useObjectState } from '../../../hooks/useObjectState'
 import { EmptyMessage } from '../../ui/EmptyMessage'
-import { FormButtons, Label, NameDescriptionFields, inputCls, textareaCls } from './formChrome'
+import {
+  FormButtons,
+  Label,
+  NameDescriptionFields,
+  inputCls,
+  textareaCls,
+  type FormSubmissionState,
+  type NameFieldEditability,
+} from './formChrome'
 
 export function ScriptForm({
   initial,
-  disableName,
+  nameField,
   onSubmit,
   onCancel,
-  saving,
+  submission,
 }: {
   initial?: ScriptTool
-  disableName: boolean
+  nameField: NameFieldEditability
   onSubmit: (d: ScriptTool) => void
   onCancel: () => void
-  saving: boolean
+  submission: FormSubmissionState
 }) {
   const [form, set] = useObjectState({
     name: initial?.name ?? '',
@@ -59,7 +67,7 @@ export function ScriptForm({
         description={form.description}
         onName={(v) => set({ name: v })}
         onDescription={(v) => set({ description: v })}
-        disableName={disableName}
+        nameField={nameField}
         layout="side-by-side"
       />
       <div>
@@ -152,7 +160,7 @@ export function ScriptForm({
         )}
       </div>
 
-      <FormButtons onCancel={onCancel} onSubmit={submit} saving={saving} />
+      <FormButtons onCancel={onCancel} onSubmit={submit} submission={submission} />
     </div>
   )
 }

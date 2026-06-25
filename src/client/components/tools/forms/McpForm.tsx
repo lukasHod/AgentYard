@@ -1,20 +1,28 @@
 import type { McpTool, McpTransport } from '../../../../core/tools'
 import { useObjectState } from '../../../hooks/useObjectState'
-import { FormButtons, Label, inputCls, textareaCls } from './formChrome'
+import {
+  FormButtons,
+  Label,
+  inputCls,
+  isNameLocked,
+  textareaCls,
+  type FormSubmissionState,
+  type NameFieldEditability,
+} from './formChrome'
 import { envToText, textToKv } from './kvParsing'
 
 export function McpForm({
   initial,
-  disableName,
+  nameField,
   onSubmit,
   onCancel,
-  saving,
+  submission,
 }: {
   initial?: McpTool
-  disableName: boolean
+  nameField: NameFieldEditability
   onSubmit: (d: McpTool) => void
   onCancel: () => void
-  saving: boolean
+  submission: FormSubmissionState
 }) {
   const [form, set] = useObjectState({
     name: initial?.name ?? '',
@@ -55,7 +63,7 @@ export function McpForm({
           <input
             value={form.name}
             onChange={(e) => set({ name: e.target.value })}
-            disabled={disableName}
+            disabled={isNameLocked(nameField)}
             className={inputCls}
           />
         </div>
@@ -140,7 +148,7 @@ export function McpForm({
         </>
       )}
 
-      <FormButtons onCancel={onCancel} onSubmit={submit} saving={saving} />
+      <FormButtons onCancel={onCancel} onSubmit={submit} submission={submission} />
     </div>
   )
 }

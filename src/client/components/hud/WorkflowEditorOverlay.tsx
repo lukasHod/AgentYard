@@ -8,12 +8,11 @@ import { EditorView } from '../../views/EditorView'
 import { pushToast } from '../../state/toastStore'
 
 interface Props {
-  open: boolean
   planetId: number | null
   onClose: () => void
 }
 
-export function WorkflowEditorOverlay({ open, planetId, onClose }: Props) {
+export function WorkflowEditorOverlay({ planetId, onClose }: Props) {
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
   const [tools, setTools] = useState<ToolSummary[]>([])
   const toolLibraryUrl = useMemo(
@@ -27,18 +26,16 @@ export function WorkflowEditorOverlay({ open, planetId, onClose }: Props) {
     else pushToast('error', `Tool library load failed: ${res.error}`)
   }, [toolLibraryUrl])
 
-  // Load the (single) global workflow and the scoped tool library when opened.
+  // Load the (single) global workflow and the scoped tool library when mounted.
   useEffect(() => {
-    if (!open) return
     void apiGet<Workflow[]>('/api/workflows').then((res) => {
       if (res.ok && res.data[0]) setWorkflow(res.data[0])
     })
     void refreshTools()
-  }, [open, refreshTools])
+  }, [refreshTools])
 
   // Esc closes — use capture phase to beat BackOutHandler's listener.
   useEffect(() => {
-    if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
@@ -47,9 +44,7 @@ export function WorkflowEditorOverlay({ open, planetId, onClose }: Props) {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, onClose])
-
-  if (!open) return null
+  }, [onClose])
 
   const onSave = async (updated: Workflow) => {
     const res = await apiPut<Workflow>(`/api/workflows/${updated.id}`, {

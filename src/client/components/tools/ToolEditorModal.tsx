@@ -44,6 +44,8 @@ export function ToolEditorModal({ mode, planetId, library, onClose, onSaved }: P
   const [scope, setScope] = useState<EditorScope>(mode.scope)
   const editing = mode.kind === 'edit'
   const title = `${editing ? 'EDIT' : 'CREATE'} ${TYPE_TITLE[mode.type]}`
+  const nameField = editing ? { kind: 'locked' as const } : { kind: 'editable' as const }
+  const submission = saving ? { kind: 'saving' as const } : { kind: 'idle' as const }
 
   async function save(data: AnyToolData) {
     setSaving(true)
@@ -63,41 +65,41 @@ export function ToolEditorModal({ mode, planetId, library, onClose, onSaved }: P
         return (
           <SkillForm
             initial={mode.kind === 'edit' ? (mode.initial as SkillTool) : undefined}
-            disableName={editing}
+            nameField={nameField}
             onSubmit={save}
             onCancel={onClose}
-            saving={saving}
+            submission={submission}
           />
         )
       case 'mcp':
         return (
           <McpForm
             initial={mode.kind === 'edit' ? (mode.initial as McpTool) : undefined}
-            disableName={editing}
+            nameField={nameField}
             onSubmit={save}
             onCancel={onClose}
-            saving={saving}
+            submission={submission}
           />
         )
       case 'script':
         return (
           <ScriptForm
             initial={mode.kind === 'edit' ? (mode.initial as ScriptTool) : undefined}
-            disableName={editing}
+            nameField={nameField}
             onSubmit={save}
             onCancel={onClose}
-            saving={saving}
+            submission={submission}
           />
         )
       case 'agent':
         return (
           <AgentForm
             initial={mode.kind === 'edit' ? (mode.initial as AgentTool) : undefined}
-            disableName={editing}
+            nameField={nameField}
             library={library}
             onSubmit={save}
             onCancel={onClose}
-            saving={saving}
+            submission={submission}
           />
         )
     }

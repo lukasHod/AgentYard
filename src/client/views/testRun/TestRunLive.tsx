@@ -34,6 +34,8 @@ const ROLE_COLORS: Record<AgentRole, string> = {
   free: 'text-emerald-300',
 }
 
+type TabButtonState = 'active' | 'idle'
+
 export function TestRunLive(props: {
   stage: TestRunStage
   sessions: SessionDescriptor[]
@@ -87,7 +89,7 @@ export function TestRunLive(props: {
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-stretch border-b border-fuchsia-500/30 overflow-x-auto">
         <TabButton
-          active={selectedTab === SYSTEM_TAB_ID}
+          state={selectedTab === SYSTEM_TAB_ID ? 'active' : 'idle'}
           onClick={() => setSelectedTab(SYSTEM_TAB_ID)}
         >
           <span className="text-fuchsia-300">▣</span>
@@ -99,7 +101,11 @@ export function TestRunLive(props: {
         {sessions.map((s) => {
           const hasPending = pendings.has(s.id)
           return (
-            <TabButton key={s.id} active={selectedTab === s.id} onClick={() => setSelectedTab(s.id)}>
+            <TabButton
+              key={s.id}
+              state={selectedTab === s.id ? 'active' : 'idle'}
+              onClick={() => setSelectedTab(s.id)}
+            >
               <span className={ROLE_COLORS[s.role]}>{s.role}</span>
               <span className="text-zinc-300">{s.label ?? s.id.slice(0, 8)}</span>
               <span className={`${STATE_COLORS[s.state]} text-[10px]`}>
@@ -113,7 +119,11 @@ export function TestRunLive(props: {
           const nodeId = tid.slice('script:'.length)
           const node = customNodes.get(nodeId)
           return (
-            <TabButton key={tid} active={selectedTab === tid} onClick={() => setSelectedTab(tid)}>
+            <TabButton
+              key={tid}
+              state={selectedTab === tid ? 'active' : 'idle'}
+              onClick={() => setSelectedTab(tid)}
+            >
               <span className="text-amber-300">script</span>
               <span className="text-zinc-300">{node?.title ?? nodeId}</span>
             </TabButton>
@@ -196,11 +206,11 @@ export function TestRunLive(props: {
 }
 
 function TabButton({
-  active,
+  state,
   onClick,
   children,
 }: {
-  active: boolean
+  state: TabButtonState
   onClick: () => void
   children: ReactNode
 }) {
@@ -208,7 +218,9 @@ function TabButton({
     <button
       onClick={onClick}
       className={`px-3 py-2 flex items-center gap-1.5 text-[11px] border-r border-fuchsia-500/30 whitespace-nowrap ${
-        active ? 'bg-fuchsia-500/10 text-fuchsia-100' : 'text-zinc-400 hover:bg-zinc-800/40'
+        state === 'active'
+          ? 'bg-fuchsia-500/10 text-fuchsia-100'
+          : 'text-zinc-400 hover:bg-zinc-800/40'
       }`}
     >
       {children}

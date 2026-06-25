@@ -518,8 +518,7 @@ interface ScopedTerminalProps {
   /** Scope keys the descriptor must match. */
   scope: { planetId: number; featureId: number | null; role: string }
   spawnReq: ClientEvents['terminal:start']
-  available: boolean
-  unavailableMessage: string
+  availability: { kind: 'available' } | { kind: 'unavailable'; message: string }
 }
 
 /**
@@ -534,8 +533,7 @@ function ScopedPrimaryTerminal({
   subtitle,
   scope,
   spawnReq,
-  available,
-  unavailableMessage,
+  availability,
 }: ScopedTerminalProps) {
   const connected = useConnected()
   const terminals = useTerminalsByPlanet(scope.planetId)
@@ -552,22 +550,22 @@ function ScopedPrimaryTerminal({
   if (descriptor) spawnInFlightRef.current = false
 
   useEffect(() => {
-    if (!connected || !available) return
+    if (!connected || availability.kind !== 'available') return
     if (descriptor) return
     if (spawnInFlightRef.current) return
     spawnInFlightRef.current = true
     startTerminal(spawnReq)
-  }, [connected, available, descriptor, spawnReq])
+  }, [connected, availability.kind, descriptor, spawnReq])
 
   const restart = () => {
-    if (!connected || !available || !descriptor) return
+    if (!connected || availability.kind !== 'available' || !descriptor) return
     restartTerminal(descriptor.id)
   }
 
-  if (!available) {
+  if (availability.kind === 'unavailable') {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
-        <EmptyMessage>{unavailableMessage}</EmptyMessage>
+        <EmptyMessage>{availability.message}</EmptyMessage>
       </div>
     )
   }
@@ -614,8 +612,14 @@ function PrimaryPlanetTerminal({ planet }: { planet: PlanetSummary }) {
       subtitle={planet.name}
       scope={{ planetId: planet.id, featureId: null, role: 'free' }}
       spawnReq={spawnReq}
-      available={planet.pathExists}
-      unavailableMessage="project path is missing on disk — restore the path or delete the project."
+      availability={
+        planet.pathExists
+          ? { kind: 'available' }
+          : {
+              kind: 'unavailable',
+              message: 'project path is missing on disk — restore the path or delete the project.',
+            }
+      }
     />
   )
 }
@@ -758,7 +762,7 @@ function FeatureWorkspace({
           <FeatureTabButton
             key={tab.key}
             tab={tab}
-            active={activeTab.key === tab.key}
+            state={activeTab.key === tab.key ? 'active' : 'idle'}
             onClick={() => selectFeatureTab(feature.id, tab.key)}
             onClose={tab.terminal ? () => closeTab(tab) : undefined}
           />
@@ -784,8 +788,11 @@ function FeatureWorkspace({
             subtitle={`${feature.chatName ?? feature.name}${branchTag}`}
             scope={{ planetId: planet.id, featureId: feature.id, role: 'leader' }}
             spawnReq={leaderSpawnReq}
-            available={planet.pathExists}
-            unavailableMessage="project path is missing on disk."
+            availability={
+              planet.pathExists
+                ? { kind: 'available' }
+                : { kind: 'unavailable', message: 'project path is missing on disk.' }
+            }
           />
         ) : activeTab.terminal ? (
           <TerminalPanel sessionId={activeTab.terminal.id} />
@@ -818,12 +825,12 @@ const TAB_STATE_DOT: Record<TerminalSessionDescriptor['state'], string> = {
 
 function FeatureTabButton({
   tab,
-  active,
+  state,
   onClick,
   onClose,
 }: {
   tab: FeatureTab
-  active: boolean
+  state: 'active' | 'idle'
   onClick: () => void
   /** When present, renders a × that closes the tab. The placeholder leader
    *  tab gets none — there's nothing to delete until it spawns. */
@@ -835,10 +842,10 @@ function FeatureTabButton({
     <span
       className={`px-2 py-1 text-[10px] tracking-widest rounded border transition-colors flex items-center gap-2 ${
         waiting > 0
-          ? active
+          ? state === 'active'
             ? 'border-amber-300 text-amber-200 bg-amber-400/10'
             : 'border-amber-400/40 text-amber-200 hover:border-amber-300/70 hover:text-amber-100 animate-pulse'
-          : active
+          : state === 'active'
             ? 'border-cyan-300 text-cyan-200 bg-cyan-400/10'
             : 'border-cyan-400/20 text-slate-300 hover:border-cyan-300/50 hover:text-cyan-100'
       }`}
@@ -1411,33 +1418,37 @@ function InfoPanelBody({ planet }: { planet: PlanetSummary }) {
     setTab(t)
   }
 
+  function tabState(t: typeof tab) {
+    return tab === t ? 'active' : 'idle'
+  }
+
   return (
     <>
       <div className="flex flex-wrap gap-2 mb-4">
-        <GlassTab active={tab === 'features'} onClick={() => switchTab('features')}>
+        <GlassTab state={tabState('features')} onClick={() => switchTab('features')}>
           FEATURES
         </GlassTab>
-        <GlassTab active={tab === 'tools'} onClick={() => switchTab('tools')}>
+        <GlassTab state={tabState('tools')} onClick={() => switchTab('tools')}>
           TOOLS
         </GlassTab>
-        <GlassTab active={tab === 'plans'} onClick={() => switchTab('plans')}>
+        <GlassTab state={tabState('plans')} onClick={() => switchTab('plans')}>
           PLANS
         </GlassTab>
-        <GlassTab active={tab === 'description'} onClick={() => switchTab('description')}>
+        <GlassTab state={tabState('description')} onClick={() => switchTab('description')}>
           DESC
         </GlassTab>
         {hasRunning && (
-          <GlassTab active={tab === 'run'} onClick={() => switchTab('run')}>
+          <GlassTab state={tabState('run')} onClick={() => switchTab('run')}>
             RUN
           </GlassTab>
         )}
-        <GlassTab active={tab === 'notifications'} onClick={() => switchTab('notifications')}>
+        <GlassTab state={tabState('notifications')} onClick={() => switchTab('notifications')}>
           INBOX{notifCount > 0 ? ` · ${notifCount}` : ''}
         </GlassTab>
-        <GlassTab active={tab === 'handoffs'} onClick={() => switchTab('handoffs')}>
+        <GlassTab state={tabState('handoffs')} onClick={() => switchTab('handoffs')}>
           HANDOFFS
         </GlassTab>
-        <GlassTab active={tab === 'terminals'} onClick={() => switchTab('terminals')}>
+        <GlassTab state={tabState('terminals')} onClick={() => switchTab('terminals')}>
           TERMS
         </GlassTab>
       </div>
@@ -1620,11 +1631,12 @@ export function FocusedPanel() {
           </div>
         )}
 
-        <WorkflowEditorOverlay
-          open={wfOpen}
-          planetId={isSunFocus ? null : planetId}
-          onClose={() => setWfOpen(false)}
-        />
+        {wfOpen && (
+          <WorkflowEditorOverlay
+            planetId={isSunFocus ? null : planetId}
+            onClose={() => setWfOpen(false)}
+          />
+        )}
       </div>
     </>
   )

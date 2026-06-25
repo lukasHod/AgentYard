@@ -1,19 +1,26 @@
 import type { SkillTool } from '../../../../core/tools'
 import { useObjectState } from '../../../hooks/useObjectState'
-import { FormButtons, Label, NameDescriptionFields, textareaCls } from './formChrome'
+import {
+  FormButtons,
+  Label,
+  NameDescriptionFields,
+  textareaCls,
+  type FormSubmissionState,
+  type NameFieldEditability,
+} from './formChrome'
 
 export function SkillForm({
   initial,
-  disableName,
+  nameField,
   onSubmit,
   onCancel,
-  saving,
+  submission,
 }: {
   initial?: SkillTool
-  disableName: boolean
+  nameField: NameFieldEditability
   onSubmit: (d: SkillTool) => void
   onCancel: () => void
-  saving: boolean
+  submission: FormSubmissionState
 }) {
   const [form, set] = useObjectState({
     name: initial?.name ?? '',
@@ -37,7 +44,7 @@ export function SkillForm({
         description={form.description}
         onName={(v) => set({ name: v })}
         onDescription={(v) => set({ description: v })}
-        disableName={disableName}
+        nameField={nameField}
       />
       <div>
         <Label hint="loaded into the drone's system prompt when this skill is attached">
@@ -50,7 +57,7 @@ export function SkillForm({
           className={textareaCls}
         />
       </div>
-      <FormButtons onCancel={onCancel} onSubmit={submit} saving={saving} />
+      <FormButtons onCancel={onCancel} onSubmit={submit} submission={submission} />
     </div>
   )
 }
