@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { getDb } from './db.js'
+import { parseDbJson } from './dbJson.js'
 import { getTerminalSessionEnv } from './terminalStore.js'
 import { reviewGateRegistry } from './reviewGateRegistry.js'
 import type { ReviewLoopRun, ReviewApproval } from '../core/types.js'
+import { z } from 'zod/v4'
+
+const SlotListSchema = z.array(z.string())
 
 interface LoopRunRow {
   id: string
@@ -42,9 +46,21 @@ function rowToLoopRun(row: LoopRunRow, approvals: ApprovalRow[]): ReviewLoopRun 
     iteration: row.iteration,
     maxIterations: row.max_iterations,
     state: row.state as ReviewLoopRun['state'],
-    developerSlots: JSON.parse(row.developer_slots_json) as string[],
-    reviewerSlots: JSON.parse(row.reviewer_slots_json) as string[],
-    approvalRequiredFrom: JSON.parse(row.approval_required_from_json) as string[],
+    developerSlots: parseDbJson(
+      'review_loop_runs.developer_slots_json',
+      row.developer_slots_json,
+      SlotListSchema,
+    ),
+    reviewerSlots: parseDbJson(
+      'review_loop_runs.reviewer_slots_json',
+      row.reviewer_slots_json,
+      SlotListSchema,
+    ),
+    approvalRequiredFrom: parseDbJson(
+      'review_loop_runs.approval_required_from_json',
+      row.approval_required_from_json,
+      SlotListSchema,
+    ),
     developerSummary: row.developer_summary,
     reviewFindings: row.review_findings,
     approvals: approvals.map(rowToApproval),

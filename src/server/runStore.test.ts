@@ -116,6 +116,13 @@ test('node_runs: outputs JSON round-trip', () => {
   assert.deepEqual(fetched.outputs, outputs)
 })
 
+test('node_runs: invalid outputs JSON is rejected at the DB boundary', () => {
+  const run = createRun({ featureId: 1, workflowId: 1, task: 't', agentKind: 'claude-sdk' })
+  const nr = createNodeRun({ runId: run.id, nodeId: 'analyze', title: 'Analyze' })
+  getDb().prepare('UPDATE node_runs SET outputs_json = ? WHERE id = ?').run('{bad-json', nr.id)
+  assert.throws(() => getNodeRun(nr.id), /Invalid JSON in node_runs\.outputs_json/)
+})
+
 test('listNodeRunsForRun: filters to the right run', () => {
   const a = createRun({ featureId: 1, workflowId: 1, task: 'a', agentKind: 'claude-sdk' })
   const b = createRun({ featureId: 1, workflowId: 1, task: 'b', agentKind: 'claude-sdk' })
@@ -177,6 +184,21 @@ test('runner_events: append + list preserves order', () => {
   assert.equal(events[0]?.event.type, 'state')
   assert.equal(events[1]?.event.type, 'assistant_message')
   assert.equal(events[2]?.event.type, 'exited')
+})
+
+test('runner_events: invalid payload JSON is rejected at the DB boundary', () => {
+  createRunnerSession({
+    id: 'sess-invalid-event',
+    agentKind: 'claude-sdk',
+    runtimeKind: 'sdk',
+    role: 'free',
+  })
+  const id = appendRunnerEvent('sess-invalid-event', { type: 'state', state: 'working', ts: 1 })
+  getDb().prepare('UPDATE runner_events SET payload_json = ? WHERE id = ?').run('{"type":"state"}', id)
+  assert.throws(
+    () => listRunnerEvents('sess-invalid-event'),
+    /Invalid shape in runner_events\.payload_json/,
+  )
 })
 
 test('runner_events: tail with limit returns most recent in chronological order', () => {

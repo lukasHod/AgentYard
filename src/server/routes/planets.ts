@@ -10,12 +10,26 @@ import {
 import { setPlanetSetting } from '../planetSettings.js'
 import { listFeatures } from '../features.js'
 import type { AppContext } from './context.js'
+import { parseRequestPart, parseRouteId } from './validation.js'
+import { z } from 'zod/v4'
+
+const PlanetCreateBodySchema = z.object({
+  name: z.string().optional(),
+  projectPath: z.string().optional(),
+  workflowId: z.number().int().positive().optional(),
+}).default({})
+const PlanetSettingsBodySchema = z.object({
+  key: z.string().min(1),
+  value: z.string().nullable(),
+})
 
 export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }: AppContext): void {
   app.get('/api/planets', async () => listPlanets())
 
   app.get<{ Params: { id: string } }>('/api/planets/:id', async (req, reply) => {
-    const planet = getPlanet(Number(req.params.id))
+    const planetId = parseRouteId('planet id', req.params.id, reply)
+    if (planetId === null) return
+    const planet = getPlanet(planetId)
     if (!planet) return reply.code(404).send({ error: 'not found' })
     return planet
   })
@@ -23,11 +37,13 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
   app.post<{ Body: { name?: string; projectPath?: string; workflowId?: number } }>(
     '/api/planets',
     async (req, reply) => {
+      const body = parseRequestPart('body', req.body, PlanetCreateBodySchema, reply)
+      if (!body) return
       try {
         const planet = await createPlanet({
-          name: req.body.name ?? '',
-          projectPath: req.body.projectPath ?? '',
-          workflowId: req.body.workflowId,
+          name: body.name ?? '',
+          projectPath: body.projectPath ?? '',
+          workflowId: body.workflowId,
         })
         io.emit('planet:created', planet)
         return planet
@@ -40,8 +56,9 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
     },
   )
 
-  app.delete<{ Params: { id: string } }>('/api/planets/:id', async (req) => {
-    const planetId = Number(req.params.id)
+  app.delete<{ Params: { id: string } }>('/api/planets/:id', async (req, reply) => {
+    const planetId = parseRouteId('planet id', req.params.id, reply)
+    if (planetId === null) return
     // Tear down the chat session (if any) + drop its transcript BEFORE the
     // planet row is gone, so the session's tools (start_feature) can still
     // resolve the planet during graceful close.
@@ -52,7 +69,8 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
   })
 
   app.post<{ Params: { id: string } }>('/api/planets/:id/chat/open', async (req, reply) => {
-    const planetId = Number(req.params.id)
+    const planetId = parseRouteId('planet id', req.params.id, reply)
+    if (planetId === null) return
     const planet = getPlanet(planetId)
     if (!planet) return reply.code(404).send({ error: 'planet not found' })
     if (!planet.pathExists) {
@@ -76,7 +94,9 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
    * returns immediately with fresh DB state.
    */
   app.post<{ Params: { id: string } }>('/api/planets/:id/sync', async (req, reply) => {
-    const planet = getPlanet(Number(req.params.id))
+    const planetId = parseRouteId('planet id', req.params.id, reply)
+    if (planetId === null) return
+    const planet = getPlanet(planetId)
     if (!planet) return reply.code(404).send({ error: 'planet not found' })
 
     if (planet.pathExists) {
@@ -94,13 +114,11 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
     Params: { id: string }
     Body: { key: string; value: string | null }
   }>('/api/planets/:id/settings', async (req, reply) => {
-    const { key, value } = req.body
-    if (typeof key !== 'string' || !key) return apiError(reply, 400, 'key required')
-    if (value !== null && typeof value !== 'string') {
-      return apiError(reply, 400, 'value must be string or null')
-    }
-    const planetId = Number(req.params.id)
-    setPlanetSetting(planetId, key, value)
+    const planetId = parseRouteId('planet id', req.params.id, reply)
+    if (planetId === null) return
+    const body = parseRequestPart('body', req.body, PlanetSettingsBodySchema, reply)
+    if (!body) return
+    setPlanetSetting(planetId, body.key, body.value)
     const updated = getPlanet(planetId)
     if (!updated) return reply.code(404).send({ error: 'planet not found' })
     io.emit('planet:updated', updated)
@@ -108,7 +126,9 @@ export function registerPlanetRoutes({ app, io, planetChats, manager, apiError }
   })
 
   app.get<{ Params: { id: string } }>('/api/planets/:id/description', async (req, reply) => {
-    const planet = getPlanet(Number(req.params.id))
+    const planetId = parseRouteId('planet id', req.params.id, reply)
+    if (planetId === null) return
+    const planet = getPlanet(planetId)
     if (!planet) return reply.code(404).send({ error: 'planet not found' })
 
     const pathExists = existsSync(planet.projectPath)

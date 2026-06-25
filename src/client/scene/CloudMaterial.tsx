@@ -1,6 +1,7 @@
 import { shaderMaterial } from '@react-three/drei'
 import { extend } from '@react-three/fiber'
-import { Color, Vector3 } from 'three'
+import type { ShaderMaterialProps } from '@react-three/fiber'
+import { Color, Vector3, type ShaderMaterial } from 'three'
 
 const VERT = /* glsl */`
 varying vec3 vPos;
@@ -89,7 +90,10 @@ export const PlanetCloudMaterial = shaderMaterial(
 
 extend({ PlanetCloudMaterial })
 
-import type { ShaderMaterialProps } from '@react-three/fiber'
+export type PlanetCloudMaterialImpl = ShaderMaterial & {
+  u_time: number
+  u_opacity: number
+}
 
 declare module '@react-three/fiber' {
   interface ThreeElements {

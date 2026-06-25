@@ -7,6 +7,7 @@ import {
   type Workflow,
   type WorkflowGraph,
 } from '../core/schema.js'
+import { parseDbJson } from './dbJson.js'
 
 interface WorkflowRow {
   id: number
@@ -16,7 +17,7 @@ interface WorkflowRow {
 }
 
 function rowToWorkflow(row: WorkflowRow): Workflow {
-  const graph = WorkflowGraphSchema.parse(JSON.parse(row.graph_json))
+  const graph = parseDbJson('workflows.graph_json', row.graph_json, WorkflowGraphSchema)
   return WorkflowSchema.parse({
     id: row.id,
     name: row.name,

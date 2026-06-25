@@ -50,6 +50,14 @@ if (args[0] === 'pr' && args[1] === 'view') {
 }
 
 if (args[0] === 'api' && args[1].startsWith('repos/') && args[1].includes('/check-runs')) {
+  if (args[1].endsWith('/stale/check-runs')) {
+    process.stdout.write(JSON.stringify({
+      runs: [
+        { name: 'build', status: 'completed', conclusion: 'stale' },
+      ],
+    }))
+    process.exit(0)
+  }
   process.stdout.write(JSON.stringify({
     runs: [
       { name: 'build', status: 'completed', conclusion: 'success' },
@@ -114,6 +122,14 @@ test('pollChecks: aggregates done + allGreen from check-runs JSON', async () => 
   assert.equal(checks.done, true)
   assert.equal(checks.allGreen, true)
   assert.equal(checks.runs.length, 2)
+})
+
+test('pollChecks: accepts stale GitHub check conclusions as non-green', async () => {
+  const scm = adapter()
+  const checks = await scm.pollChecks({ repo: 'foo/bar', ref: 'stale' })
+  assert.equal(checks.done, true)
+  assert.equal(checks.allGreen, false)
+  assert.equal(checks.runs[0]?.conclusion, 'stale')
 })
 
 test('listReviewComments: maps gh fields to ReviewComment[]', async () => {

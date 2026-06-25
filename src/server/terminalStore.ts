@@ -4,6 +4,11 @@ import type {
   TerminalSessionState,
 } from '../core/types.js'
 import { getDb } from './db.js'
+import { parseDbJson } from './dbJson.js'
+import { z } from 'zod/v4'
+
+const ArgvSchema = z.array(z.string())
+const EnvSchema = z.record(z.string(), z.string())
 
 interface TerminalSessionRow {
   id: string
@@ -42,7 +47,7 @@ function rowToDescriptor(row: TerminalSessionRow): TerminalSessionDescriptor {
     role: row.role,
     label: row.label,
     cwd: row.cwd,
-    argv: JSON.parse(row.argv_json) as string[],
+    argv: parseDbJson('terminal_sessions.argv_json', row.argv_json, ArgvSchema),
     state: row.state as TerminalSessionState,
     exitCode: row.exit_code,
     exitSignal: row.exit_signal,
@@ -108,7 +113,9 @@ export function getTerminalSessionEnv(id: string): Record<string, string> | unde
   const row = getDb()
     .prepare('SELECT env_json FROM terminal_sessions WHERE id = ?')
     .get(id) as Pick<TerminalSessionRow, 'env_json'> | undefined
-  return row?.env_json ? (JSON.parse(row.env_json) as Record<string, string>) : undefined
+  return row?.env_json
+    ? parseDbJson('terminal_sessions.env_json', row.env_json, EnvSchema)
+    : undefined
 }
 
 export function listTerminalSessions(): TerminalSessionDescriptor[] {

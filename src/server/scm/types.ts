@@ -49,6 +49,7 @@ export type CheckConclusion =
   | 'skipped'
   | 'action_required'
   | 'startup_failure'
+  | 'stale'
   | null
 
 export interface CheckRun {
