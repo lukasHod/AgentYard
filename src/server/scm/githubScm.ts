@@ -37,6 +37,7 @@ const CheckRunSchema = z.object({
       'skipped',
       'action_required',
       'startup_failure',
+      'stale',
     ])
     .nullable(),
 }) satisfies z.ZodType<CheckRun>
