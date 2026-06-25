@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
 import { simpleGit } from 'simple-git'
 import { createRepo } from './repository.js'
+import { getPlanetSettings } from './planetSettings.js'
 import { PLANET_TEXTURE_NAMES, type PlanetTextureName } from '../core/planetTextures.js'
-import type { TerminalProfileId } from '../core/types.js'
 
 function pickTexture(): PlanetTextureName {
   return PLANET_TEXTURE_NAMES[Math.floor(Math.random() * PLANET_TEXTURE_NAMES.length)]!
@@ -23,7 +23,7 @@ export interface Planet {
   hasClouds: boolean
   /** Set by the read path — true if projectPath exists on disk right now. */
   pathExists: boolean
-  defaultTerminalProfile: TerminalProfileId | null
+  settings: Record<string, string>
 }
 
 interface PlanetRow {
@@ -35,7 +35,6 @@ interface PlanetRow {
   created_at: number
   texture: PlanetTextureName
   has_clouds: number
-  default_terminal_profile: TerminalProfileId | null
 }
 
 function rowToPlanet(row: PlanetRow): Planet {
@@ -49,7 +48,7 @@ function rowToPlanet(row: PlanetRow): Planet {
     texture: row.texture,
     hasClouds: row.has_clouds === 1,
     pathExists: existsSync(row.project_path),
-    defaultTerminalProfile: row.default_terminal_profile,
+    settings: getPlanetSettings(row.id),
   }
 }
 
@@ -100,22 +99,3 @@ export function setPlanetState(id: number, state: string): void {
   planets.db().prepare('UPDATE planets SET state = ? WHERE id = ?').run(state, id)
 }
 
-const VALID_TERMINAL_PROFILES = new Set<TerminalProfileId>([
-  'powershell',
-  'unix-shell',
-  'claude-cli',
-  'codex-cli',
-])
-
-export function setPlanetDefaultTerminalProfile(
-  id: number,
-  profile: TerminalProfileId | null,
-): Planet {
-  if (profile !== null && !VALID_TERMINAL_PROFILES.has(profile)) {
-    throw new Error(`invalid terminal profile: ${profile}`)
-  }
-  planets.db().prepare('UPDATE planets SET default_terminal_profile = ? WHERE id = ?').run(profile, id)
-  const updated = getPlanet(id)
-  if (!updated) throw new Error(`planet ${id} not found`)
-  return updated
-}

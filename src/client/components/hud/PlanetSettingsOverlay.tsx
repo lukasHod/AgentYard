@@ -4,6 +4,7 @@ import { GlassButton } from '../glass/GlassButton'
 import { apiPut } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { DEFAULT_TERMINAL_PROFILE, TERMINAL_PROFILE_OPTIONS } from '../../terminalProfiles'
+import { planetSetting } from '../../../core/types'
 import type { PlanetSummary, TerminalProfileId } from '../../../core/types'
 
 interface Props {
@@ -64,31 +65,77 @@ export function PlanetSettingsOverlay({ planet, onClose }: Props) {
   )
 }
 
+async function putPlanetSetting(planetId: number, key: string, value: string | null) {
+  const res = await apiPut<PlanetSummary>(`/api/planets/${planetId}/settings`, { key, value })
+  if (!res.ok) pushToast('error', `Save failed: ${res.error}`)
+}
+
 function TerminalsSettingsSection({ planet }: { planet: PlanetSummary }) {
-  const onChange = async (profile: TerminalProfileId) => {
-    const res = await apiPut<PlanetSummary>(`/api/planets/${planet.id}/settings`, {
-      defaultTerminalProfile: profile,
-    })
-    if (!res.ok) pushToast('error', `Save failed: ${res.error}`)
-  }
+  const onChangeProfile = (profile: TerminalProfileId) =>
+    putPlanetSetting(planet.id, 'default-terminal-type', profile)
 
   return (
-    <div className="space-y-2 max-w-sm">
-      <span className="text-[10px] tracking-widest text-slate-500">DEFAULT FEATURE TERMINAL</span>
-      <p className="text-xs text-slate-400">
-        Used when a feature's LEADER terminal first opens.
-      </p>
-      <select
-        value={planet.defaultTerminalProfile ?? DEFAULT_TERMINAL_PROFILE}
-        onChange={(e) => onChange(e.target.value as TerminalProfileId)}
-        className="bg-black border border-sky-400/30 text-xs px-2 py-1 rounded focus:outline-none focus:border-sky-300"
-      >
-        {TERMINAL_PROFILE_OPTIONS.map((opt) => (
-          <option key={opt.id} value={opt.id}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+    <div className="space-y-4 max-w-sm">
+      <div className="space-y-2">
+        <span className="text-[10px] tracking-widest text-slate-500">DEFAULT FEATURE TERMINAL</span>
+        <p className="text-xs text-slate-400">
+          Used when a feature's LEADER terminal first opens.
+        </p>
+        <select
+          value={(planetSetting(planet.settings, 'default-terminal-type') as TerminalProfileId | null) ?? DEFAULT_TERMINAL_PROFILE}
+          onChange={(e) => onChangeProfile(e.target.value as TerminalProfileId)}
+          className="bg-black border border-sky-400/30 text-xs px-2 py-1 rounded focus:outline-none focus:border-sky-300"
+        >
+          {TERMINAL_PROFILE_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="space-y-2">
+        <span className="text-[10px] tracking-widest text-slate-500">EXTRA LAUNCH ARGS</span>
+        <p className="text-xs text-slate-400">
+          Extra flags appended when that CLI starts (e.g. --dangerously-skip-permissions).
+        </p>
+        <div className="space-y-1.5">
+          {TERMINAL_PROFILE_OPTIONS.filter((opt) => opt.id === 'claude-cli' || opt.id === 'codex-cli').map((opt) => (
+            <ExtraArgsField key={opt.id} planet={planet} profileId={opt.id} label={opt.label} />
+          ))}
+        </div>
+      </div>
     </div>
+  )
+}
+
+function ExtraArgsField({
+  planet,
+  profileId,
+  label,
+}: {
+  planet: PlanetSummary
+  profileId: TerminalProfileId
+  label: string
+}) {
+  const settingKey = `${profileId}-args`
+  const claudeDefault = profileId === 'claude-cli' ? '--dangerously-skip-permissions' : ''
+  const [value, setValue] = useState(planetSetting(planet.settings, settingKey) ?? claudeDefault)
+
+  useEffect(() => {
+    setValue(planetSetting(planet.settings, settingKey) ?? claudeDefault)
+  }, [planet.settings, settingKey])
+
+  return (
+    <label className="flex items-center gap-2 text-xs text-slate-400">
+      <span className="w-16 shrink-0 text-slate-500">{label}</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => putPlanetSetting(planet.id, settingKey, value.trim() || null)}
+        placeholder={claudeDefault || undefined}
+        className="flex-1 bg-black border border-sky-400/30 text-xs px-2 py-1 rounded focus:outline-none focus:border-sky-300"
+      />
+    </label>
   )
 }

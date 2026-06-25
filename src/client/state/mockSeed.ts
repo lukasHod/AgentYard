@@ -31,7 +31,7 @@ const MOCK_PLANETS: PlanetSummary[] = [
     pathExists: true,
     texture: 'Gaseous2',
     hasClouds: true,
-    defaultTerminalProfile: null,
+    settings: {},
   },
   {
     id: 2,
@@ -43,7 +43,7 @@ const MOCK_PLANETS: PlanetSummary[] = [
     pathExists: true,
     texture: 'Terrestrial3',
     hasClouds: false,
-    defaultTerminalProfile: null,
+    settings: {},
   },
 ]
 
