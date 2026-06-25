@@ -4,6 +4,8 @@
  * exceptions, no `.catch(() => {})` swallowing.
  */
 
+import type { z } from 'zod/v4'
+
 export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string; status?: number; aborted?: boolean }
@@ -13,7 +15,16 @@ export interface ApiOptions {
   signal?: AbortSignal
 }
 
-async function send<T>(url: string, init: RequestInit, opts?: ApiOptions): Promise<ApiResult<T>> {
+export interface ApiParseOptions<T> extends ApiOptions {
+  /** Optional response schema for endpoints that should be runtime-validated. */
+  schema?: z.ZodType<T>
+}
+
+async function send<T>(
+  url: string,
+  init: RequestInit,
+  opts?: ApiParseOptions<T>,
+): Promise<ApiResult<T>> {
   try {
     const res = await fetch(url, { ...init, signal: opts?.signal })
     if (!res.ok) {
@@ -28,7 +39,15 @@ async function send<T>(url: string, init: RequestInit, opts?: ApiOptions): Promi
     if (res.status === 204) return { ok: true, data: undefined as unknown as T }
     const text = await res.text()
     if (text.length === 0) return { ok: true, data: undefined as unknown as T }
-    return { ok: true, data: JSON.parse(text) as T }
+    const parsed: unknown = JSON.parse(text)
+    if (opts?.schema) {
+      const result = opts.schema.safeParse(parsed)
+      if (!result.success) {
+        return { ok: false, error: `invalid response: ${result.error.message}`, status: res.status }
+      }
+      return { ok: true, data: result.data }
+    }
+    return { ok: true, data: parsed as T }
   } catch (err) {
     const aborted =
       (err instanceof DOMException && err.name === 'AbortError') ||
@@ -41,11 +60,15 @@ async function send<T>(url: string, init: RequestInit, opts?: ApiOptions): Promi
   }
 }
 
-export function apiGet<T>(url: string, opts?: ApiOptions): Promise<ApiResult<T>> {
+export function apiGet<T>(url: string, opts?: ApiParseOptions<T>): Promise<ApiResult<T>> {
   return send<T>(url, { method: 'GET' }, opts)
 }
 
-export function apiPost<T>(url: string, body?: unknown, opts?: ApiOptions): Promise<ApiResult<T>> {
+export function apiPost<T>(
+  url: string,
+  body?: unknown,
+  opts?: ApiParseOptions<T>,
+): Promise<ApiResult<T>> {
   return send<T>(
     url,
     {
@@ -57,7 +80,11 @@ export function apiPost<T>(url: string, body?: unknown, opts?: ApiOptions): Prom
   )
 }
 
-export function apiPut<T>(url: string, body?: unknown, opts?: ApiOptions): Promise<ApiResult<T>> {
+export function apiPut<T>(
+  url: string,
+  body?: unknown,
+  opts?: ApiParseOptions<T>,
+): Promise<ApiResult<T>> {
   return send<T>(
     url,
     {
@@ -69,6 +96,6 @@ export function apiPut<T>(url: string, body?: unknown, opts?: ApiOptions): Promi
   )
 }
 
-export function apiDelete<T>(url: string, opts?: ApiOptions): Promise<ApiResult<T>> {
+export function apiDelete<T>(url: string, opts?: ApiParseOptions<T>): Promise<ApiResult<T>> {
   return send<T>(url, { method: 'DELETE' }, opts)
 }

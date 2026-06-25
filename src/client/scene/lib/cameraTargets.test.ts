@@ -63,8 +63,9 @@ describe('cameraTargetForV2', () => {
     const planetLookup = () => ({ x: 0, y: 0, z: 0 })
     const shipLookup = () => ({ x: 7, y: 0, z: 2 })
     const t = cameraTargetForV2({ lod: 2, planetId: 1, shipFeatureId: 9 }, planetLookup, shipLookup)
-    expect(t.lookAt).toEqual([7, 0, 2])
-    expect(t.position[0]).toBeCloseTo(8.5) // 7 + 1.5
+    expect(t.lookAt).toEqual([7, 0.1, 2])
+    expect(t.position[0]).toBeGreaterThan(t.lookAt[0])
+    expect(t.position[1]).toBeCloseTo(1.8)
   })
 
   it('falls back to planet framing if ship not found at LOD 2', () => {

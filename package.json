@@ -21,8 +21,10 @@
     "start": "node dist/server/cli.js start",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
+    "standards:audit": "node scripts/standards-audit.js",
+    "check": "npm run standards:audit && npm run typecheck && npm run test",
     "test": "npm run test:server && npm run test:client",
-    "test:server": "node --import tsx --test \"src/core/executor.test.ts\" \"src/core/plugins.test.ts\" \"src/core/tools.test.ts\" \"src/server/runtime/scriptArgv.test.ts\" \"src/server/runtime/markCompleteGate.test.ts\" \"src/server/runtime/TerminalSessionManager.test.ts\" \"src/server/runtime/adapters/claudeSdk.test.ts\" \"src/server/runtime/adapters/registry.test.ts\" \"src/server/runtime/reconcile.test.ts\" \"src/server/routes/browseFolder.test.ts\" \"src/server/runState.test.ts\" \"src/server/runStore.test.ts\" \"src/server/scm/githubScm.test.ts\" \"src/server/tools/crud.test.ts\" \"src/server/tools/lifecycle.test.ts\" \"src/server/tools/resolver.test.ts\" \"src/server/tools/scanCache.test.ts\" \"src/server/workflows.test.ts\" \"src/server/planets.test.ts\" \"src/server/planetSettings.test.ts\"",
+    "test:server": "node --import tsx --test \"src/core/executor.test.ts\" \"src/core/plugins.test.ts\" \"src/core/tools.test.ts\" \"src/server/dbJson.test.ts\" \"src/server/runtime/scriptArgv.test.ts\" \"src/server/runtime/markCompleteGate.test.ts\" \"src/server/runtime/TerminalSessionManager.test.ts\" \"src/server/runtime/adapters/claudeSdk.test.ts\" \"src/server/runtime/adapters/registry.test.ts\" \"src/server/runtime/reconcile.test.ts\" \"src/server/routes/browseFolder.test.ts\" \"src/server/runState.test.ts\" \"src/server/runStore.test.ts\" \"src/server/scm/githubScm.test.ts\" \"src/server/tools/crud.test.ts\" \"src/server/tools/lifecycle.test.ts\" \"src/server/tools/resolver.test.ts\" \"src/server/tools/scanCache.test.ts\" \"src/server/workflows.test.ts\" \"src/server/planets.test.ts\" \"src/server/planetSettings.test.ts\"",
     "test:client": "vitest run"
   },
   "dependencies": {

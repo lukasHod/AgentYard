@@ -4,6 +4,7 @@ import { writeFile, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import Anthropic from '@anthropic-ai/sdk'
+import { z } from 'zod/v4'
 import type { HandoffSummary } from '../core/types.js'
 
 const execFile = promisify(execFileCb)
@@ -55,6 +56,58 @@ export interface HandoffPayload {
     nodeStates: Record<string, string>
     nodeSummaries: Record<string, string>
   }
+}
+
+const HandoffAgentSchema: z.ZodType<HandoffAgent> = z
+  .object({
+    id: z.string(),
+    role: z.enum(['leader', 'drone', 'free']),
+    label: z.string().optional(),
+    messages: z.array(z.object({
+      role: z.enum(['assistant', 'user', 'system']),
+      content: z.string(),
+      timestamp: z.number(),
+    })),
+  })
+  .transform((agent) => ({ ...agent, label: agent.label }))
+
+const HandoffPayloadSchema = z.object({
+  version: z.literal(1),
+  branch: z.string().nullable(),
+  featureId: z.number(),
+  planetId: z.number(),
+  featureName: z.string(),
+  shortDescription: z.string(),
+  featureDescription: z.string(),
+  implementationPlan: z.string().nullable(),
+  handoffNote: z.string().nullable(),
+  sender: z.string(),
+  timestamp: z.number(),
+  agents: z.array(HandoffAgentSchema),
+  workflowState: z.object({
+    nodeStates: z.record(z.string(), z.string()),
+    nodeSummaries: z.record(z.string(), z.string()),
+  }),
+}) satisfies z.ZodType<HandoffPayload>
+
+const GeneratedHandoffDescriptionsSchema = z.object({
+  shortDescription: z.string().optional(),
+  featureDescription: z.string().optional(),
+  implementationPlan: z.string().nullable().optional(),
+})
+
+function parseJsonPayload<T>(label: string, raw: string, schema: z.ZodType<T>): T {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    throw new Error(`failed to parse ${label} JSON`, { cause: err })
+  }
+  const result = schema.safeParse(parsed)
+  if (!result.success) {
+    throw new Error(`invalid ${label} JSON: ${result.error.message}`)
+  }
+  return result.data
 }
 
 export async function getGitUser(repoPath: string): Promise<string> {
@@ -150,7 +203,7 @@ export async function listHandoffs(repoPath: string): Promise<HandoffSummary[]> 
     refs.map(async (ref): Promise<HandoffSummary | null> => {
       try {
         const { stdout: content } = await git(repoPath, ['show', `${ref}:handoff.json`])
-        const payload = JSON.parse(content) as HandoffPayload
+        const payload = parseJsonPayload('handoff payload', content, HandoffPayloadSchema)
         // ref is e.g. "origin/agentyard/handoff/agentyard/my-feature-42"
         // Strip the "origin/" prefix to get the branch name.
         const handoffBranch = ref.replace(/^origin\//, '')
@@ -177,7 +230,7 @@ export async function readHandoffPayload(
 ): Promise<HandoffPayload> {
   const remoteRef = `refs/remotes/origin/${handoffBranch}`
   const { stdout } = await git(repoPath, ['show', `${remoteRef}:handoff.json`])
-  return JSON.parse(stdout) as HandoffPayload
+  return parseJsonPayload('handoff payload', stdout, HandoffPayloadSchema)
 }
 
 export async function deleteHandoffBranch(repoPath: string, handoffBranch: string): Promise<void> {
@@ -280,7 +333,11 @@ Reply with ONLY the JSON object, no other text.`
       implementationPlan: null,
     }
   }
-  const parsed = JSON.parse(jsonMatch[0]) as GeneratedHandoffDescriptions
+  const parsed = parseJsonPayload(
+    'generated handoff descriptions',
+    jsonMatch[0],
+    GeneratedHandoffDescriptionsSchema,
+  )
   return {
     shortDescription: parsed.shortDescription ?? `Handoff for "${featureName}"`,
     featureDescription: parsed.featureDescription ?? featureTask,

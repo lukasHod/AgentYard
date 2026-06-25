@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
+import { z } from 'zod/v4'
 import type { AgentKind } from '../core/plugins.js'
 import { getDb } from './db.js'
 
@@ -23,6 +24,10 @@ const VALID_KINDS: ReadonlySet<AgentKind> = new Set<AgentKind>([
   'codex-cli',
 ])
 
+const GlobalAgentKindConfigSchema = z.object({
+  defaultAgentKind: z.enum(['claude-sdk', 'claude-code-cli', 'codex-cli']).optional(),
+})
+
 const CONFIG_PATH = path.join(homedir(), '.agentyard', 'config.json')
 
 function isAgentKind(value: unknown): value is AgentKind {
@@ -35,8 +40,8 @@ export function getGlobalDefaultAgentKind(): AgentKind {
   if (_cachedGlobal) return _cachedGlobal
   if (existsSync(CONFIG_PATH)) {
     try {
-      const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) as { defaultAgentKind?: unknown }
-      if (isAgentKind(raw.defaultAgentKind)) {
+      const raw = GlobalAgentKindConfigSchema.parse(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+      if (raw.defaultAgentKind) {
         _cachedGlobal = raw.defaultAgentKind
         return _cachedGlobal
       }

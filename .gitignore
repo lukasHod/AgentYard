@@ -23,4 +23,5 @@ Thumbs.db
 
 # Debug screenshots / scratch
 debug/
+tmp-ui-check-*.png
 .worktrees/

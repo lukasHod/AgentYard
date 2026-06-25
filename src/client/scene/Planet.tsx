@@ -1,12 +1,14 @@
 import { useFrame } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react'
-import { AdditiveBlending, Color, Group, MeshBasicMaterial, ShaderMaterial, Vector3 } from 'three'
+import { AdditiveBlending, Color, Group, MeshBasicMaterial, Vector3 } from 'three'
 import { derivePlanetParams } from './lib/planetParams'
 import { getPlanetTexturePath } from './lib/planetTextures'
 import { atmosphereColorFromImage } from './lib/textureColor'
 import './PlanetMaterial'
 import './CloudMaterial'
+import type { PlanetAtmoMaterialImpl } from './PlanetMaterial'
+import type { PlanetCloudMaterialImpl } from './CloudMaterial'
 import { hashStringToInt, hashByte, deriveHash } from './lib/hash'
 import type { FeatureSummary, PlanetSummary } from '../../core/types'
 import { useUiStore } from '../state/uiStore'
@@ -56,9 +58,9 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
   // independent of the planet's orbital phase around the sun.
   const shipHostRef = useRef<Group>(null)
   const surfMatRef = useRef<MeshBasicMaterial>(null)
-  const atmoMatRef = useRef<ShaderMaterial>(null)
+  const atmoMatRef = useRef<PlanetAtmoMaterialImpl>(null)
   const cloudSpinRef = useRef<Group>(null)
-  const cloudMatRef  = useRef<ShaderMaterial>(null)
+  const cloudMatRef  = useRef<PlanetCloudMaterialImpl>(null)
   const focusPlanet = useUiStore((s) => s.focusPlanet)
 
   const isThisFocused = useUiStore(
@@ -151,13 +153,13 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
     brightness.current += (targetBrightness - brightness.current) * Math.min(1, dt * RESPONSE)
     const b = brightness.current
     if (surfMatRef.current) surfMatRef.current.color.setScalar(b)
-    if (atmoMatRef.current) (atmoMatRef.current as any).u_brightness = b
+    if (atmoMatRef.current) atmoMatRef.current.u_brightness = b
     if (cloudSpinRef.current) {
       cloudSpinRef.current.rotation.y += dt * params.rotationSpeed * 0.02 * 1.15
     }
     if (cloudMatRef.current) {
-      ;(cloudMatRef.current as any).u_time   += dt
-      ;(cloudMatRef.current as any).u_opacity = 0.55 * brightness.current
+      cloudMatRef.current.u_time += dt
+      cloudMatRef.current.u_opacity = 0.55 * brightness.current
     }
 
     sinceFocusChange.current += dt
@@ -228,7 +230,6 @@ function PlanetInner({ planet, orbitRadius, orbitAngleOffset }: PlanetProps) {
             intensity at the mesh silhouette = no limb flicker (see PlanetMaterial). */}
         <mesh>
           <sphereGeometry args={[params.radius * ATMO_SCALE, 64, 64]} />
-          {/* @ts-ignore */}
           <planetAtmoMaterial
             ref={atmoMatRef}
             u_color={atmoColor}

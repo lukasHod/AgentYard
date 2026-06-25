@@ -1,6 +1,7 @@
 import { shaderMaterial } from '@react-three/drei'
 import { extend } from '@react-three/fiber'
-import { Color } from 'three'
+import type { ShaderMaterialProps } from '@react-three/fiber'
+import { Color, type ShaderMaterial } from 'three'
 
 // Atmospheric glow — adapted from sangillee.com's "realistic earth" shader.
 //
@@ -78,3 +79,20 @@ export const PlanetAtmoMaterial = shaderMaterial(
 )
 
 extend({ PlanetAtmoMaterial })
+
+export type PlanetAtmoMaterialImpl = ShaderMaterial & {
+  u_brightness: number
+}
+
+declare module '@react-three/fiber' {
+  interface ThreeElements {
+    planetAtmoMaterial: ShaderMaterialProps & {
+      u_color?: Color
+      u_brightness?: number
+      u_intensity?: number
+      u_power?: number
+      u_rimE?: number
+      u_outerE?: number
+    }
+  }
+}

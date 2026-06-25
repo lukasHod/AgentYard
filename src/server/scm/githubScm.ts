@@ -1,5 +1,6 @@
 import { execFile as execFileCb } from 'node:child_process'
 import { promisify } from 'node:util'
+import { z } from 'zod/v4'
 import type {
   CheckRun,
   CheckRunsState,
@@ -12,6 +13,46 @@ import type {
 } from './types.js'
 
 const execFile = promisify(execFileCb)
+
+const PrViewSchema = z.object({
+  state: z.string(),
+  mergeable: z.enum(['MERGEABLE', 'CONFLICTING', 'UNKNOWN']).nullable(),
+  headRefOid: z.string(),
+  reviewDecision: z.enum(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED', '']).nullable(),
+  reviews: z.array(z.object({
+    author: z.object({ login: z.string().optional() }).nullable().optional(),
+  })).optional(),
+})
+
+const CheckRunSchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  conclusion: z
+    .enum([
+      'success',
+      'failure',
+      'cancelled',
+      'timed_out',
+      'neutral',
+      'skipped',
+      'action_required',
+      'startup_failure',
+    ])
+    .nullable(),
+}) satisfies z.ZodType<CheckRun>
+
+const CheckRunsResponseSchema = z.object({
+  runs: z.array(CheckRunSchema).default([]),
+})
+
+const ReviewCommentSchema = z.object({
+  id: z.number(),
+  user: z.object({ login: z.string().optional() }).nullable().optional(),
+  body: z.string().optional(),
+  path: z.string().nullable().optional(),
+  line: z.number().nullable().optional(),
+  created_at: z.string().optional(),
+})
 
 /**
  * Phase 8b: GitHub SCM adapter that shells out to the `gh` CLI. We use
@@ -95,13 +136,7 @@ export class GitHubScmAdapter implements ScmAdapter {
       '--json',
       'state,mergeable,headRefOid,reviewDecision,reviews',
     ])
-    const data = parseJson<{
-      state: string
-      mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null
-      headRefOid: string
-      reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | '' | null
-      reviews?: Array<{ author?: { login?: string } | null }>
-    }>(stdout)
+    const data = parseJson(stdout, PrViewSchema)
     const stateMap: Record<string, PrStatus['state']> = {
       OPEN: 'open',
       CLOSED: 'closed',
@@ -127,7 +162,7 @@ export class GitHubScmAdapter implements ScmAdapter {
       '--jq',
       '{ runs: [.check_runs[] | { name: .name, status: .status, conclusion: .conclusion }] }',
     ])
-    const data = parseJson<{ runs: CheckRun[] }>(stdout)
+    const data = parseJson(stdout, CheckRunsResponseSchema)
     const runs = data.runs ?? []
     const done = runs.every((r) => r.status === 'completed')
     const allGreen = runs.length === 0 || runs.every((r) => r.conclusion === 'success')
@@ -140,15 +175,7 @@ export class GitHubScmAdapter implements ScmAdapter {
       `repos/${cfg.repo}/pulls/${cfg.number}/comments`,
       '--paginate',
     ])
-    type RawComment = {
-      id: number
-      user?: { login?: string } | null
-      body?: string
-      path?: string | null
-      line?: number | null
-      created_at?: string
-    }
-    const data = parseJson<RawComment[]>(stdout)
+    const data = parseJson(stdout, z.array(ReviewCommentSchema))
     return data.map((c) => ({
       id: c.id,
       author: c.user?.login ?? 'unknown',
@@ -165,12 +192,18 @@ export class GitHubScmAdapter implements ScmAdapter {
   }
 }
 
-function parseJson<T>(stdout: string): T {
+function parseJson<T>(stdout: string, schema: z.ZodType<T>): T {
   const trimmed = stdout.trim()
   if (!trimmed) throw new Error('gh returned empty output where JSON was expected')
+  let parsed: unknown
   try {
-    return JSON.parse(trimmed) as T
+    parsed = JSON.parse(trimmed)
   } catch (err) {
     throw new Error(`failed to parse gh JSON: ${trimmed.slice(0, 200)}…`, { cause: err })
   }
+  const result = schema.safeParse(parsed)
+  if (!result.success) {
+    throw new Error(`invalid gh JSON: ${result.error.message}`)
+  }
+  return result.data
 }

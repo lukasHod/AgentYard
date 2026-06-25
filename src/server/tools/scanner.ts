@@ -4,7 +4,9 @@ import yaml from 'js-yaml'
 import {
   type AgentTool,
   type McpTool,
+  McpToolSchema,
   type ScriptTool,
+  ScriptArgSchema,
   type SkillTool,
   type ToolEntry,
   type ToolScope,
@@ -18,6 +20,34 @@ export type ScanContext = PathContext
 
 const ALL_SCOPES: ToolScope[] = ['planet', 'global', 'claude-project', 'claude-user']
 const ALL_TYPES: ToolType[] = ['skill', 'mcp', 'script', 'agent']
+
+function asStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined
+}
+
+function getStringField(source: Record<string, unknown>, key: string): string | undefined {
+  const value = source[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+function getRecordField(source: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = source[key]
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+}
+
+function getStringRecordField(
+  source: Record<string, unknown>,
+  key: string,
+): Record<string, string> | undefined {
+  const value = getRecordField(source, key)
+  if (!value) return undefined
+  const entries = Object.entries(value)
+  return entries.every(([, entryValue]) => typeof entryValue === 'string')
+    ? Object.fromEntries(entries) as Record<string, string>
+    : undefined
+}
 
 /** Find all tools of all types across all applicable scopes. Cached per scope+type+planet. */
 export async function scanAllTools(ctx: ScanContext): Promise<ToolEntry[]> {
@@ -169,17 +199,19 @@ async function parseMcpFile(
   }
   if (!json || typeof json !== 'object') return null
   const j = json as Record<string, unknown>
-  const transport = (j.transport as 'stdio' | 'http' | 'sse') ?? (j.command ? 'stdio' : 'http')
-  const data: McpTool = {
-    name: (j.name as string) || path.basename(fileName, '.json'),
-    description: (j.description as string) ?? '',
+  const transport = getStringField(j, 'transport') ?? (j.command ? 'stdio' : 'http')
+  const parsed = McpToolSchema.safeParse({
+    name: getStringField(j, 'name') || path.basename(fileName, '.json'),
+    description: getStringField(j, 'description') ?? '',
     transport,
-    command: j.command as string | undefined,
-    args: Array.isArray(j.args) ? (j.args as string[]) : undefined,
-    env: j.env as Record<string, string> | undefined,
-    url: j.url as string | undefined,
-    headers: j.headers as Record<string, string> | undefined,
-  }
+    command: getStringField(j, 'command'),
+    args: asStringArray(j.args),
+    env: getStringRecordField(j, 'env'),
+    url: getStringField(j, 'url'),
+    headers: getStringRecordField(j, 'headers'),
+  })
+  if (!parsed.success) return null
+  const data: McpTool = parsed.data
   return { type: 'mcp', scope, path: file, data }
 }
 
@@ -216,17 +248,17 @@ async function parseScriptFolder(
     }
   }
 
+  const args = Array.isArray(p.args)
+    ? p.args.flatMap((arg) => {
+        const parsedArg = ScriptArgSchema.safeParse(arg)
+        return parsedArg.success ? [parsedArg.data] : []
+      })
+    : []
   const data: ScriptTool = {
-    name: (p.name as string) || name,
-    description: (p.description as string) ?? '',
-    cmd: (p.cmd as string) ?? '',
-    args: Array.isArray(p.args)
-      ? (p.args as Array<{ name: string; description?: string; required?: boolean }>).map((a) => ({
-          name: a.name,
-          description: a.description,
-          required: a.required ?? false,
-        }))
-      : [],
+    name: getStringField(p, 'name') || name,
+    description: getStringField(p, 'description') ?? '',
+    cmd: getStringField(p, 'cmd') ?? '',
+    args,
     bodyFile,
   }
   return { type: 'script', scope, path: folder, data }
@@ -258,25 +290,25 @@ async function scanCatalogMcps(
   }
   if (!json || typeof json !== 'object') return []
   const j = json as Record<string, unknown>
-  const map = (j.mcpServers && typeof j.mcpServers === 'object'
-    ? j.mcpServers
-    : j) as Record<string, unknown>
+  const map = getRecordField(j, 'mcpServers') ?? j
   const out: ToolEntry[] = []
   for (const [name, cfg] of Object.entries(map)) {
     if (!cfg || typeof cfg !== 'object') continue
     const c = cfg as Record<string, unknown>
-    const transport = (c.transport as 'stdio' | 'http' | 'sse') ?? (c.command ? 'stdio' : 'http')
-    const data: McpTool = {
+    const transport = getStringField(c, 'transport') ?? (c.command ? 'stdio' : 'http')
+    const parsedTool = McpToolSchema.safeParse({
       name,
-      description: (c.description as string) ?? '',
+      description: getStringField(c, 'description') ?? '',
       transport,
-      command: c.command as string | undefined,
-      args: Array.isArray(c.args) ? (c.args as string[]) : undefined,
-      env: c.env as Record<string, string> | undefined,
-      url: c.url as string | undefined,
-      headers: c.headers as Record<string, string> | undefined,
+      command: getStringField(c, 'command'),
+      args: asStringArray(c.args),
+      env: getStringRecordField(c, 'env'),
+      url: getStringField(c, 'url'),
+      headers: getStringRecordField(c, 'headers'),
+    })
+    if (parsedTool.success) {
+      out.push({ type: 'mcp', scope, path: foundFile, data: parsedTool.data })
     }
-    out.push({ type: 'mcp', scope, path: foundFile, data })
   }
   return out
 }

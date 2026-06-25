@@ -3,8 +3,30 @@ import { bridgeRegistry } from '../bridgeRegistry.js'
 import { submitReview } from '../reviewLoopStore.js'
 import { getFeature, updateFeature } from '../features.js'
 import type { AppContext } from './context.js'
+import { parseRequestPart } from './validation.js'
+import { z } from 'zod/v4'
 
 const SESSION_HEADER = 'x-agentyard-session-id'
+const StringRecordSchema = z.record(z.string(), z.string())
+const AskUserBodySchema = z.object({ question: z.string().trim().min(1) })
+const MarkNodeCompleteBodySchema = z.object({
+  summary: z.string().trim().optional(),
+  outputs: StringRecordSchema.optional(),
+}).default({})
+const AnswerBodySchema = z.object({
+  questionId: z.string().min(1),
+  answer: z.string(),
+})
+const SetPrBodySchema = z.object({
+  prUrl: z.string().trim().min(1),
+})
+const SubmitReviewBodySchema = z.object({
+  decision: z.enum(['approved', 'changes_requested']),
+  findings: z.string().optional(),
+})
+const FailNodeBodySchema = z.object({
+  error: z.string().trim().optional(),
+}).default({})
 
 /**
  * AgentYard bridge — HTTP endpoints called by `agentyard` CLI subcommands
@@ -39,12 +61,12 @@ export function registerBridgeRoutes(ctx: AppContext): void {
       const session = getTerminalSession(sessionId)
       if (!session) return apiError(reply, 404, `terminal session ${sessionId} not found`)
 
-      const question = req.body?.question?.trim()
-      if (!question) return apiError(reply, 400, 'question is required')
+      const body = parseRequestPart('body', req.body, AskUserBodySchema, reply)
+      if (!body) return
 
       const { waitForAnswer } = pendingQuestions.createFromBridge({
         agentSessionId: sessionId,
-        question,
+        question: body.question,
         planetId: session.planetId,
         featureId: session.featureId,
         workflowRunId: session.workflowRunId,
@@ -79,10 +101,11 @@ export function registerBridgeRoutes(ctx: AppContext): void {
         return apiError(reply, 404, `terminal session ${sessionId} not found`)
       }
 
-      const summary = (req.body?.summary ?? '').trim() || 'CLI agent marked node complete'
-      const outputs = req.body?.outputs
+      const body = parseRequestPart('body', req.body, MarkNodeCompleteBodySchema, reply)
+      if (!body) return
+      const summary = body.summary || 'CLI agent marked node complete'
 
-      const resolved = bridgeRegistry.completeNode(sessionId, summary, outputs)
+      const resolved = bridgeRegistry.completeNode(sessionId, summary, body.outputs)
       if (!resolved) {
         return apiError(
           reply,
@@ -108,12 +131,11 @@ export function registerBridgeRoutes(ctx: AppContext): void {
       const sessionId = req.headers[SESSION_HEADER] as string | undefined
       if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
 
-      const { questionId, answer } = req.body ?? {}
-      if (!questionId) return apiError(reply, 400, 'questionId is required')
-      if (typeof answer !== 'string') return apiError(reply, 400, 'answer is required')
+      const body = parseRequestPart('body', req.body, AnswerBodySchema, reply)
+      if (!body) return
 
-      const ok = pendingQuestions.answer(questionId, answer)
-      if (!ok) return apiError(reply, 404, `question ${questionId} not found or already answered`)
+      const ok = pendingQuestions.answer(body.questionId, body.answer)
+      if (!ok) return apiError(reply, 404, `question ${body.questionId} not found or already answered`)
       return reply.send({ ok: true })
     },
   )
@@ -136,18 +158,18 @@ export function registerBridgeRoutes(ctx: AppContext): void {
     if (!session) return apiError(reply, 404, `terminal session ${sessionId} not found`)
     if (!session.featureId) return apiError(reply, 400, 'this terminal session has no associated feature')
 
-    const prUrl = req.body?.prUrl?.trim()
-    if (!prUrl) return apiError(reply, 400, 'prUrl is required')
+    const body = parseRequestPart('body', req.body, SetPrBodySchema, reply)
+    if (!body) return
 
-    const m = prUrl.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/)
-    if (!m) return apiError(reply, 400, `cannot parse GitHub PR URL: ${prUrl}`)
+    const m = body.prUrl.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/)
+    if (!m) return apiError(reply, 400, `cannot parse GitHub PR URL: ${body.prUrl}`)
 
     const prRepo = m[1]!
     const prNumber = Number(m[2])
 
     const updated = updateFeature(session.featureId, {
       prNumber,
-      prUrl,
+      prUrl: body.prUrl,
       prRepo,
       ciState: 'pending',
       reviewState: 'pending',
@@ -182,12 +204,10 @@ export function registerBridgeRoutes(ctx: AppContext): void {
       return apiError(reply, 404, `terminal session ${sessionId} not found`)
     }
 
-    const decision = req.body?.decision?.trim()
-    if (decision !== 'approved' && decision !== 'changes_requested') {
-      return apiError(reply, 400, 'decision must be "approved" or "changes_requested"')
-    }
+    const body = parseRequestPart('body', req.body, SubmitReviewBodySchema, reply)
+    if (!body) return
 
-    const result = submitReview(sessionId, decision, req.body?.findings)
+    const result = submitReview(sessionId, body.decision, body.findings)
     if (!result.ok) {
       return apiError(reply, 409, result.error)
     }
@@ -212,7 +232,9 @@ export function registerBridgeRoutes(ctx: AppContext): void {
         return apiError(reply, 404, `terminal session ${sessionId} not found`)
       }
 
-      const message = (req.body?.error ?? '').trim() || 'CLI agent reported failure'
+      const body = parseRequestPart('body', req.body, FailNodeBodySchema, reply)
+      if (!body) return
+      const message = body.error || 'CLI agent reported failure'
       const failed = bridgeRegistry.failNode(sessionId, message)
       if (!failed) {
         return apiError(reply, 409, 'no pending node gate for this session')

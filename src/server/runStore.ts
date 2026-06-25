@@ -6,9 +6,12 @@ import type {
   AgentTerminalReason,
   RuntimeKind,
 } from '../core/plugins.js'
+import { AgentEventSchema } from '../core/plugins.js'
 import type { AgentRole, NodeRunStatus } from '../core/types.js'
 import { getDb } from './db.js'
+import { parseDbJson } from './dbJson.js'
 import { createRepo } from './repository.js'
+import { z } from 'zod/v4'
 
 /**
  * Typed CRUD over the Phase 4 runner-persistence tables (`runs`,
@@ -73,6 +76,7 @@ function rowToRun(r: RunRow): Run {
 }
 
 const runs = createRepo<RunRow, Run>(rowToRun)
+const StringRecordSchema = z.record(z.string(), z.string())
 
 export function createRun(opts: {
   featureId: number
@@ -184,7 +188,9 @@ function rowToNodeRun(r: NodeRunRow): NodeRun {
     title: r.title,
     state: r.state as NodeRun['state'],
     summary: r.summary,
-    outputs: r.outputs_json ? (JSON.parse(r.outputs_json) as Record<string, string>) : null,
+    outputs: r.outputs_json
+      ? parseDbJson('node_runs.outputs_json', r.outputs_json, StringRecordSchema)
+      : null,
     startedAt: r.started_at,
     endedAt: r.ended_at,
   }
@@ -446,15 +452,11 @@ interface RunnerEventRow {
 }
 
 function rowToRunnerEvent(r: RunnerEventRow): RunnerEventRecord {
-  // Trust the writer — events were schema-validated on insert (or assumed
-  // shape-correct from the adapter). Re-validating with zod on every read
-  // would cost a lot for chat catch-up; instead we cast and rely on the
-  // type being part of the union via the discriminator at write time.
   return {
     id: r.id,
     sessionId: r.session_id,
     ts: r.ts,
-    event: JSON.parse(r.payload_json) as AgentEvent,
+    event: parseDbJson('runner_events.payload_json', r.payload_json, AgentEventSchema),
   }
 }
 
@@ -462,10 +464,11 @@ const runnerEvents = createRepo<RunnerEventRow, RunnerEventRecord>(rowToRunnerEv
 
 /** Append a single event. Returns the row id. */
 export function appendRunnerEvent(sessionId: string, event: AgentEvent): number {
+  const validatedEvent = AgentEventSchema.parse(event)
   const info = runnerEvents
     .db()
     .prepare('INSERT INTO runner_events (session_id, ts, type, payload_json) VALUES (?, ?, ?, ?)')
-    .run(sessionId, event.ts, event.type, JSON.stringify(event))
+    .run(sessionId, validatedEvent.ts, validatedEvent.type, JSON.stringify(validatedEvent))
   return Number(info.lastInsertRowid)
 }
 

@@ -11,7 +11,7 @@ export type PlanetState = 'idle' | 'running' | 'pending'
 
 export function getCircleRadius(count: number): number {
   const circumference = count * (PANEL_SIZE + PANEL_GAP)
-  return Math.max(190, circumference / (2 * Math.PI))
+  return Math.max(220, circumference / (2 * Math.PI))
 }
 
 export function getPlanetState(

@@ -23,7 +23,6 @@ import { resolveAgentKind } from '../agentKindCascade.js'
 import type { TerminalSessionManager } from './TerminalSessionManager.js'
 import type { TerminalManagerEvent } from './TerminalSessionManager.js'
 import { bridgeRegistry } from '../bridgeRegistry.js'
-import { reviewGateRegistry } from '../reviewGateRegistry.js'
 import {
   createLoopRun,
   updateLoopRun,
@@ -33,6 +32,7 @@ import {
 import type { TypedIOServer } from '../socketTypes.js'
 import { runOpenPrNode, runPrGateNode } from './scmRuntime.js'
 import type { ScmAdapter } from '../scm/types.js'
+import { waitForReviewDecisions } from './reviewDecisionWait.js'
 
 type AnyTool = SdkMcpToolDefinition<any>
 
@@ -540,28 +540,12 @@ async function runReviewLoopNode(
     }
 
     // Wait for all required reviewers to submit their decisions.
-    const decisions = await new Promise<{ reviewerSlot: string; decision: string; findings: string | null }[]>(
-      (resolve, reject) => {
-        const unregister = reviewGateRegistry.register(
-          loopRun.id,
-          requiredApprovers,
-          resolve,
-          reject,
-          aiNodeTimeoutMs > 0 ? aiNodeTimeoutMs : undefined,
-        )
-
-        const onAbort = () => {
-          unregister()
-          reject(new Error('run aborted'))
-        }
-        signal?.addEventListener('abort', onAbort)
-        // The unregister above cleans up the gate; abort listener needs manual cleanup.
-        // Wrap resolve/reject to also remove the abort listener.
-        void Promise.resolve().then(() => {
-          // No additional cleanup needed — the gate registry handles its own removal.
-        })
-      },
-    )
+    const decisions = await waitForReviewDecisions({
+      loopRunId: loopRun.id,
+      requiredApprovers,
+      timeoutMs: aiNodeTimeoutMs,
+      signal,
+    })
 
     const changesRequested = decisions.filter((d) => d.decision === 'changes_requested')
     const allApproved = requiredApprovers.every((slot) =>
