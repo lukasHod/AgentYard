@@ -5,14 +5,31 @@ export const inputCls =
 
 export const textareaCls = inputCls + ' font-mono'
 
+export type NameFieldEditability = { kind: 'editable' } | { kind: 'locked' }
+export type FormSubmissionState = { kind: 'idle' } | { kind: 'saving' }
+
+export function isNameLocked(nameField: NameFieldEditability) {
+  return nameField.kind === 'locked'
+}
+
+export function isSaving(submission: FormSubmissionState) {
+  return submission.kind === 'saving'
+}
+
 interface FormChromeProps {
   onCancel: () => void
   onSubmit: () => void
-  saving: boolean
+  submission: FormSubmissionState
   submitLabel?: string
 }
 
-export function FormButtons({ onCancel, onSubmit, saving, submitLabel = 'save' }: FormChromeProps) {
+export function FormButtons({
+  onCancel,
+  onSubmit,
+  submission,
+  submitLabel = 'save',
+}: FormChromeProps) {
+  const saving = isSaving(submission)
   return (
     <div className="flex gap-2 justify-end mt-4 pt-3 border-t border-cyan-500/20">
       <button
@@ -50,14 +67,14 @@ export function NameDescriptionFields({
   description,
   onName,
   onDescription,
-  disableName,
+  nameField,
   layout = 'stacked',
 }: {
   name: string
   description: string
   onName: (v: string) => void
   onDescription: (v: string) => void
-  disableName: boolean
+  nameField: NameFieldEditability
   layout?: 'stacked' | 'side-by-side'
 }) {
   if (layout === 'side-by-side') {
@@ -68,7 +85,7 @@ export function NameDescriptionFields({
           <input
             value={name}
             onChange={(e) => onName(e.target.value)}
-            disabled={disableName}
+            disabled={isNameLocked(nameField)}
             className={inputCls}
           />
         </div>
@@ -90,7 +107,7 @@ export function NameDescriptionFields({
         <input
           value={name}
           onChange={(e) => onName(e.target.value)}
-          disabled={disableName}
+          disabled={isNameLocked(nameField)}
           className={inputCls}
         />
       </div>

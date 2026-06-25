@@ -6,7 +6,10 @@ import {
   FormButtons,
   Label,
   inputCls,
+  isNameLocked,
   textareaCls,
+  type FormSubmissionState,
+  type NameFieldEditability,
 } from './formChrome'
 
 const PERMISSION_PRESETS = [
@@ -25,18 +28,18 @@ function useAvailable(library: ToolSummary[], type: ToolType) {
 
 export function AgentForm({
   initial,
-  disableName,
+  nameField,
   library,
   onSubmit,
   onCancel,
-  saving,
+  submission,
 }: {
   initial?: AgentTool
-  disableName: boolean
+  nameField: NameFieldEditability
   library: ToolSummary[]
   onSubmit: (d: AgentTool) => void
   onCancel: () => void
-  saving: boolean
+  submission: FormSubmissionState
 }) {
   const [form, set] = useObjectState({
     name: initial?.name ?? '',
@@ -107,7 +110,7 @@ export function AgentForm({
             <input
               value={form.name}
               onChange={(e) => set({ name: e.target.value })}
-              disabled={disableName}
+              disabled={isNameLocked(nameField)}
               placeholder="frontend-builder"
               className={inputCls}
             />
@@ -220,7 +223,7 @@ export function AgentForm({
         </div>
       </section>
 
-      <FormButtons onCancel={onCancel} onSubmit={submit} saving={saving} />
+      <FormButtons onCancel={onCancel} onSubmit={submit} submission={submission} />
     </div>
   )
 }
