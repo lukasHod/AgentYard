@@ -102,9 +102,9 @@ const done = new Promise<void>((resolve, reject) => {
       return
     }
     const body = await res.json()
-    featureId = body.feature.id
-    worktreePath = body.feature.worktreePath
-    featureBranch = body.feature.branch ?? null
+    featureId = body.id
+    worktreePath = body.worktreePath
+    featureBranch = body.branch ?? null
     console.log(`[smoke] feature #${featureId} created; worktree=${worktreePath ?? '(pending)'} branch=${featureBranch ?? '(pending)'}`)
   })
 

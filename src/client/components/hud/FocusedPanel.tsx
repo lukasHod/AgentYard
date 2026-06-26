@@ -19,6 +19,7 @@ import {
 import {
   startTerminal,
   restartTerminal,
+  restartTerminalWithContext,
   deleteTerminal,
   renameTerminal,
   answerQuestion,
@@ -31,7 +32,7 @@ import { TerminalPanel } from '../TerminalPanel'
 import { EmptyMessage } from '../ui/EmptyMessage'
 import { HandoffsTab } from '../HandoffsTab'
 import { HandoffDialog } from '../HandoffDialog'
-import { apiPost, apiDelete } from '../../api'
+import { apiGet, apiPost, apiDelete } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { useNotificationRows } from '../hud/useNotificationRows'
 import { usePendingQuestions, useReviewLoopRunsByFeature } from '../../state/socketStore'
@@ -220,11 +221,13 @@ function TerminalHeader({
   subtitle,
   onClose,
   onRestart,
+  onResumeWithContext,
 }: {
   title: string
   subtitle: string
   onClose?: () => void
   onRestart?: () => void
+  onResumeWithContext?: () => void
 }) {
   return (
     <div className="border-b border-cyan-500/30 px-3 py-2 flex items-center justify-between text-xs shrink-0">
@@ -233,6 +236,15 @@ function TerminalHeader({
         <span className="text-cyan-200 font-mono">{subtitle}</span>
       </div>
       <div className="flex items-center gap-3">
+        {onResumeWithContext && (
+          <button
+            type="button"
+            onClick={onResumeWithContext}
+            className="text-[10px] tracking-widest text-amber-300 hover:text-amber-200"
+          >
+            ↺ resume with context
+          </button>
+        )}
         {onRestart && (
           <button
             type="button"
@@ -307,6 +319,20 @@ function ScopedPrimaryTerminal({
     restartTerminal(descriptor.id)
   }
 
+  const [fetchingContext, setFetchingContext] = useState(false)
+
+  const resumeWithContext = async () => {
+    if (!descriptor || fetchingContext) return
+    setFetchingContext(true)
+    const res = await apiGet<{ markdown: string }>(`/api/terminals/${descriptor.id}/handoff-summary`)
+    setFetchingContext(false)
+    if (res.ok) {
+      restartTerminalWithContext(descriptor.id, res.data.markdown)
+    } else {
+      pushToast('error', `Couldn't load context: ${res.error}`)
+    }
+  }
+
   if (availability.kind === 'unavailable') {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
@@ -325,12 +351,18 @@ function ScopedPrimaryTerminal({
 
   const dead = TERMINAL_DEAD_STATES.has(descriptor.state)
 
+  const canResumeWithContext =
+    dead &&
+    descriptor.profileId === 'claude-cli' &&
+    descriptor.featureId !== null
+
   return (
     <div className="flex flex-col h-full text-sm">
       <TerminalHeader
         title={title}
         subtitle={subtitle}
         onRestart={dead ? restart : undefined}
+        onResumeWithContext={canResumeWithContext && !fetchingContext ? () => void resumeWithContext() : undefined}
       />
       <div className="flex-1 relative">
         <TerminalPanel sessionId={descriptor.id} />
@@ -1496,3 +1528,30 @@ function MinimizeButton({ onClick, title }: { onClick: () => void; title: string
   )
 }
 
+// ---------------------------------------------------------------------------
+// Testable wrapper for unit tests
+// ---------------------------------------------------------------------------
+
+export function ScopedPrimaryTerminalTestable({
+  descriptor,
+}: {
+  descriptor: TerminalSessionDescriptor
+}) {
+  return (
+    <ScopedPrimaryTerminal
+      title="LEADER"
+      subtitle="test"
+      scope={{
+        planetId: descriptor.planetId ?? 1,
+        featureId: descriptor.featureId,
+        role: descriptor.role ?? 'leader',
+      }}
+      spawnReq={{
+        profileId: descriptor.profileId,
+        planetId: descriptor.planetId ?? 1,
+        role: descriptor.role ?? 'leader',
+      }}
+      availability={{ kind: 'available' }}
+    />
+  )
+}
