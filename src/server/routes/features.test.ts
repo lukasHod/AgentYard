@@ -161,8 +161,12 @@ test('POST with task emits feature:updated with status running after worktree cr
   // feature:created was emitted synchronously before the background task
   assert.ok(emitted.some(e => e.event === 'feature:created' && e.payload.name === 'wf-feature'))
 
-  // Wait briefly for the background void promise to settle
-  await new Promise(r => setTimeout(r, 300))
+  // Poll until the background void promise settles (max 3s — git subprocess timing varies under load)
+  const deadline = Date.now() + 3000
+  while (Date.now() < deadline) {
+    if (emitted.some(e => e.event === 'feature:updated')) break
+    await new Promise(r => setTimeout(r, 50))
+  }
 
   // The background task failed (not a git repo) → feature:updated with status failed
   const updatedEvents = emitted.filter(e => e.event === 'feature:updated')
