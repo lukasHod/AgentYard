@@ -116,4 +116,19 @@ describe('resume with context button', () => {
       expect(mockRestartWithContext).toHaveBeenCalledWith('term-abc', '# Context\n...')
     })
   })
+
+  it('shows error toast when handoff summary fetch fails', async () => {
+    const { pushToast } = await import('../../state/toastStore')
+    const mockPushToast = vi.mocked(pushToast)
+
+    mockApiGet.mockResolvedValueOnce({ ok: false, error: 'server error' } as any)
+
+    terminalsForTest = [deadClaudeDescriptor]
+    render(<ScopedPrimaryTerminalTestable descriptor={deadClaudeDescriptor} />)
+    fireEvent.click(screen.getByText(/resume with context/i))
+
+    await waitFor(() => {
+      expect(mockPushToast).toHaveBeenCalledWith('error', "Couldn't load context: server error")
+    })
+  })
 })

@@ -328,6 +328,8 @@ function ScopedPrimaryTerminal({
     setFetchingContext(false)
     if (res.ok) {
       restartTerminalWithContext(descriptor.id, res.data.markdown)
+    } else {
+      pushToast('error', `Couldn't load context: ${res.error}`)
     }
   }
 
@@ -360,7 +362,7 @@ function ScopedPrimaryTerminal({
         title={title}
         subtitle={subtitle}
         onRestart={dead ? restart : undefined}
-        onResumeWithContext={canResumeWithContext ? () => void resumeWithContext() : undefined}
+        onResumeWithContext={canResumeWithContext && !fetchingContext ? () => void resumeWithContext() : undefined}
       />
       <div className="flex-1 relative">
         <TerminalPanel sessionId={descriptor.id} />
