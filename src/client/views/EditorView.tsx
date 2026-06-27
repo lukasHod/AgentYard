@@ -333,6 +333,13 @@ export function EditorView({
 
     if (wfRemoves.length > 0) {
       setEdges((eds) => eds.filter((e) => !wfRemoves.includes(e.source) && !wfRemoves.includes(e.target)))
+      setSubNodes((prev) =>
+        prev.filter(
+          (sn) => !wfRemoves.some(
+            (id) => sn.id.startsWith(`agent::${id}::`) || sn.id.startsWith(`skill::${id}::`)
+          )
+        )
+      )
       setSelectedId((cur) => (cur && wfRemoves.includes(cur) ? null : cur))
       setDirty(true)
     } else if (wfChanges.some((c) => c.type === 'position' && !(c as { dragging?: boolean }).dragging)) {
@@ -526,6 +533,7 @@ export function EditorView({
             nodeTypes={NODE_TYPES}
             colorMode="dark"
             fitView
+            deleteKeyCode={['Backspace', 'Delete']}
           >
             <Background />
             <Controls />
