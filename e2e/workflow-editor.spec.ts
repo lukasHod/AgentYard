@@ -41,7 +41,7 @@ test.describe('Workflow Editor — UI', () => {
     await editor.waitForReady()
 
     // Verify at least one workflow node is present (the seeded default workflow has nodes).
-    const nodeCount = await page.locator('.react-flow__node[data-type="workflow"]').count()
+    const nodeCount = await page.locator('.react-flow__node-workflow').count()
     expect(nodeCount).toBeGreaterThanOrEqual(1)
   })
 
@@ -58,9 +58,9 @@ test.describe('Workflow Editor — UI', () => {
     await app.openWorkflowEditor()
     await editor.waitForReady()
 
-    const beforeCount = await page.locator('.react-flow__node[data-type="workflow"]').count()
+    const beforeCount = await page.locator('.react-flow__node-workflow').count()
     await editor.addAiNodeButton.click()
-    await expect(page.locator('.react-flow__node[data-type="workflow"]')).toHaveCount(
+    await expect(page.locator('.react-flow__node-workflow')).toHaveCount(
       beforeCount + 1,
       { timeout: 5_000 },
     )
@@ -191,8 +191,9 @@ test.describe('Workflow Editor — UI', () => {
     await app.openWorkflowEditor()
     await editor.waitForReady()
 
-    await editor.addAiNodeButton.click()
-    await page.waitForTimeout(300)
+    // addAiNode() returns the node's stable data-id so we can find it after reopen
+    // without relying on the title text, which is ambiguous in a shared DB.
+    const newNodeId = await editor.addAiNode()
     await editor.attachAgent('developer')
 
     await editor.save()
@@ -207,8 +208,8 @@ test.describe('Workflow Editor — UI', () => {
     // Developer agent should still be assigned to a node (sub-node visible).
     await expect(editor.agentSubNodeByName('developer')).toBeVisible({ timeout: 5_000 })
 
-    // Verify developer checkbox is still checked in sidebar.
-    await editor.clickNodeByTitle('New AI node')
+    // Click the specific node by its data-id (avoids ambiguity from accumulated nodes).
+    await editor.clickNodeById(newNodeId)
     const checkbox = page
       .locator('label')
       .filter({ hasText: 'developer' })

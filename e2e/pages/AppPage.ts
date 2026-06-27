@@ -25,14 +25,20 @@ export class AppPage {
    * direct API calls to set up state before asserting UI.
    */
   async clickPlanet(planetName: string) {
-    // The FocusedPanel displays the planet name — if it's already open for this
-    // planet, we don't need to click again.
-    const alreadyFocused = await this.page
-      .getByText(planetName, { exact: false })
-      .first()
+    // The FocusedPanel is open only when "workflow editor" is visible (that button
+    // lives exclusively in the FocusedPanel toolbar). Matching the planet name
+    // anywhere in the DOM is insufficient — it also matches sidebar lists.
+    const panelOpen = await this.page
+      .getByText('workflow editor', { exact: false })
       .isVisible()
       .catch(() => false)
-    if (alreadyFocused) return
+    if (panelOpen) {
+      const planetInPanel = await this.page
+        .getByText(planetName, { exact: false })
+        .isVisible()
+        .catch(() => false)
+      if (planetInPanel) return
+    }
 
     // Click the canvas center where the planet is likely to be.
     const canvas = this.page.locator('canvas').first()

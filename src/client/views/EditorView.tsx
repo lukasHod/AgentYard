@@ -97,6 +97,9 @@ export function EditorView({
   // visualLayout holds saved positions loaded from the workflow — used only as the
   // initial seed when building sub-nodes. Authoritative positions live in subNodes state.
   const visualLayoutRef = useRef<WorkflowGraph['visualLayout']>(undefined)
+  // Track the active workflow id so we only reset sub-node state when switching workflows,
+  // not on every save (which re-issues the workflow prop with the same id).
+  const prevWorkflowId = useRef<number | null>(null)
 
   const fetchingAgents = useRef(new Set<string>())
 
@@ -128,6 +131,7 @@ export function EditorView({
     (agentName: string, _workflowNodeId: string) => {
       const agentSummary = tools.find((t) => t.type === 'agent' && t.name === agentName)
       if (agentSummary) openToolEditor(agentSummary)
+      else pushToast('error', `Agent '${agentName}' not found in tool library — try refreshing.`)
     },
     [tools, openToolEditor],
   )
@@ -138,12 +142,19 @@ export function EditorView({
 
   useEffect(() => {
     if (!workflow) return
+    const isNewWorkflow = workflow.id !== prevWorkflowId.current
+    prevWorkflowId.current = workflow.id
     visualLayoutRef.current = workflow.graph.visualLayout
     setNodes(workflow.graph.nodes.map(toRFNode))
     setEdges(workflow.graph.edges.map(toRFEdge))
-    setSubNodes([])
-    setAgentDetailMap({})
-    fetchingAgents.current = new Set()
+    // Only wipe sub-nodes and agent details when switching to a different workflow.
+    // On save, the parent re-issues the same workflow id with updated data; resetting
+    // here would cause skill sub-nodes to flash out until re-fetched.
+    if (isNewWorkflow) {
+      setSubNodes([])
+      setAgentDetailMap({})
+      fetchingAgents.current = new Set()
+    }
     setName(workflow.name)
     setDirty(false)
   }, [workflow])
@@ -157,7 +168,11 @@ export function EditorView({
       if (fetchingAgents.current.has(agentName) || agentDetailMap[agentName]) continue
       fetchingAgents.current.add(agentName)
       const agentSummary = tools.find((t) => t.type === 'agent' && t.name === agentName)
-      if (!agentSummary) continue
+      if (!agentSummary) {
+        // tools not yet loaded for this agent — allow retry on next effect run
+        fetchingAgents.current.delete(agentName)
+        continue
+      }
       const url =
         agentSummary.scope === 'global' || planetId === null
           ? `/api/global-tools/agent/${encodeURIComponent(agentName)}`
@@ -179,7 +194,6 @@ export function EditorView({
           agents: (n.data.node.agents ?? []).map((a) => ({
             name: a,
             skills: agentDetailMap[a]?.skills ?? [],
-            description: agentDetailMap[a]?.description ?? '',
           })),
         })),
       ),
@@ -243,8 +257,8 @@ export function EditorView({
         if (!parentPos) continue
 
         // Agent is "above" if its center Y is less than parent's center Y.
-        const agentCenterY = subNode.position.y + 20  // approx half node height
-        const parentCenterY = parentPos.y + 32         // approx half workflow node height
+        const agentCenterY = subNode.position.y + 28  // approx half AgentSubNode height (~56px)
+        const parentCenterY = parentPos.y + 40        // approx half WorkflowNodeView height (~80px)
         const agentIsAbove = agentCenterY < parentCenterY
 
         result.push({
@@ -387,6 +401,10 @@ export function EditorView({
     const id = selectedId
     setNodes((nds) => nds.filter((n) => n.id !== id))
     setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id))
+    // Synchronously prune orphaned sub-nodes so they can't be clicked after deletion.
+    setSubNodes((prev) =>
+      prev.filter((sn) => !sn.id.startsWith(`agent::${id}::`) && !sn.id.startsWith(`skill::${id}::`)),
+    )
     setSelectedId(null)
     setDirty(true)
   }
@@ -406,10 +424,15 @@ export function EditorView({
       edges: edges.map((e) => ({ from: e.source, to: e.target })),
       visualLayout: { agents: agentPositions, skills: skillPositions },
     }
-    await onSave({ ...workflow, name, graph })
-    visualLayoutRef.current = graph.visualLayout
-    setSaving(false)
-    setDirty(false)
+    try {
+      await onSave({ ...workflow, name, graph })
+      visualLayoutRef.current = graph.visualLayout
+      setDirty(false)
+    } catch {
+      // onSave throws on failure (caller shows the toast); keep dirty=true so user can retry.
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!workflow) {

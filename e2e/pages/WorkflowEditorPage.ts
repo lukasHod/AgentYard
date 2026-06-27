@@ -31,12 +31,13 @@ export class WorkflowEditorPage {
     await this.reactFlowCanvas.waitFor({ state: 'hidden', timeout: 5_000 })
   }
 
-  /** Add a new AI node and return the node's ID attribute. */
+  /** Add a new AI node and return the node's data-id attribute. */
   async addAiNode(): Promise<string> {
-    const beforeCount = await this.page.locator('.react-flow__node[data-type="workflow"]').count()
+    // React Flow encodes node type in the CSS class, not a data-type attribute.
+    const beforeCount = await this.page.locator('.react-flow__node-workflow').count()
     await this.addAiNodeButton.click()
     // Wait for one more workflow node to appear.
-    await expect(this.page.locator('.react-flow__node[data-type="workflow"]')).toHaveCount(
+    await expect(this.page.locator('.react-flow__node-workflow')).toHaveCount(
       beforeCount + 1,
       { timeout: 5_000 },
     )
@@ -56,28 +57,34 @@ export class WorkflowEditorPage {
     await this.page.waitForTimeout(300)
   }
 
+  /** Click a workflow node by its React Flow data-id attribute. */
+  async clickNodeById(nodeId: string) {
+    await this.page.locator(`.react-flow__node[data-id="${nodeId}"]`).click()
+    await this.page.waitForTimeout(300)
+  }
+
   /** Get all visible agent sub-nodes on the canvas. */
   agentSubNodes() {
-    return this.page.locator('.react-flow__node[data-type="agentSub"]')
+    return this.page.locator('.react-flow__node-agentSub')
   }
 
   /** Get agent sub-node by agent name. */
   agentSubNodeByName(agentName: string) {
     return this.page
-      .locator('.react-flow__node[data-type="agentSub"]')
+      .locator('.react-flow__node-agentSub')
       .filter({ hasText: agentName })
       .first()
   }
 
   /** Get all skill sub-nodes on the canvas. */
   skillSubNodes() {
-    return this.page.locator('.react-flow__node[data-type="skillSub"]')
+    return this.page.locator('.react-flow__node-skillSub')
   }
 
   /** Get skill sub-node by skill name. */
   skillSubNodeByName(skillName: string) {
     return this.page
-      .locator('.react-flow__node[data-type="skillSub"]')
+      .locator('.react-flow__node-skillSub')
       .filter({ hasText: skillName })
       .first()
   }
@@ -104,8 +111,8 @@ export class WorkflowEditorPage {
 
   /** Click save and wait for "saved ✓". */
   async save() {
-    await this.page.getByRole('button', { name: 'save' }).click()
-    await expect(this.page.getByRole('button', { name: 'saved ✓' })).toBeVisible({ timeout: 10_000 })
+    await this.saveButton.click()
+    await expect(this.saveButton).toHaveText('saved ✓', { timeout: 10_000 })
   }
 
   /** Get the bounding box of a node on the canvas. */
