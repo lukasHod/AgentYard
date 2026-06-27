@@ -92,6 +92,7 @@ export function EditorView({
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toolEditor, setToolEditor] = useState<EditorMode | null>(null)
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [agentDetailMap, setAgentDetailMap] = useState<Record<string, AgentTool>>({})
   // visualLayout holds saved positions loaded from the workflow — used only as the
@@ -145,12 +146,13 @@ export function EditorView({
     const isNewWorkflow = workflow.id !== prevWorkflowId.current
     prevWorkflowId.current = workflow.id
     visualLayoutRef.current = workflow.graph.visualLayout
-    setNodes(workflow.graph.nodes.map(toRFNode))
-    setEdges(workflow.graph.edges.map(toRFEdge))
-    // Only wipe sub-nodes and agent details when switching to a different workflow.
-    // On save, the parent re-issues the same workflow id with updated data; resetting
-    // here would cause skill sub-nodes to flash out until re-fetched.
+    // Only reset nodes/edges/sub-nodes when switching to a different workflow.
+    // On save, the parent re-issues the same workflow id — nodes are already
+    // correct (we just saved them), so resetting would lose React Flow's
+    // selection state and cause unnecessary flicker.
     if (isNewWorkflow) {
+      setNodes(workflow.graph.nodes.map(toRFNode))
+      setEdges(workflow.graph.edges.map(toRFEdge))
       setSubNodes([])
       setAgentDetailMap({})
       fetchingAgents.current = new Set()
@@ -160,6 +162,19 @@ export function EditorView({
   }, [workflow])
 
   useEffect(() => { onRefreshTools() }, [onRefreshTools])
+
+  // Autosave: 1.5 s after any unsaved change, save automatically.
+  useEffect(() => {
+    if (!dirty || saving) return
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = setTimeout(() => {
+      void handleSave()
+    }, 1500)
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, saving, nodes, edges, subNodes, name])
 
   // Fetch full agent data for every agent referenced in the workflow.
   useEffect(() => {
@@ -391,7 +406,9 @@ export function EditorView({
       type === 'ai'
         ? { id, title: 'New AI node', type: 'ai', position: { x: offsetX, y: offsetY }, prompt: '', agents: [] }
         : { id, title: 'New script node', type: 'custom', position: { x: offsetX, y: offsetY }, customType: 'script', args: {} }
-    setNodes((nds) => [...nds, toRFNode(node)])
+    // Deselect all existing nodes and mark the new one as selected so React
+    // Flow shows it with the selection ring and .react-flow__node.selected class.
+    setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), { ...toRFNode(node), selected: true }])
     setSelectedId(id)
     setDirty(true)
   }

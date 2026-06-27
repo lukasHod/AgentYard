@@ -109,10 +109,20 @@ export class WorkflowEditorPage {
     }
   }
 
-  /** Click save and wait for "saved ✓". */
+  /** Click save (or wait for autosave) and confirm "saved ✓". */
   async save() {
-    await this.saveButton.click()
-    await expect(this.saveButton).toHaveText('saved ✓', { timeout: 10_000 })
+    // Optimistically try to click the "save" button (matches only when dirty & idle).
+    // If autosave fires mid-click the error is swallowed; we just wait for saved state.
+    try {
+      const saveBtn = this.page.getByRole('button', { name: /^save$/ })
+      if (await saveBtn.isEnabled({ timeout: 300 }).catch(() => false)) {
+        await saveBtn.click({ timeout: 2_000 })
+      }
+    } catch {
+      // Autosave may have taken over — that's fine.
+    }
+    // Wait for autosave or manual save to land.
+    await expect(this.page.getByRole('button', { name: /saved ✓/ })).toBeVisible({ timeout: 10_000 })
   }
 
   /** Get the bounding box of a node on the canvas. */
