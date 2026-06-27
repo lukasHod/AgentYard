@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -22,6 +22,9 @@ import { EmptyMessage } from '../components/ui/EmptyMessage'
 import { pushToast } from '../state/toastStore'
 import { NodeEditor } from './editor/NodeEditor'
 import { WorkflowNodeView } from './editor/WorkflowNodeView'
+import { AgentSubNode } from './editor/AgentSubNode'
+import { SkillSubNode } from './editor/SkillSubNode'
+import { buildSubNodes, agentKey } from './editor/buildSubNodes'
 
 const ToolEditorModal = lazy(() =>
   import('../components/tools/ToolEditorModal').then((m) => ({ default: m.ToolEditorModal })),
@@ -38,17 +41,25 @@ interface Props {
 
 type WorkflowRFNode = RFNode<{ node: WorkflowNode }>
 
+const NODE_TYPES = {
+  workflow: WorkflowNodeView,
+  agentSub: AgentSubNode,
+  skillSub: SkillSubNode,
+}
+
 function toRFNode(node: WorkflowNode): WorkflowRFNode {
-  return {
-    id: node.id,
-    position: node.position,
-    type: 'workflow',
-    data: { node },
-  }
+  return { id: node.id, position: node.position, type: 'workflow', data: { node } }
 }
 
 function toRFEdge(e: { from: string; to: string }): RFEdge {
-  return { id: `${e.from}->${e.to}`, source: e.from, target: e.to, animated: true }
+  return {
+    id: `${e.from}->${e.to}`,
+    source: e.from,
+    sourceHandle: 'wf-out',
+    target: e.to,
+    targetHandle: 'wf-in',
+    animated: true,
+  }
 }
 
 function uniqueId(existing: Set<string>, base: string): string {
@@ -56,6 +67,10 @@ function uniqueId(existing: Set<string>, base: string): string {
   let i = 2
   while (existing.has(`${base}-${i}`)) i++
   return `${base}-${i}`
+}
+
+function isSubNodeId(id: string): boolean {
+  return id.startsWith('agent::') || id.startsWith('skill::')
 }
 
 export function EditorView({
@@ -68,43 +83,54 @@ export function EditorView({
 }: Props) {
   const [nodes, setNodes] = useState<WorkflowRFNode[]>([])
   const [edges, setEdges] = useState<RFEdge[]>([])
+  // Sub-nodes are proper React state (not synthesized) so React Flow can drag them.
+  const [subNodes, setSubNodes] = useState<RFNode[]>([])
+  // subEdges is derived — not stored — so handle direction updates live as nodes are dragged
+
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toolEditor, setToolEditor] = useState<EditorMode | null>(null)
 
-  // Click-through from a node's connected-agents list (or chosen script) to
-  // open the tool editor modal with that tool's definition prefilled.
-  const openToolEditor = useCallback(async (t: ToolSummary) => {
-    if (t.scope !== 'global' && t.scope !== 'planet') {
-      pushToast(
-        'error',
-        `'${t.name}' has scope=${t.scope}, which can't be edited here — adopt or fork it first via the Tools tab.`,
-      )
-      return
-    }
-    if (t.scope === 'planet' && planetId === null) {
-      pushToast('error', `'${t.name}' is project-scoped, but no project is active.`)
-      return
-    }
-    const detailUrl =
-      planetId === null
-        ? `/api/global-tools/${t.type}/${encodeURIComponent(t.name)}`
-        : `/api/planets/${planetId}/tools/${t.scope}/${t.type}/${encodeURIComponent(t.name)}`
-    const res = await apiGet<{ data: unknown }>(detailUrl)
-    if (!res.ok) {
-      pushToast('error', `Could not load ${t.type} '${t.name}': ${res.error}`)
-      return
-    }
-    // ToolEditorModal validates the shape via its EditorMode discriminator.
-    setToolEditor({
-      kind: 'edit',
-      type: t.type,
-      scope: t.scope,
-      initial: res.data.data as never,
-    })
-  }, [planetId])
+  const [agentDetailMap, setAgentDetailMap] = useState<Record<string, AgentTool>>({})
+  // visualLayout holds saved positions loaded from the workflow — used only as the
+  // initial seed when building sub-nodes. Authoritative positions live in subNodes state.
+  const visualLayoutRef = useRef<WorkflowGraph['visualLayout']>(undefined)
+
+  const fetchingAgents = useRef(new Set<string>())
+
+  const openToolEditor = useCallback(
+    async (t: ToolSummary) => {
+      if (t.scope !== 'global' && t.scope !== 'planet') {
+        pushToast('error', `'${t.name}' has scope=${t.scope}, which can't be edited here.`)
+        return
+      }
+      if (t.scope === 'planet' && planetId === null) {
+        pushToast('error', `'${t.name}' is project-scoped, but no project is active.`)
+        return
+      }
+      const detailUrl =
+        planetId === null
+          ? `/api/global-tools/${t.type}/${encodeURIComponent(t.name)}`
+          : `/api/planets/${planetId}/tools/${t.scope}/${t.type}/${encodeURIComponent(t.name)}`
+      const res = await apiGet<{ data: unknown }>(detailUrl)
+      if (!res.ok) {
+        pushToast('error', `Could not load ${t.type} '${t.name}': ${res.error}`)
+        return
+      }
+      setToolEditor({ kind: 'edit', type: t.type, scope: t.scope, initial: res.data.data as never })
+    },
+    [planetId],
+  )
+
+  const openToolEditorForAgent = useCallback(
+    (agentName: string, _workflowNodeId: string) => {
+      const agentSummary = tools.find((t) => t.type === 'agent' && t.name === agentName)
+      if (agentSummary) openToolEditor(agentSummary)
+    },
+    [tools, openToolEditor],
+  )
 
   const openCreateAgent = useCallback(() => {
     setToolEditor({ kind: 'create', type: 'agent', scope: planetId === null ? 'global' : 'planet' })
@@ -112,59 +138,189 @@ export function EditorView({
 
   useEffect(() => {
     if (!workflow) return
+    visualLayoutRef.current = workflow.graph.visualLayout
     setNodes(workflow.graph.nodes.map(toRFNode))
     setEdges(workflow.graph.edges.map(toRFEdge))
     setName(workflow.name)
     setDirty(false)
   }, [workflow])
 
-  // Refresh tool palette every time the editor mounts so newly created
-  // agents/scripts appear without a page reload.
+  useEffect(() => { onRefreshTools() }, [onRefreshTools])
+
+  // Fetch full agent data for every agent referenced in the workflow.
   useEffect(() => {
-    onRefreshTools()
-  }, [onRefreshTools])
+    const allAgentNames = new Set(nodes.flatMap((n) => n.data.node.agents ?? []))
+    for (const agentName of allAgentNames) {
+      if (fetchingAgents.current.has(agentName) || agentDetailMap[agentName]) continue
+      fetchingAgents.current.add(agentName)
+      const agentSummary = tools.find((t) => t.type === 'agent' && t.name === agentName)
+      if (!agentSummary) continue
+      const url =
+        agentSummary.scope === 'global' || planetId === null
+          ? `/api/global-tools/agent/${encodeURIComponent(agentName)}`
+          : `/api/planets/${planetId}/tools/${agentSummary.scope}/agent/${encodeURIComponent(agentName)}`
+      apiGet<{ data: AgentTool }>(url).then((res) => {
+        if (res.ok) setAgentDetailMap((prev) => ({ ...prev, [agentName]: res.data.data }))
+      })
+    }
+  }, [nodes, tools, planetId, agentDetailMap])
+
+  // Topology key: tracks which agents (and their skills) are assigned.
+  // Changes only when agents are added/removed or their skills change — not on position moves.
+  const topologyKey = useMemo(
+    () =>
+      nodes
+        .map((n) => {
+          const agents = n.data.node.agents ?? []
+          const skillStr = agents
+            .map((a) => `${a}[${(agentDetailMap[a]?.skills ?? []).join(',')}]`)
+            .join(',')
+          return `${n.id}:${skillStr}`
+        })
+        .join('|'),
+    [nodes, agentDetailMap],
+  )
+
+  // Rebuild sub-nodes when topology changes. Preserves positions for nodes that still exist.
+  useEffect(() => {
+    const { agentNodes, skillNodes } = buildSubNodes(
+      nodes as Parameters<typeof buildSubNodes>[0],
+      agentDetailMap,
+      visualLayoutRef.current, // initial positions for NEW nodes only
+    )
+    const newSubNodeList = [...agentNodes, ...skillNodes]
+
+    setSubNodes((prev) => {
+      const prevPositions = new Map(prev.map((n) => [n.id, n.position]))
+      return newSubNodeList.map((n) => ({
+        ...n,
+        position: prevPositions.get(n.id) ?? n.position,
+      }))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topologyKey])
+
+  // Derive sub-edges dynamically from live node positions.
+  // This makes handle direction (top vs bottom) flip in real time as nodes are dragged.
+  const subEdges = useMemo((): RFEdge[] => {
+    const wfPositions = new Map(nodes.map((n) => [n.id, n.position]))
+    const result: RFEdge[] = []
+
+    for (const subNode of subNodes) {
+      if (subNode.id.startsWith('agent::')) {
+        // Parse: agent::workflowNodeId::agentName
+        const key = subNode.id.slice('agent::'.length)
+        const sepIdx = key.indexOf('::')
+        if (sepIdx === -1) continue
+        const workflowNodeId = key.slice(0, sepIdx)
+        const parentPos = wfPositions.get(workflowNodeId)
+        if (!parentPos) continue
+
+        // Agent is "above" if its center Y is less than parent's center Y.
+        const agentCenterY = subNode.position.y + 20  // approx half node height
+        const parentCenterY = parentPos.y + 32         // approx half workflow node height
+        const agentIsAbove = agentCenterY < parentCenterY
+
+        result.push({
+          id: `wf-agent::${workflowNodeId}->${subNode.id}`,
+          source: workflowNodeId,
+          sourceHandle: agentIsAbove ? 'agents-top' : 'agents-bottom',
+          target: subNode.id,
+          targetHandle: agentIsAbove ? 'conn-bottom' : 'conn-top',
+          animated: false,
+          style: { stroke: '#7c3aed', strokeWidth: 1.5, strokeDasharray: '4 3' },
+        })
+      } else if (subNode.id.startsWith('skill::')) {
+        // Parse: skill::workflowNodeId::agentName::skillName
+        const key = subNode.id.slice('skill::'.length)
+        const parts = key.split('::')
+        if (parts.length < 3) continue
+        const workflowNodeId = parts[0]!
+        const agentName = parts[1]!
+        const agentNodeId = `agent::${agentKey(workflowNodeId, agentName)}`
+        result.push({
+          id: `agent-skill::${agentNodeId}->${subNode.id}`,
+          source: agentNodeId,
+          sourceHandle: 'skill-out',
+          target: subNode.id,
+          targetHandle: 'skill-in',
+          animated: false,
+          style: { stroke: '#a21caf', strokeWidth: 1, strokeDasharray: '3 3' },
+        })
+      }
+    }
+
+    return result
+  }, [nodes, subNodes])
 
   const agents = useMemo(
-    () =>
-      tools.filter((t) => t.type === 'agent' && (t.scope === 'planet' || t.scope === 'global')),
+    () => tools.filter((t) => t.type === 'agent' && (t.scope === 'planet' || t.scope === 'global')),
     [tools],
   )
   const scripts = useMemo(() => tools.filter((t) => t.type === 'script'), [tools])
 
-  const onNodesChange = useCallback((changes: NodeChange<WorkflowRFNode>[]) => {
-    const removedIds = changes
-      .filter(
-        (c): c is NodeChange<WorkflowRFNode> & { type: 'remove'; id: string } =>
-          c.type === 'remove',
-      )
+  const allNodes = useMemo(() => [...nodes, ...subNodes] as RFNode[], [nodes, subNodes])
+  const allEdges = useMemo(() => [...edges, ...subEdges], [edges, subEdges])
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    // Split changes: workflow nodes vs sub-nodes.
+    const wfChanges = changes.filter((c) => !isSubNodeId((c as { id: string }).id))
+    const subChanges = changes.filter(
+      (c) => isSubNodeId((c as { id: string }).id) && c.type !== 'remove',
+    )
+
+    // Apply workflow node changes (position, select, dimensions, remove).
+    const wfRemoves = wfChanges
+      .filter((c): c is NodeChange & { type: 'remove'; id: string } => c.type === 'remove')
       .map((c) => c.id)
-    setNodes((nds) => applyNodeChanges(changes, nds))
-    if (removedIds.length > 0) {
-      // Garbage-collect orphan edges.
-      setEdges((eds) =>
-        eds.filter((e) => !removedIds.includes(e.source) && !removedIds.includes(e.target)),
-      )
+
+    setNodes((nds) => applyNodeChanges(wfChanges as NodeChange<WorkflowRFNode>[], nds))
+
+    if (wfRemoves.length > 0) {
+      setEdges((eds) => eds.filter((e) => !wfRemoves.includes(e.source) && !wfRemoves.includes(e.target)))
+      setSelectedId((cur) => (cur && wfRemoves.includes(cur) ? null : cur))
       setDirty(true)
-      setSelectedId((cur) => (cur && removedIds.includes(cur) ? null : cur))
-    } else if (changes.some((c) => c.type === 'position' && !c.dragging)) {
+    } else if (wfChanges.some((c) => c.type === 'position' && !(c as { dragging?: boolean }).dragging)) {
       setDirty(true)
+    }
+
+    // Apply sub-node changes (position, select, dimensions) — this is what enables dragging.
+    if (subChanges.length > 0) {
+      setSubNodes((prev) => applyNodeChanges(subChanges, prev))
+      if (subChanges.some((c) => c.type === 'position' && !(c as { dragging?: boolean }).dragging)) {
+        setDirty(true)
+      }
     }
   }, [])
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges((eds) => applyEdgeChanges(changes, eds))
-    if (changes.some((c) => c.type === 'remove')) setDirty(true)
+    const filtered = changes.filter(
+      (c) => !(c.type === 'remove' && (c.id.startsWith('wf-agent::') || c.id.startsWith('agent-skill::'))),
+    )
+    setEdges((eds) => applyEdgeChanges(filtered, eds))
+    if (filtered.some((c) => c.type === 'remove')) setDirty(true)
   }, [])
 
   const onConnect = useCallback((conn: Connection) => {
     if (!conn.source || !conn.target || conn.source === conn.target) return
-    setEdges((eds) =>
-      addEdge({ ...conn, id: `${conn.source}->${conn.target}`, animated: true }, eds),
-    )
+    if (isSubNodeId(conn.source) || isSubNodeId(conn.target)) return
+    setEdges((eds) => addEdge({ ...conn, id: `${conn.source}->${conn.target}`, animated: true }, eds))
     setDirty(true)
   }, [])
 
-  const onNodeClick = useCallback((_: unknown, n: WorkflowRFNode) => setSelectedId(n.id), [])
+  const onNodeClick = useCallback(
+    (_: unknown, n: RFNode) => {
+      setSelectedId(n.id)
+      if (n.id.startsWith('agent::')) {
+        const key = n.id.slice('agent::'.length)
+        const parts = key.split('::')
+        if (parts.length >= 2) {
+          openToolEditorForAgent(parts.slice(1).join('::'), parts[0] ?? '')
+        }
+      }
+    },
+    [openToolEditorForAgent],
+  )
   const onPaneClick = useCallback(() => setSelectedId(null), [])
 
   const selectedNode = useMemo(
@@ -177,8 +333,7 @@ export function EditorView({
     setNodes((nds) =>
       nds.map((n) => {
         if (n.id !== selectedId) return n
-        const merged = { ...n.data.node, ...patch }
-        return { ...n, data: { node: merged } }
+        return { ...n, data: { node: { ...n.data.node, ...patch } } }
       }),
     )
     setDirty(true)
@@ -191,29 +346,15 @@ export function EditorView({
     const offsetY = 120 + (nodes.length % 4) * 40
     const node: WorkflowNode =
       type === 'ai'
-        ? {
-            id,
-            title: 'New AI node',
-            type: 'ai',
-            position: { x: offsetX, y: offsetY },
-            prompt: '',
-            agents: [],
-          }
-        : {
-            id,
-            title: 'New script node',
-            type: 'custom',
-            position: { x: offsetX, y: offsetY },
-            customType: 'script',
-            args: {},
-          }
+        ? { id, title: 'New AI node', type: 'ai', position: { x: offsetX, y: offsetY }, prompt: '', agents: [] }
+        : { id, title: 'New script node', type: 'custom', position: { x: offsetX, y: offsetY }, customType: 'script', args: {} }
     setNodes((nds) => [...nds, toRFNode(node)])
     setSelectedId(id)
     setDirty(true)
   }
 
   function deleteSelected() {
-    if (!selectedId) return
+    if (!selectedId || isSubNodeId(selectedId)) return
     const id = selectedId
     setNodes((nds) => nds.filter((n) => n.id !== id))
     setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id))
@@ -224,11 +365,20 @@ export function EditorView({
   async function handleSave() {
     if (!workflow) return
     setSaving(true)
+    // Compute visualLayout from current subNodes positions at save time.
+    const agentPositions: Record<string, { x: number; y: number }> = {}
+    const skillPositions: Record<string, { x: number; y: number }> = {}
+    for (const n of subNodes) {
+      if (n.id.startsWith('agent::')) agentPositions[n.id.slice('agent::'.length)] = n.position
+      else if (n.id.startsWith('skill::')) skillPositions[n.id.slice('skill::'.length)] = n.position
+    }
     const graph: WorkflowGraph = {
       nodes: nodes.map((n) => ({ ...n.data.node, position: n.position })),
       edges: edges.map((e) => ({ from: e.source, to: e.target })),
+      visualLayout: { agents: agentPositions, skills: skillPositions },
     }
     await onSave({ ...workflow, name, graph })
+    visualLayoutRef.current = graph.visualLayout
     setSaving(false)
     setDirty(false)
   }
@@ -241,16 +391,15 @@ export function EditorView({
     )
   }
 
+  const canDelete = selectedId && !isSubNodeId(selectedId)
+
   return (
     <div className="flex-1 flex bg-black">
       <div className="flex-1 relative bg-black">
         <div className="absolute top-2 left-2 z-10 flex items-center gap-2 text-xs">
           <input
             value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setDirty(true)
-            }}
+            onChange={(e) => { setName(e.target.value); setDirty(true) }}
             className="bg-black border border-cyan-500/40 rounded px-2 py-1 w-72 focus:outline-none focus:border-cyan-300"
             placeholder="workflow name"
           />
@@ -262,19 +411,13 @@ export function EditorView({
             {saving ? 'saving…' : dirty ? 'save' : 'saved ✓'}
           </button>
           <span className="mx-1 text-zinc-700">|</span>
-          <button
-            onClick={() => addNode('ai')}
-            className="px-3 py-1 border border-cyan-500/60 text-cyan-300 hover:bg-cyan-500/20"
-          >
+          <button onClick={() => addNode('ai')} className="px-3 py-1 border border-cyan-500/60 text-cyan-300 hover:bg-cyan-500/20">
             + AI node
           </button>
-          <button
-            onClick={() => addNode('custom')}
-            className="px-3 py-1 border border-amber-500/60 text-amber-300 hover:bg-amber-500/20"
-          >
+          <button onClick={() => addNode('custom')} className="px-3 py-1 border border-amber-500/60 text-amber-300 hover:bg-amber-500/20">
             + script node
           </button>
-          {selectedId && (
+          {canDelete && (
             <button
               onClick={deleteSelected}
               className="px-3 py-1 border border-rose-500/60 text-rose-300 hover:bg-rose-500/20"
@@ -284,7 +427,7 @@ export function EditorView({
             </button>
           )}
           <span className="mx-1 text-zinc-700">|</span>
-          {selectedId && (
+          {selectedId && !isSubNodeId(selectedId) && (
             <button
               onClick={() => onOpenTestRun({ scope: 'node', nodeId: selectedId })}
               className="px-3 py-1 border border-fuchsia-500/60 text-fuchsia-300 hover:bg-fuchsia-500/20"
@@ -304,14 +447,14 @@ export function EditorView({
 
         <div style={{ height: 'calc(100vh - 60px)' }}>
           <ReactFlow
-            nodes={nodes}
-            edges={edges}
+            nodes={allNodes}
+            edges={allEdges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
-            nodeTypes={{ workflow: WorkflowNodeView }}
+            nodeTypes={NODE_TYPES}
             colorMode="dark"
             fitView
           >
@@ -336,6 +479,7 @@ export function EditorView({
           <EmptyMessage>click a node to edit it, or use the palette to add one</EmptyMessage>
         )}
       </aside>
+
       {toolEditor && (
         <Suspense fallback={null}>
           <ToolEditorModal
@@ -346,20 +490,21 @@ export function EditorView({
             onSaved={(saved) => {
               setToolEditor(null)
               onRefreshTools()
-              if (toolEditor.kind === 'create' && toolEditor.type === 'agent' && selectedId) {
+              if (toolEditor.kind === 'create' && toolEditor.type === 'agent' && selectedId && !isSubNodeId(selectedId)) {
                 const agent = saved as AgentTool
                 setNodes((nds) =>
                   nds.map((n) => {
                     if (n.id !== selectedId) return n
                     const current = n.data.node.agents ?? []
                     if (current.includes(agent.name)) return n
-                    return {
-                      ...n,
-                      data: { node: { ...n.data.node, agents: [...current, agent.name] } },
-                    }
+                    return { ...n, data: { node: { ...n.data.node, agents: [...current, agent.name] } } }
                   }),
                 )
                 setDirty(true)
+              }
+              if (toolEditor.kind === 'edit' && toolEditor.type === 'agent') {
+                const agent = saved as AgentTool
+                setAgentDetailMap((prev) => ({ ...prev, [agent.name]: agent }))
               }
             }}
           />

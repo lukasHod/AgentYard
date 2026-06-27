@@ -100,9 +100,23 @@ export const WorkflowEdgeSchema = z.object({
   to: z.string(),
 })
 
+const VisualPositionSchema = z.object({ x: z.number(), y: z.number() })
+
 export const WorkflowGraphSchema = z.object({
   nodes: z.array(WorkflowNodeSchema),
   edges: z.array(WorkflowEdgeSchema),
+  /**
+   * Optional visual positions for agent and skill sub-nodes in the editor.
+   * Keys: `"${workflowNodeId}::${agentName}"` for agents,
+   *       `"${workflowNodeId}::${agentName}::${skillName}"` for skills.
+   * Not used at runtime — editor-only persistence.
+   */
+  visualLayout: z
+    .object({
+      agents: z.record(z.string(), VisualPositionSchema),
+      skills: z.record(z.string(), VisualPositionSchema),
+    })
+    .optional(),
 })
 
 export const WorkflowSchema = z.object({
