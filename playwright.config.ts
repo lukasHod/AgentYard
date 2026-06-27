@@ -7,7 +7,7 @@ export default defineConfig({
   workers: 1, // serial — app has shared SQLite state
   reporter: [['html', { outputFolder: 'e2e-report' }], ['list']],
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
     headless: true,
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -21,7 +21,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5173',
+    url: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
