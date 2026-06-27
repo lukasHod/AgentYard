@@ -53,6 +53,27 @@ export class AppPage {
       .waitFor({ timeout: 10_000 })
   }
 
+  /**
+   * Click the canvas until any FocusedPanel appears (any planet focused).
+   * Does not require a specific planet name.
+   */
+  async clickAnyPlanet() {
+    const wfBtn = this.page.getByText('workflow editor', { exact: false })
+    const already = await wfBtn.isVisible().catch(() => false)
+    if (already) return
+
+    const canvas = this.page.locator('canvas').first()
+    const box = await canvas.boundingBox()
+    if (!box) throw new Error('Canvas not found')
+    // Try a few canvas positions to hit a planet.
+    for (const [dx, dy] of [[0, -0.15], [0.15, 0], [-0.15, 0], [0, 0.15], [0, 0]]) {
+      await this.page.mouse.click(box.x + box.width * (0.5 + (dx as number)), box.y + box.height * (0.5 + (dy as number)))
+      const appeared = await wfBtn.waitFor({ timeout: 2_000 }).then(() => true).catch(() => false)
+      if (appeared) return
+    }
+    throw new Error('No planet focused after clicking canvas')
+  }
+
   /** Wait for the FocusedPanel to be visible (any planet focused). */
   async waitForFocusedPanel() {
     // The workflow editor button is only shown in the focused panel.
@@ -61,7 +82,7 @@ export class AppPage {
 
   /** Click the "⚙ workflow editor" button in the FocusedPanel toolbar. */
   async openWorkflowEditor() {
-    await this.page.getByText('workflow editor', { exact: false }).click()
-    await this.page.getByText('WORKFLOW EDITOR', { exact: false }).waitFor({ timeout: 5_000 })
+    await this.page.getByRole('button', { name: /workflow editor/i }).click()
+    await this.page.getByRole('heading', { name: /WORKFLOW EDITOR/i }).waitFor({ timeout: 5_000 })
   }
 }
