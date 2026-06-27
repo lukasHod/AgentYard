@@ -69,8 +69,8 @@ function uniqueId(existing: Set<string>, base: string): string {
   return `${base}-${i}`
 }
 
-function isSubNodeId(id: string): boolean {
-  return id.startsWith('agent::') || id.startsWith('skill::')
+function isSubNodeId(id: string | undefined): boolean {
+  return typeof id === 'string' && (id.startsWith('agent::') || id.startsWith('skill::'))
 }
 
 export function EditorView({
@@ -141,6 +141,9 @@ export function EditorView({
     visualLayoutRef.current = workflow.graph.visualLayout
     setNodes(workflow.graph.nodes.map(toRFNode))
     setEdges(workflow.graph.edges.map(toRFEdge))
+    setSubNodes([])
+    setAgentDetailMap({})
+    fetchingAgents.current = new Set()
     setName(workflow.name)
     setDirty(false)
   }, [workflow])
@@ -161,7 +164,8 @@ export function EditorView({
           : `/api/planets/${planetId}/tools/${agentSummary.scope}/agent/${encodeURIComponent(agentName)}`
       apiGet<{ data: AgentTool }>(url).then((res) => {
         if (res.ok) setAgentDetailMap((prev) => ({ ...prev, [agentName]: res.data.data }))
-      })
+        else fetchingAgents.current.delete(agentName)
+      }).catch(() => { fetchingAgents.current.delete(agentName) })
     }
   }, [nodes, tools, planetId, agentDetailMap])
 
@@ -169,15 +173,16 @@ export function EditorView({
   // Changes only when agents are added/removed or their skills change — not on position moves.
   const topologyKey = useMemo(
     () =>
-      nodes
-        .map((n) => {
-          const agents = n.data.node.agents ?? []
-          const skillStr = agents
-            .map((a) => `${a}[${(agentDetailMap[a]?.skills ?? []).join(',')}]`)
-            .join(',')
-          return `${n.id}:${skillStr}`
-        })
-        .join('|'),
+      JSON.stringify(
+        nodes.map((n) => ({
+          id: n.id,
+          agents: (n.data.node.agents ?? []).map((a) => ({
+            name: a,
+            skills: agentDetailMap[a]?.skills ?? [],
+            description: agentDetailMap[a]?.description ?? '',
+          })),
+        })),
+      ),
     [nodes, agentDetailMap],
   )
 
@@ -189,13 +194,34 @@ export function EditorView({
       visualLayoutRef.current, // initial positions for NEW nodes only
     )
     const newSubNodeList = [...agentNodes, ...skillNodes]
+    // Build a lookup of where buildSubNodes placed each agent so we can compute
+    // the delta to the agent's live (potentially dragged) position below.
+    const builtAgentPositions = new Map(agentNodes.map((a) => [a.id, a.position]))
 
     setSubNodes((prev) => {
       const prevPositions = new Map(prev.map((n) => [n.id, n.position]))
-      return newSubNodeList.map((n) => ({
-        ...n,
-        position: prevPositions.get(n.id) ?? n.position,
-      }))
+      return newSubNodeList.map((n) => {
+        const existingPos = prevPositions.get(n.id)
+        if (existingPos) return { ...n, position: existingPos }
+
+        // For NEW skill nodes, anchor relative to the agent's current live position
+        // so they appear near the agent even if it was dragged since the last save.
+        if (n.id.startsWith('skill::')) {
+          const parts = n.id.slice('skill::'.length).split('::')
+          if (parts.length >= 3) {
+            const agentNodeId = `agent::${parts[0]}::${parts[1]}`
+            const currentAgentPos = prevPositions.get(agentNodeId)
+            const builtAgentPos = builtAgentPositions.get(agentNodeId)
+            if (currentAgentPos && builtAgentPos) {
+              const dx = currentAgentPos.x - builtAgentPos.x
+              const dy = currentAgentPos.y - builtAgentPos.y
+              return { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
+            }
+          }
+        }
+
+        return n
+      })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topologyKey])
@@ -304,6 +330,9 @@ export function EditorView({
   const onConnect = useCallback((conn: Connection) => {
     if (!conn.source || !conn.target || conn.source === conn.target) return
     if (isSubNodeId(conn.source) || isSubNodeId(conn.target)) return
+    // Reject connections that originate from the agent-passthrough handles — those
+    // are only wired to agent sub-nodes via subEdges and must not create wf→wf edges.
+    if (conn.sourceHandle === 'agents-top' || conn.sourceHandle === 'agents-bottom') return
     setEdges((eds) => addEdge({ ...conn, id: `${conn.source}->${conn.target}`, animated: true }, eds))
     setDirty(true)
   }, [])

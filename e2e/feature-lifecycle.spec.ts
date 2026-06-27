@@ -145,12 +145,9 @@ test.describe('Feature Lifecycle — Workflow Execution @slow @api', () => {
     await editor.attachAgent('developer')
     await editor.attachAgent('tester')
 
-    // Verify 2 agent sub-nodes appear.
-    await expect(editor.agentSubNodes()).toHaveCount(
-      // The canvas might have more if previous nodes also have agents.
-      // Just check that 2 new ones appeared.
-      expect.any(Number) as never,
-    )
+    // Verify at least 2 agent sub-nodes appear (the canvas may have more from other nodes).
+    const subNodeCount = await editor.agentSubNodes().count()
+    expect(subNodeCount).toBeGreaterThanOrEqual(2)
 
     await editor.save()
     await editor.close()
@@ -160,11 +157,8 @@ test.describe('Feature Lifecycle — Workflow Execution @slow @api', () => {
     const featureName = `e2e-ts14-${Date.now()}`
     await features.createFeature(featureName, 'Add logging to the app')
 
-    // Wait for at least 2 terminals to appear.
-    await expect(terminal.allTerminals()).toHaveCount(
-      expect.any(Number) as never,
-    )
-    // We expect at least 2 terminals for the 2-agent node.
+    // Wait for at least 2 terminals to appear (one per agent in the multi-agent node).
+    await terminal.waitForTerminalTabs(2, 60_000)
     const termCount = await terminal.allTerminals().count()
     expect(termCount).toBeGreaterThanOrEqual(2)
   })

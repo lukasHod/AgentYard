@@ -6,7 +6,11 @@ export class TerminalPage {
 
   /** Wait for at least N terminal session tabs to appear. */
   async waitForTerminalTabs(minCount: number, timeout = 30_000) {
-    await expect(this.page.locator('.xterm-viewport')).toHaveCount(minCount, { timeout })
+    await this.page.waitForFunction(
+      (n: number) => document.querySelectorAll('.xterm-viewport').length >= n,
+      minCount,
+      { timeout },
+    )
   }
 
   /** Get all visible terminal viewports. */

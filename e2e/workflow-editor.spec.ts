@@ -41,9 +41,6 @@ test.describe('Workflow Editor — UI', () => {
     await editor.waitForReady()
 
     // Verify at least one workflow node is present (the seeded default workflow has nodes).
-    await expect(page.locator('.react-flow__node[data-type="workflow"]')).toHaveCount(
-      expect.any(Number) as never,
-    )
     const nodeCount = await page.locator('.react-flow__node[data-type="workflow"]').count()
     expect(nodeCount).toBeGreaterThanOrEqual(1)
   })
@@ -97,9 +94,6 @@ test.describe('Workflow Editor — UI', () => {
 
     // Verify a dashed edge exists from workflow node to agent node.
     // React Flow renders edges as SVG paths — check at least one sub-edge svg exists.
-    await expect(page.locator('.react-flow__edges path')).toHaveCount(
-      expect.any(Number) as never,
-    )
     const edgeCount = await page.locator('.react-flow__edges path').count()
     expect(edgeCount).toBeGreaterThanOrEqual(1)
 

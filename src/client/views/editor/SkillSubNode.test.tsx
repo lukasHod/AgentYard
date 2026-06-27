@@ -6,7 +6,7 @@ vi.mock('@xyflow/react', () => ({
   Handle: ({ type, position }: { type: string; position: string }) => (
     <div data-testid={`handle-${type}`} data-position={position} />
   ),
-  Position: { Left: 'left', Right: 'right' },
+  Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
 }))
 
 afterEach(() => cleanup())
