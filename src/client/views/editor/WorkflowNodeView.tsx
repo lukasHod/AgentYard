@@ -14,6 +14,7 @@ export function WorkflowNodeView({
   selected?: boolean
 }) {
   const n = data.node
+  const hasAgents = n.type === 'ai' && (n.agents ?? []).length > 0
   const subtitle =
     n.type === 'ai'
       ? `${(n.agents ?? []).length} agent${(n.agents ?? []).length === 1 ? '' : 's'}`
@@ -29,8 +30,16 @@ export function WorkflowNodeView({
       <div className="text-[10px] tracking-widest opacity-70 uppercase">{n.type}</div>
       <div className="text-sm mt-0.5">{n.title}</div>
       <div className="text-[10px] mt-2 text-zinc-500">{subtitle}</div>
-      <Handle type="target" position={Position.Left} style={{ background: '#22d3ee' }} />
-      <Handle type="source" position={Position.Right} style={{ background: '#22d3ee' }} />
+      {/* Workflow-to-workflow connections */}
+      <Handle id="wf-in" type="target" position={Position.Left} style={{ background: '#22d3ee' }} />
+      <Handle id="wf-out" type="source" position={Position.Right} style={{ background: '#22d3ee' }} />
+      {/* Agent sub-node connections — both top and bottom so edges can flip */}
+      {hasAgents && (
+        <>
+          <Handle id="agents-top" type="source" position={Position.Top} style={{ background: '#8b5cf6' }} />
+          <Handle id="agents-bottom" type="source" position={Position.Bottom} style={{ background: '#8b5cf6' }} />
+        </>
+      )}
     </div>
   )
 }

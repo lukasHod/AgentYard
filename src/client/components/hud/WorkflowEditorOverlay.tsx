@@ -52,7 +52,10 @@ export function WorkflowEditorOverlay({ planetId, onClose }: Props) {
       graph: updated.graph,
     })
     if (res.ok) setWorkflow(res.data)
-    else pushToast('error', `Save failed: ${res.error}`)
+    else {
+      pushToast('error', `Save failed: ${res.error}`)
+      throw new Error(res.error)
+    }
   }
 
   return (

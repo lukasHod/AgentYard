@@ -23,5 +23,5 @@
       "@client/*": ["src/client/*"]
     }
   },
-  "include": ["src/**/*", "*.config.ts", "*.config.js"]
+  "include": ["src/**/*", "*.config.ts", "*.config.js", "tests/e2e/**/*"]
 }
