@@ -1,0 +1,4 @@
+interface:
+  display_name: "AgentYard PW UAT"
+  short_description: "Use headed Playwright for fast AgentYard UI UAT."
+  default_prompt: "Verify this AgentYard UI change with headed Playwright UAT and report console/network failures."
