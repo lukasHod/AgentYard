@@ -267,9 +267,22 @@ async function runAINodeOnTerminals(
   }
 
   // Write the initial task to the leader's stdin.
-  // A short delay lets the CLI process start reading before we push data.
-  await new Promise<void>((resolve) => setTimeout(resolve, 300))
-  terminals.write(leaderSession.id, `${input.task}\n`)
+  // Two-phase write: type the text after a short delay so it pre-fills the
+  // input field, then send \r (carriage return = Enter in raw-mode TUI) after
+  // a longer delay.  Claude Code's readline isn't ready to process Enter until
+  // the TUI has fully initialized — on Windows/ConPTY this takes ~1-2 s after
+  // process start, so \r sent at 300 ms is silently dropped.
+  // When task is empty (e.g. a "Feature start" gather-intent node), send
+  // nothing — leave the terminal at the input prompt so the user types first.
+  // Sending a generic trigger like "begin" causes Claude Code to start
+  // exploring the codebase rather than following the node's system prompt.
+  const taskText = input.task.trim()
+  if (taskText) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 300))
+    terminals.write(leaderSession.id, taskText)
+    await new Promise<void>((resolve) => setTimeout(resolve, 2000))
+    terminals.write(leaderSession.id, '\r')
+  }
 
   // Race three signals:
   //   A. Bridge mark-node-complete (preferred — agent explicitly signals done)
@@ -438,9 +451,12 @@ async function runReviewLoopNode(
       }
     }
 
-    // Write initial task message to leader stdin.
+    // Write initial task message to leader stdin (two-phase: text early, \r after TUI ready).
+    const devTaskText = input.task.trim() || 'begin'
     await new Promise<void>((r) => setTimeout(r, 300))
-    terminals.write(leaderSession.id, `${input.task}\n`)
+    terminals.write(leaderSession.id, devTaskText)
+    await new Promise<void>((r) => setTimeout(r, 2000))
+    terminals.write(leaderSession.id, '\r')
 
     // Wait for developer leader to call mark-node-complete or exit.
     const devResult = await new Promise<NodeRunResult>((resolve, reject) => {
@@ -533,10 +549,14 @@ async function runReviewLoopNode(
       }
     }
 
-    // Write task prompt to each reviewer's stdin.
+    // Write task prompt to each reviewer's stdin (two-phase: text early, \r after TUI ready).
     await new Promise<void>((r) => setTimeout(r, 300))
     for (const sessionId of reviewerSessions.values()) {
-      terminals.write(sessionId, `Please review the implementation described above.\n`)
+      terminals.write(sessionId, `Please review the implementation described above.`)
+    }
+    await new Promise<void>((r) => setTimeout(r, 2000))
+    for (const sessionId of reviewerSessions.values()) {
+      terminals.write(sessionId, '\r')
     }
 
     // Wait for all required reviewers to submit their decisions.

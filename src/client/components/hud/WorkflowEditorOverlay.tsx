@@ -26,13 +26,25 @@ export function WorkflowEditorOverlay({ planetId, onClose }: Props) {
     else pushToast('error', `Tool library load failed: ${res.error}`)
   }, [toolLibraryUrl])
 
-  // Load the (single) global workflow and the scoped tool library when mounted.
+  // Load the planet's assigned workflow (or fall back to the first global one).
   useEffect(() => {
-    void apiGet<Workflow[]>('/api/workflows').then((res) => {
+    const loadWorkflow = async () => {
+      if (planetId !== null) {
+        const planetRes = await apiGet<{ workflowId: number | null }>(`/api/planets/${planetId}`)
+        if (planetRes.ok && planetRes.data.workflowId !== null) {
+          const wfRes = await apiGet<Workflow>(`/api/workflows/${planetRes.data.workflowId}`)
+          if (wfRes.ok) {
+            setWorkflow(wfRes.data)
+            return
+          }
+        }
+      }
+      const res = await apiGet<Workflow[]>('/api/workflows')
       if (res.ok && res.data[0]) setWorkflow(res.data[0])
-    })
+    }
+    void loadWorkflow()
     void refreshTools()
-  }, [refreshTools])
+  }, [planetId, refreshTools])
 
   // Esc closes — use capture phase to beat BackOutHandler's listener.
   useEffect(() => {
