@@ -11,6 +11,7 @@ import type { TerminalSessionManager } from './runtime/TerminalSessionManager.js
 import type { TypedIOServer, TypedSocket } from './socketTypes.js'
 import { updateLoopRun, getLoopRun, listActiveLoopRuns } from './reviewLoopStore.js'
 import { reviewGateRegistry } from './reviewGateRegistry.js'
+import { getSdkBridge } from './runtime/SdkTerminalBridge.js'
 
 export interface WireSocketDeps {
   app: FastifyInstance
@@ -125,7 +126,12 @@ export function wireSocketHandlers(deps: WireSocketDeps): void {
 
     socket.on('terminal:input', (payload: ClientEvents['terminal:input']) => {
       if (typeof payload?.sessionId !== 'string' || typeof payload.data !== 'string') return
-      terminals.write(payload.sessionId, payload.data)
+      const bridge = getSdkBridge(payload.sessionId)
+      if (bridge) {
+        bridge.write(payload.data)
+      } else {
+        terminals.write(payload.sessionId, payload.data)
+      }
     })
 
     socket.on('terminal:resize', (payload: ClientEvents['terminal:resize']) => {

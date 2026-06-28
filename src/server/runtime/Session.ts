@@ -17,6 +17,7 @@ import {
   type ClarificationGateway,
   type ClarificationRequest,
 } from './tools/requestClarification.js'
+import type { IAgentSession } from './IAgentSession.js'
 
 type AnyTool = SdkMcpToolDefinition<any>
 
@@ -108,7 +109,7 @@ const CLARIFICATION_TOOL_NAME = `mcp__${RUNTIME_NAMESPACE}__request_clarificatio
  * channel, an event emitter for SDK output, and a clarification gateway
  * that lets the agent ask the user questions mid-turn.
  */
-export class Session extends EventEmitter implements ClarificationGateway {
+export class Session extends EventEmitter implements IAgentSession, ClarificationGateway {
   private inputQueue = new AsyncQueue<SDKUserMessage>()
   private q?: Query
   private pendingClarifications = new Map<string, (answer: string) => void>()
@@ -131,6 +132,10 @@ export class Session extends EventEmitter implements ClarificationGateway {
 
   get role(): AgentRole {
     return this.opts.role
+  }
+
+  get model(): string | undefined {
+    return this.opts.model
   }
 
   get state(): AgentState {

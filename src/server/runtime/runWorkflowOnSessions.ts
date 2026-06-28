@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { McpServerConfig, SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
+import type { AgentSpawnedInfo } from '../AuditRecorder.js'
 import type { Workflow } from '../../core/schema.js'
 import {
   runWorkflow as coreRunWorkflow,
@@ -19,7 +20,8 @@ import type { ScanContext } from '../tools/scanner.js'
 import type { AgentTool, McpTool, ScriptTool, SkillTool } from '../../core/tools.js'
 import { resolveEnvVarsDeep } from '../secrets.js'
 import { runScriptNode } from './scriptRuntime.js'
-import { resolveAgentKind } from '../agentKindCascade.js'
+import { resolveAgentKind, resolveModel } from '../agentKindCascade.js'
+import { SdkTerminalBridge, registerSdkBridge, unregisterSdkBridge } from './SdkTerminalBridge.js'
 import type { TerminalSessionManager } from './TerminalSessionManager.js'
 import type { TerminalManagerEvent } from './TerminalSessionManager.js'
 import { bridgeRegistry } from '../bridgeRegistry.js'
@@ -83,6 +85,10 @@ export interface RunWorkflowOptions {
    * nodes throw a descriptive error at runtime.
    */
   scm?: ScmAdapter
+  /** Pre-supplied run ID — allows callers to create the audit record before the workflow starts. */
+  runId?: string
+  /** Called after each agent drone (or leader) is spawned, with resolved capability info. */
+  onAgentSpawned?: (info: AgentSpawnedInfo, runId: string) => void
 }
 
 const DEFAULT_AI_NODE_TIMEOUT_MS = 30 * 60 * 1000 // 30 min
@@ -99,6 +105,8 @@ interface RunAINodeDeps {
   terminals?: TerminalSessionManager
   io?: TypedIOServer
   scm?: ScmAdapter
+  runId?: string
+  onAgentSpawned?: (info: AgentSpawnedInfo, runId: string) => void
 }
 
 /** Spawn leader + agents for an AI node, run it, return the leader's result. */
@@ -107,11 +115,16 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
   const node = input.node
 
   // Resolve which agent runtime this node should use.
-  const agentKind = resolveAgentKind({
-    nodeOverride: node.agentKind,
-    featureId: deps.featureId,
-    planetId: deps.planetId,
-  })
+  // Use 'workflow' context so planets that pin their interactive terminal to
+  // 'claude-cli' don't accidentally force workflow node agents to use the CLI too.
+  const agentKind = resolveAgentKind(
+    {
+      nodeOverride: node.agentKind,
+      featureId: deps.featureId,
+      planetId: deps.planetId,
+    },
+    'workflow',
+  )
 
   // CLI kinds (claude-code-cli, codex-cli) run in PTY terminal sessions rather
   // than in-process SDK sessions. Fall back to SDK if no terminal manager is
@@ -125,12 +138,10 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
   }
 
   const agentNames = node.agents ?? []
-  if (agentNames.length === 0) {
-    throw new Error(`AI node ${node.id} has no agents connected`)
-  }
 
-  // Resolve each agent name from the library (planet → global → error), then
-  // spawn drones in parallel (each drone resolves its own attached tools).
+  // Resolve each connected agent from the library (planet → global → error),
+  // then spawn them as drones in parallel. When no agents are connected the
+  // leader runs solo — it can still use all Claude Code tools directly.
   const resolvedAgents = await Promise.all(
     agentNames.map(async (name) => {
       const r = await resolveTool('agent', name, ctx)
@@ -140,8 +151,9 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
       return r.data
     }),
   )
+  const auditOpts = { runId: deps.runId, onAgentSpawned: deps.onAgentSpawned }
   const drones = await Promise.all(
-    resolvedAgents.map((agent) => spawnAgentDrone(manager, ctx, node.id, agent, input.cwd)),
+    resolvedAgents.map((agent) => spawnAgentDrone(manager, ctx, node.id, agent, input.cwd, auditOpts)),
   )
   const droneByRole = new Map<string, Session>()
   for (let i = 0; i < resolvedAgents.length; i++) {
@@ -164,34 +176,70 @@ async function runAINodeOnSessions(deps: RunAINodeDeps): Promise<NodeRunResult> 
     onComplete: (r) => gate.complete({ summary: r.summary, outputs: r.outputs, next: r.next }),
   })
 
-  const assignTaskTool = createAssignTaskTool({
-    resolveDrone: (target) => droneByRole.get(target),
-    rosterDescription: [...droneByRole.keys()].join(', '),
-  })
+  // Only wire assign_task when there are drones to delegate to.
+  const assignTaskTool =
+    droneByRole.size > 0
+      ? createAssignTaskTool({
+          resolveDrone: (target) => droneByRole.get(target),
+          rosterDescription: [...droneByRole.keys()].join(', '),
+        })
+      : null
 
   const leaderPrompt = deps.handoffContext
     ? `${deps.handoffContext}\n\n${input.prompt}`
     : input.prompt
+
+  const leaderModel = resolveModel({
+    nodeModel: node.model,
+    planetId: deps.planetId,
+  })
+
   const leader = manager.spawn({
     role: 'leader',
     label: `${node.id}/leader`,
     systemPrompt: leaderPrompt,
-    runtimeTools: [assignTaskTool, markCompleteTool] as AnyTool[],
+    model: leaderModel,
+    toolPreset: 'claude_code',
+    cwd: input.cwd,
+    runtimeTools: (assignTaskTool
+      ? [assignTaskTool, markCompleteTool]
+      : [markCompleteTool]) as AnyTool[],
   })
+
+  // Attach a bridge so the leader session renders in an xterm.js panel.
+  let bridge: SdkTerminalBridge | null = null
+  if (deps.io) {
+    bridge = new SdkTerminalBridge(leader, deps.io, {
+      role: 'leader',
+      label: `${node.title} / leader`,
+      cwd: input.cwd,
+      planetId: deps.planetId,
+      featureId: deps.featureId,
+      workflowRunId: deps.runId,
+    })
+    bridge.attach()
+    registerSdkBridge(bridge)
+  }
 
   const onLeaderEvent = (ev: SessionEvent) => {
     if (ev.type === 'closed') gate.notifyClosed()
   }
   leader.on('event', onLeaderEvent)
 
-  leader.sendUserMessage(
-    'Begin executing this workflow node. Follow your instructions, delegate to agents, then call mark_node_complete with the summary.',
-  )
+  // Send the task text as the initial user message. When task is empty (a
+  // "gather intent" node like Feature Start), send a minimal trigger so the
+  // SDK agent executes its system prompt and produces its opening response.
+  // The trigger itself is not echoed to the terminal — only Claude's reply is.
+  leader.sendUserMessage(input.task.trim() || '.')
 
   try {
     return await gate.result
   } finally {
     leader.off('event', onLeaderEvent)
+    if (bridge) {
+      unregisterSdkBridge(bridge.terminalSessionId)
+      bridge.detach(0)
+    }
     gate.dispose()
   }
 }
@@ -267,9 +315,22 @@ async function runAINodeOnTerminals(
   }
 
   // Write the initial task to the leader's stdin.
-  // A short delay lets the CLI process start reading before we push data.
-  await new Promise<void>((resolve) => setTimeout(resolve, 300))
-  terminals.write(leaderSession.id, `${input.task}\n`)
+  // Two-phase write: type the text after a short delay so it pre-fills the
+  // input field, then send \r (carriage return = Enter in raw-mode TUI) after
+  // a longer delay.  Claude Code's readline isn't ready to process Enter until
+  // the TUI has fully initialized — on Windows/ConPTY this takes ~1-2 s after
+  // process start, so \r sent at 300 ms is silently dropped.
+  // When task is empty (e.g. a "Feature start" gather-intent node), send
+  // nothing — leave the terminal at the input prompt so the user types first.
+  // Sending a generic trigger like "begin" causes Claude Code to start
+  // exploring the codebase rather than following the node's system prompt.
+  const taskText = input.task.trim()
+  if (taskText) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 300))
+    terminals.write(leaderSession.id, taskText)
+    await new Promise<void>((resolve) => setTimeout(resolve, 2000))
+    terminals.write(leaderSession.id, '\r')
+  }
 
   // Race three signals:
   //   A. Bridge mark-node-complete (preferred — agent explicitly signals done)
@@ -438,9 +499,12 @@ async function runReviewLoopNode(
       }
     }
 
-    // Write initial task message to leader stdin.
+    // Write initial task message to leader stdin (two-phase: text early, \r after TUI ready).
+    const devTaskText = input.task.trim() || 'begin'
     await new Promise<void>((r) => setTimeout(r, 300))
-    terminals.write(leaderSession.id, `${input.task}\n`)
+    terminals.write(leaderSession.id, devTaskText)
+    await new Promise<void>((r) => setTimeout(r, 2000))
+    terminals.write(leaderSession.id, '\r')
 
     // Wait for developer leader to call mark-node-complete or exit.
     const devResult = await new Promise<NodeRunResult>((resolve, reject) => {
@@ -533,10 +597,14 @@ async function runReviewLoopNode(
       }
     }
 
-    // Write task prompt to each reviewer's stdin.
+    // Write task prompt to each reviewer's stdin (two-phase: text early, \r after TUI ready).
     await new Promise<void>((r) => setTimeout(r, 300))
     for (const sessionId of reviewerSessions.values()) {
-      terminals.write(sessionId, `Please review the implementation described above.\n`)
+      terminals.write(sessionId, `Please review the implementation described above.`)
+    }
+    await new Promise<void>((r) => setTimeout(r, 2000))
+    for (const sessionId of reviewerSessions.values()) {
+      terminals.write(sessionId, '\r')
     }
 
     // Wait for all required reviewers to submit their decisions.
@@ -600,6 +668,7 @@ async function spawnAgentDrone(
   nodeId: string,
   agent: AgentTool,
   cwd: string | undefined,
+  auditOpts?: { runId?: string; onAgentSpawned?: (info: AgentSpawnedInfo, runId: string) => void },
 ): Promise<Session> {
   // Resolve all attached capabilities in parallel. Missing references are
   // silently dropped — they surface as "missing reference" badges in the UI.
@@ -631,6 +700,7 @@ async function spawnAgentDrone(
   // Wrap user-defined scripts as MCP-style tools.
   const scriptTools = scripts.map((s) => createScriptTool({ script: s, cwd }) as AnyTool)
 
+  const scope = auditOpts?.runId ? { runId: auditOpts.runId } : undefined
   const drone = manager.spawn({
     role: 'drone',
     label: `${nodeId}/${agent.role || agent.name}`,
@@ -641,7 +711,34 @@ async function spawnAgentDrone(
     ...(agent.model ? { model: agent.model } : {}),
     scriptTools,
     mcpServerConfigs,
+    scope,
   })
+
+  if (auditOpts?.onAgentSpawned && auditOpts.runId) {
+    const sdkOpts = drone.buildSdkOptions()
+    const effectiveTools = Array.isArray(sdkOpts.tools) ? sdkOpts.tools : ['claude_code_preset']
+    auditOpts.onAgentSpawned(
+      {
+        sessionId: drone.id,
+        nodeId,
+        agentName: agent.name,
+        role: agent.role || agent.name,
+        runtimeKind: 'claude-sdk',
+        model: agent.model,
+        cwd,
+        skillNames: skills.map((s) => s.name),
+        scriptNames: scripts.map((s) => s.name),
+        mcpNames: Object.keys(mcpServerConfigs),
+        toolPreset: agent.toolPreset,
+        allowedTools: agent.allowedTools,
+        effectiveTools: sdkOpts.allowedTools ?? effectiveTools,
+        permissionMode: sdkOpts.permissionMode,
+        enforcementStatus: 'verified',
+      },
+      auditOpts.runId,
+    )
+  }
+
   return drone
 }
 
@@ -694,7 +791,7 @@ function renderSkillContextFromTools(skills: SkillTool[]): string {
 }
 
 export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<string> {
-  const runId = randomUUID()
+  const runId = opts.runId ?? randomUUID()
   const aiNodeTimeoutMs = opts.aiNodeTimeoutMs ?? DEFAULT_AI_NODE_TIMEOUT_MS
   await coreRunWorkflow(opts.workflow, {
     runId,
@@ -724,6 +821,8 @@ export async function runWorkflowOnSessions(opts: RunWorkflowOptions): Promise<s
         terminals: opts.terminals,
         io: opts.io,
         scm: opts.scm,
+        runId,
+        onAgentSpawned: opts.onAgentSpawned,
       })
     },
   })

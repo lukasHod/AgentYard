@@ -186,7 +186,7 @@ export type TerminalSessionState = 'running' | 'exited' | 'killed' | 'runtime_lo
 export interface TerminalSessionDescriptor {
   id: string
   profileId: TerminalProfileId
-  runtimeKind: 'pty'
+  runtimeKind: 'pty' | 'sdk-bridge'
   planetId: number | null
   featureId: number | null
   workflowRunId: string | null

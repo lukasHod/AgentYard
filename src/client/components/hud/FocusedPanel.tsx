@@ -35,8 +35,7 @@ import { apiPost, apiDelete } from '../../api'
 import { pushToast } from '../../state/toastStore'
 import { useNotificationRows } from '../hud/useNotificationRows'
 import { usePendingQuestions, useReviewLoopRunsByFeature } from '../../state/socketStore'
-import { planetSetting } from '../../../core/types'
-import { DescriptionTab, FeaturesTab, PlansTab } from './FocusedPanelTabs'
+import { DescriptionTab, FeatureRunsSection, FeaturesTab, PlansTab } from './FocusedPanelTabs'
 import type {
   ClientEvents,
   PlanetSummary,
@@ -394,19 +393,6 @@ function FeatureWorkspace({
   const selectedId = useUiStore((s) => s.selectedTabByFeature[feature.id] ?? null)
   const selectFeatureTab = useUiStore((s) => s.selectFeatureTab)
 
-  const leaderSpawnReq = useMemo<ClientEvents['terminal:start']>(
-    () => ({
-      profileId:
-        (planetSetting(planet.settings, 'default-terminal-type') as TerminalProfileId | null) ??
-        DEFAULT_TERMINAL_PROFILE,
-      planetId: planet.id,
-      featureId: feature.id,
-      cwd,
-      role: 'leader',
-    }),
-    [planet.id, planet.settings, feature.id, cwd],
-  )
-
   const leaderTerminal = pickScopedTerminal(featureTerminals, {
     planetId: planet.id,
     featureId: feature.id,
@@ -572,17 +558,26 @@ function FeatureWorkspace({
       </div>
       <div className="flex-1 relative">
         {activeTab.role === 'leader' ? (
-          <ScopedPrimaryTerminal
-            title="LEADER"
-            subtitle={`${feature.chatName ?? feature.name}${branchTag}`}
-            scope={{ planetId: planet.id, featureId: feature.id, role: 'leader' }}
-            spawnReq={leaderSpawnReq}
-            availability={
-              planet.pathExists
-                ? { kind: 'available' }
-                : { kind: 'unavailable', message: 'project path is missing on disk.' }
-            }
-          />
+          !planet.pathExists ? (
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
+              <EmptyMessage>project path is missing on disk — restore the path or delete the project.</EmptyMessage>
+            </div>
+          ) : leaderTerminal ? (
+            <div className="flex flex-col h-full text-sm">
+              <TerminalHeader
+                title="LEADER"
+                subtitle={`${feature.chatName ?? feature.name}${branchTag}`}
+                onRestart={TERMINAL_DEAD_STATES.has(leaderTerminal.state) ? () => restartTerminal(leaderTerminal.id) : undefined}
+              />
+              <div className="flex-1 relative">
+                <TerminalPanel sessionId={leaderTerminal.id} />
+              </div>
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-4">
+              <EmptyMessage>{connected ? 'workflow starting…' : 'offline — reconnect to start.'}</EmptyMessage>
+            </div>
+          )
         ) : activeTab.terminal ? (
           <TerminalPanel sessionId={activeTab.terminal.id} />
         ) : (
@@ -1131,6 +1126,9 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
           <p className="text-sm text-rose-200 whitespace-pre-wrap mt-1">{feature.error}</p>
         </>
       )}
+
+      <div className="text-xs tracking-widest text-slate-400 mt-6 mb-2">RUNS</div>
+      <FeatureRunsSection featureId={feature.id} />
     </>
   )
 }

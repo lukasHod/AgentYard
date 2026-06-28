@@ -1,14 +1,18 @@
 import type { FastifyBaseLogger } from 'fastify'
 import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
 import { getDb } from './db.js'
-import { getFeature } from './features.js'
+import { getFeature, updateFeature } from './features.js'
 import { getPlanet } from './planets.js'
 import type { RunRegistry } from './runState.js'
 import type { Session, SessionEvent } from './runtime/Session.js'
 import type { SessionDescriptor, SessionManager } from './runtime/SessionManager.js'
 import type { TerminalSessionManager } from './runtime/TerminalSessionManager.js'
 import { createUpdateFeatureInfoTool } from './runtime/tools/updateFeatureInfo.js'
-import { createRunFeatureWorkflowTool } from './runtime/tools/runFeatureWorkflow.js'
+import {
+  createRunFeatureWorkflowTool,
+  executeFeatureWorkflow,
+  type RunFeatureWorkflowDeps,
+} from './runtime/tools/runFeatureWorkflow.js'
 import type { TypedIOServer, TypedSocket } from './socketTypes.js'
 
 type AnyTool = SdkMcpToolDefinition<any>
@@ -82,9 +86,11 @@ function buildSystemPrompt(opts: {
     '',
     'Two things you do:',
     '1. Discuss and explore the feature with the user — answer questions, brainstorm, explore the code.',
-    '2. When the user is ready to implement, call `run_workflow` to start the automated build pipeline.',
+    '2. When the user asks to rerun or run a different workflow, call `mcp__ay_runtime__run_workflow`.',
     '',
     'After your FIRST response to the user, call `update_feature_info` with a short slug name (e.g. "dashboard-redesign"), a human-readable chatName (e.g. "Dashboard Readability Redesign"), and a 1-3 sentence description summarizing what this feature is about. Do this only once.',
+    '',
+    'Note: the workflow has already been started automatically — you do NOT need to call run_workflow on first message.',
     '',
     'Style: terse, direct, no preamble.',
   ].join('\n')
@@ -249,6 +255,30 @@ export class FeatureChatRegistry {
         content: ev.message.text,
         timestamp: ev.message.timestamp,
       })
+      // Auto-start the workflow on the first user message for a fresh feature.
+      // At this point the message IS the task — save it and immediately kick
+      // off the default workflow without waiting for the agent to call the tool.
+      if (ev.message.role === 'user') {
+        const feature = getFeature(featureId)
+        if (feature && !feature.task) {
+          const task = ev.message.text
+          const updated = updateFeature(featureId, { task })
+          if (updated) this.deps.io.emit('feature:updated', updated)
+          const wfDeps: RunFeatureWorkflowDeps = {
+            featureId,
+            planetId: feature.planetId,
+            manager: this.deps.manager,
+            terminals: this.deps.terminals,
+            io: this.deps.io,
+            runState: this.deps.runState,
+            log: this.deps.log,
+            scm: this.deps.scm,
+          }
+          executeFeatureWorkflow(wfDeps).catch((err) => {
+            this.deps.log.error({ err }, 'featureChat: auto-trigger workflow failed')
+          })
+        }
+      }
     } else if (ev.type === 'closed') {
       // The Claude SDK closed under us (e.g. model error). Drop the mapping
       // so the next openChat() respawns fresh — but keep persisted history.

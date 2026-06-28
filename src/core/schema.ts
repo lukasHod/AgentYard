@@ -71,6 +71,13 @@ export const WorkflowNodeSchema = z.object({
   agentKind: z.enum(['claude-sdk', 'claude-code-cli', 'codex-cli']).optional(),
 
   /**
+   * Optional model override for the leader of this node (AI nodes only).
+   * Falls back to planet default-model setting → global config default → adapter
+   * built-in default. Drones can further override via their own AgentTool.model.
+   */
+  model: z.string().optional(),
+
+  /**
    * Phase 14: reviewer/developer loop policy. When present on an AI node the
    * runner repeats a dev→review cycle until all required reviewers approve
    * or maxIterations is reached. CLI (PTY) mode only — SDK fallback runs a

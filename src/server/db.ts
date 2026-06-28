@@ -87,18 +87,26 @@ CREATE INDEX IF NOT EXISTS idx_feature_chat_messages_feature
 -- are rebuildable by replaying events.
 
 CREATE TABLE IF NOT EXISTS runs (
-  id              TEXT PRIMARY KEY,
-  feature_id      INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
-  workflow_id     INTEGER NOT NULL,
-  task            TEXT NOT NULL,
-  agent_kind      TEXT NOT NULL DEFAULT 'claude-sdk',
-  state           TEXT NOT NULL DEFAULT 'not_started',
-  reason          TEXT,
-  final_summary   TEXT,
-  error           TEXT,
-  cwd             TEXT,
-  created_at      INTEGER NOT NULL,
-  updated_at      INTEGER NOT NULL
+  id                              TEXT PRIMARY KEY,
+  feature_id                      INTEGER NOT NULL REFERENCES features(id) ON DELETE CASCADE,
+  workflow_id                     INTEGER NOT NULL,
+  task                            TEXT NOT NULL,
+  agent_kind                      TEXT NOT NULL DEFAULT 'claude-sdk',
+  state                           TEXT NOT NULL DEFAULT 'not_started',
+  reason                          TEXT,
+  final_summary                   TEXT,
+  error                           TEXT,
+  cwd                             TEXT,
+  workflow_name                   TEXT,
+  workflow_snapshot_json          TEXT,
+  workflow_snapshot_hash          TEXT,
+  resolved_capability_snapshot_json TEXT,
+  branch                          TEXT,
+  worktree_path                   TEXT,
+  started_at                      INTEGER,
+  completed_at                    INTEGER,
+  created_at                      INTEGER NOT NULL,
+  updated_at                      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_feature ON runs(feature_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_state ON runs(state);
@@ -112,32 +120,81 @@ CREATE TABLE IF NOT EXISTS node_runs (
   summary       TEXT,
   outputs_json  TEXT,
   started_at    INTEGER,
-  ended_at      INTEGER
+  ended_at      INTEGER,
+  node_type     TEXT,
+  custom_type   TEXT,
+  prompt_hash   TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_node_runs_run ON node_runs(run_id);
 
 CREATE TABLE IF NOT EXISTS runner_sessions (
-  id            TEXT PRIMARY KEY,
-  run_id        TEXT REFERENCES runs(id) ON DELETE CASCADE,
-  node_run_id   TEXT REFERENCES node_runs(id) ON DELETE CASCADE,
-  feature_id    INTEGER REFERENCES features(id) ON DELETE CASCADE,
-  planet_id     INTEGER REFERENCES planets(id) ON DELETE CASCADE,
-  agent_kind    TEXT NOT NULL,
-  runtime_kind  TEXT NOT NULL,
-  role          TEXT NOT NULL,
-  label         TEXT,
-  state         TEXT NOT NULL DEFAULT 'not_started',
-  reason        TEXT,
-  pid           INTEGER,
-  pipe_path     TEXT,
-  cwd           TEXT,
-  created_at    INTEGER NOT NULL,
-  updated_at    INTEGER NOT NULL
+  id                  TEXT PRIMARY KEY,
+  run_id              TEXT REFERENCES runs(id) ON DELETE CASCADE,
+  node_run_id         TEXT REFERENCES node_runs(id) ON DELETE CASCADE,
+  feature_id          INTEGER REFERENCES features(id) ON DELETE CASCADE,
+  planet_id           INTEGER REFERENCES planets(id) ON DELETE CASCADE,
+  agent_kind          TEXT NOT NULL,
+  runtime_kind        TEXT NOT NULL,
+  role                TEXT NOT NULL,
+  label               TEXT,
+  state               TEXT NOT NULL DEFAULT 'not_started',
+  reason              TEXT,
+  pid                 INTEGER,
+  pipe_path           TEXT,
+  cwd                 TEXT,
+  agent_name          TEXT,
+  model               TEXT,
+  prompt_hash         TEXT,
+  skills_json         TEXT,
+  scripts_json        TEXT,
+  mcps_json           TEXT,
+  tool_preset         TEXT,
+  allowed_tools_json  TEXT,
+  effective_tools_json TEXT,
+  permission_mode     TEXT,
+  enforcement_status  TEXT NOT NULL DEFAULT 'unknown',
+  enforcement_reason  TEXT,
+  terminal_session_id TEXT,
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_runner_sessions_run ON runner_sessions(run_id);
 CREATE INDEX IF NOT EXISTS idx_runner_sessions_feature ON runner_sessions(feature_id);
 CREATE INDEX IF NOT EXISTS idx_runner_sessions_planet ON runner_sessions(planet_id);
 CREATE INDEX IF NOT EXISTS idx_runner_sessions_state ON runner_sessions(state);
+
+CREATE TABLE IF NOT EXISTS workflow_node_attempts (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id         TEXT    NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  node_run_id    TEXT    NOT NULL REFERENCES node_runs(id) ON DELETE CASCADE,
+  attempt_number INTEGER NOT NULL,
+  status         TEXT    NOT NULL DEFAULT 'running',
+  started_at     INTEGER NOT NULL,
+  completed_at   INTEGER,
+  summary        TEXT,
+  error          TEXT,
+  resume_count   INTEGER NOT NULL DEFAULT 0,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wna_node_run ON workflow_node_attempts(node_run_id);
+
+CREATE TABLE IF NOT EXISTS workflow_audit_events (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id          TEXT    NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  node_run_id     TEXT    REFERENCES node_runs(id) ON DELETE SET NULL,
+  node_attempt_id INTEGER REFERENCES workflow_node_attempts(id) ON DELETE SET NULL,
+  session_id      TEXT    REFERENCES runner_sessions(id) ON DELETE SET NULL,
+  event_type      TEXT    NOT NULL,
+  title           TEXT    NOT NULL,
+  summary         TEXT,
+  details_json    TEXT,
+  severity        TEXT    NOT NULL DEFAULT 'info',
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wae_run ON workflow_audit_events(run_id, id);
+CREATE INDEX IF NOT EXISTS idx_wae_node_run ON workflow_audit_events(node_run_id);
 
 CREATE TABLE IF NOT EXISTS runner_events (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -301,6 +358,108 @@ function runAddTerminalSessionLabelMigration(db: DB) {
   }
 }
 
+function runAddAuditRunColumnsMigration(db: DB) {
+  if (!tableExists(db, 'runs')) return
+  const cols: Array<[string, string]> = [
+    ['workflow_name', 'TEXT'],
+    ['workflow_snapshot_json', 'TEXT'],
+    ['workflow_snapshot_hash', 'TEXT'],
+    ['resolved_capability_snapshot_json', 'TEXT'],
+    ['branch', 'TEXT'],
+    ['worktree_path', 'TEXT'],
+    ['started_at', 'INTEGER'],
+    ['completed_at', 'INTEGER'],
+  ]
+  for (const [col, type] of cols) {
+    if (!columnExists(db, 'runs', col)) {
+      db.exec(`ALTER TABLE runs ADD COLUMN ${col} ${type}`)
+    }
+  }
+}
+
+function runAddAuditNodeRunColumnsMigration(db: DB) {
+  if (!tableExists(db, 'node_runs')) return
+  const cols: Array<[string, string]> = [
+    ['node_type', 'TEXT'],
+    ['custom_type', 'TEXT'],
+    ['prompt_hash', 'TEXT'],
+    ['attempt_count', 'INTEGER NOT NULL DEFAULT 1'],
+  ]
+  for (const [col, type] of cols) {
+    if (!columnExists(db, 'node_runs', col)) {
+      db.exec(`ALTER TABLE node_runs ADD COLUMN ${col} ${type}`)
+    }
+  }
+}
+
+function runAddAuditSessionColumnsMigration(db: DB) {
+  if (!tableExists(db, 'runner_sessions')) return
+  const cols: Array<[string, string]> = [
+    ['agent_name', 'TEXT'],
+    ['model', 'TEXT'],
+    ['prompt_hash', 'TEXT'],
+    ['skills_json', 'TEXT'],
+    ['scripts_json', 'TEXT'],
+    ['mcps_json', 'TEXT'],
+    ['tool_preset', 'TEXT'],
+    ['allowed_tools_json', 'TEXT'],
+    ['effective_tools_json', 'TEXT'],
+    ['permission_mode', 'TEXT'],
+    ['enforcement_status', "TEXT NOT NULL DEFAULT 'unknown'"],
+    ['enforcement_reason', 'TEXT'],
+    ['terminal_session_id', 'TEXT'],
+  ]
+  for (const [col, type] of cols) {
+    if (!columnExists(db, 'runner_sessions', col)) {
+      db.exec(`ALTER TABLE runner_sessions ADD COLUMN ${col} ${type}`)
+    }
+  }
+}
+
+function runAddWorkflowNodeAttemptsTable(db: DB) {
+  if (!tableExists(db, 'workflow_node_attempts')) {
+    db.exec(`
+      CREATE TABLE workflow_node_attempts (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id         TEXT    NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        node_run_id    TEXT    NOT NULL REFERENCES node_runs(id) ON DELETE CASCADE,
+        attempt_number INTEGER NOT NULL,
+        status         TEXT    NOT NULL DEFAULT 'running',
+        started_at     INTEGER NOT NULL,
+        completed_at   INTEGER,
+        summary        TEXT,
+        error          TEXT,
+        resume_count   INTEGER NOT NULL DEFAULT 0,
+        created_at     INTEGER NOT NULL,
+        updated_at     INTEGER NOT NULL
+      );
+      CREATE INDEX idx_wna_node_run ON workflow_node_attempts(node_run_id);
+    `)
+  }
+}
+
+function runAddWorkflowAuditEventsTable(db: DB) {
+  if (!tableExists(db, 'workflow_audit_events')) {
+    db.exec(`
+      CREATE TABLE workflow_audit_events (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id          TEXT    NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        node_run_id     TEXT    REFERENCES node_runs(id) ON DELETE SET NULL,
+        node_attempt_id INTEGER REFERENCES workflow_node_attempts(id) ON DELETE SET NULL,
+        session_id      TEXT    REFERENCES runner_sessions(id) ON DELETE SET NULL,
+        event_type      TEXT    NOT NULL,
+        title           TEXT    NOT NULL,
+        summary         TEXT,
+        details_json    TEXT,
+        severity        TEXT    NOT NULL DEFAULT 'info',
+        created_at      INTEGER NOT NULL
+      );
+      CREATE INDEX idx_wae_run ON workflow_audit_events(run_id, id);
+      CREATE INDEX idx_wae_node_run ON workflow_audit_events(node_run_id);
+    `)
+  }
+}
+
 function runMigratePlanetDefaultTerminalProfileToSettings(db: DB) {
   if (tableExists(db, 'planets') && columnExists(db, 'planets', 'default_terminal_profile')) {
     db.exec(`
@@ -419,6 +578,11 @@ export function getDb(): DB {
   runAddReviewLoopTables(db)
   runAddFeaturePrStateMigration(db)
   runAddTerminalSessionLabelMigration(db)
+  runAddAuditRunColumnsMigration(db)
+  runAddAuditNodeRunColumnsMigration(db)
+  runAddAuditSessionColumnsMigration(db)
+  runAddWorkflowNodeAttemptsTable(db)
+  runAddWorkflowAuditEventsTable(db)
   _db = db
   return db
 }

@@ -38,7 +38,7 @@ function rowToDescriptor(row: TerminalSessionRow): TerminalSessionDescriptor {
   return {
     id: row.id,
     profileId: row.profile_id as TerminalProfileId,
-    runtimeKind: 'pty',
+    runtimeKind: row.runtime_kind === 'sdk-bridge' ? 'sdk-bridge' : 'pty',
     planetId: row.planet_id,
     featureId: row.feature_id,
     workflowRunId: row.workflow_run_id,
@@ -95,6 +95,48 @@ export function createTerminalSession(record: {
       JSON.stringify(record.argv),
       record.env ? JSON.stringify(record.env) : null,
       record.pid ?? null,
+      now,
+      now,
+      now,
+    )
+  return getTerminalSession(record.id)!
+}
+
+/**
+ * Register a virtual terminal session backed by an SDK agent (no PTY process).
+ * The session appears in the terminal list with runtimeKind 'sdk-bridge' so
+ * the socket layer can route input to the bridge instead of a PTY write.
+ */
+export function createSdkBridgeTerminalSession(record: {
+  id: string
+  agentSessionId: string
+  role?: string | null
+  label?: string | null
+  cwd?: string | null
+  planetId?: number | null
+  featureId?: number | null
+  workflowRunId?: string | null
+  nodeRunId?: string | null
+}): TerminalSessionDescriptor {
+  const now = Date.now()
+  getDb()
+    .prepare(
+      `INSERT INTO terminal_sessions
+       (id, profile_id, runtime_kind, planet_id, feature_id, workflow_run_id, node_run_id,
+        agent_session_id, role, label, cwd, argv_json, env_json, state, pid, created_at, updated_at,
+        last_started_at)
+       VALUES (?, 'claude-cli', 'sdk-bridge', ?, ?, ?, ?, ?, ?, ?, ?, '[]', NULL, 'running', NULL, ?, ?, ?)`,
+    )
+    .run(
+      record.id,
+      record.planetId ?? null,
+      record.featureId ?? null,
+      record.workflowRunId ?? null,
+      record.nodeRunId ?? null,
+      record.agentSessionId,
+      record.role ?? null,
+      record.label ?? null,
+      record.cwd ?? null,
       now,
       now,
       now,
