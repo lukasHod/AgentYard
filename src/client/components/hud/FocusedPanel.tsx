@@ -1005,9 +1005,20 @@ function PrCiPanel({ feature }: { feature: FeatureSummary }) {
 function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
   const [markingDone, setMarkingDone] = useState(false)
   const [handoffTarget, setHandoffTarget] = useState<FeatureSummary | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const back = useUiStore((s) => s.back)
   const allPending = usePendingQuestions()
   const featurePending = allPending.filter((q) => q.featureId === feature.id)
   const reviewLoopRuns = useReviewLoopRunsByFeature(feature.id)
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    back()
+    const res = await apiDelete(`/api/features/${feature.id}`)
+    setDeleting(false)
+    if (!res.ok) pushToast('error', `delete failed: ${res.error}`)
+  }
 
   const handleMarkDone = async () => {
     setMarkingDone(true)
@@ -1129,6 +1140,29 @@ function ShipInfoPanel({ feature }: { feature: FeatureSummary }) {
 
       <div className="text-xs tracking-widest text-slate-400 mt-6 mb-2">RUNS</div>
       <FeatureRunsSection featureId={feature.id} />
+
+      <div className="mt-6 pt-4 border-t border-slate-700/50">
+        {confirmingDelete ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">delete all data?</span>
+            <GlassButton variant="ghost" className="text-xs" onClick={() => setConfirmingDelete(false)}>
+              cancel
+            </GlassButton>
+            <GlassButton
+              variant="danger"
+              className="text-xs"
+              onClick={() => { setConfirmingDelete(false); void handleDelete() }}
+              disabled={deleting}
+            >
+              {deleting ? 'deleting…' : 'confirm delete'}
+            </GlassButton>
+          </div>
+        ) : (
+          <GlassButton variant="danger" className="text-xs" onClick={() => setConfirmingDelete(true)}>
+            ✕ delete feature
+          </GlassButton>
+        )}
+      </div>
     </>
   )
 }
