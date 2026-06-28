@@ -38,7 +38,9 @@ import { registerBrowseFolderRoute } from './routes/browseFolder.js'
 import { registerHandoffRoutes } from './routes/handoffs.js'
 import { registerBridgeRoutes } from './routes/bridge.js'
 import { registerTerminalRoutes } from './routes/terminals.js'
+import { registerAuditRunRoutes } from './routes/runs-audit.js'
 import { reviewLoopEmitter } from './reviewLoopStore.js'
+import { AuditRecorder, setAuditRecorder } from './AuditRecorder.js'
 import type { ReviewLoopRun } from '../core/types.js'
 import { GitHubScmAdapter } from './scm/githubScm.js'
 import { PrWatcher } from './watchers/prWatcher.js'
@@ -96,6 +98,9 @@ export async function startServer(opts: ServerOptions) {
     return reply.code(code).send({ error: publicMessage })
   }
 
+  const auditRecorder = new AuditRecorder(app.log)
+  setAuditRecorder(auditRecorder)
+
   const manager = new SessionManager()
   const terminals = new TerminalSessionManager()
   manager.setRuntimeContext(createPersistingRuntimeContext(app.log))
@@ -130,6 +135,7 @@ export async function startServer(opts: ServerOptions) {
     if (ev.type === 'closed') app.log.info(`Session ${ev.agentRunId} closed`)
     transcripts.onSessionEvent(ev)
     pendingQuestions.onSessionEvent(ev.agentRunId, ev)
+    auditRecorder.onSessionEvent(ev)
   })
   terminals.on('terminal:event', (ev: TerminalManagerEvent) => {
     switch (ev.type) {
@@ -207,6 +213,7 @@ export async function startServer(opts: ServerOptions) {
   registerFeatureRoutes(ctx)
   registerHandoffRoutes(ctx)
   registerTerminalRoutes(ctx)
+  registerAuditRunRoutes(ctx)
 
   const address = await app.listen({ port: opts.port, host: '127.0.0.1' })
   // Expose the bridge URL so terminal sessions inherit it via TerminalSessionManager.

@@ -119,6 +119,7 @@ export function updateFeature(
   id: number,
   patch: Partial<{
     name: string
+    task: string
     description: string | null
     chatName: string | null
     branch: string | null
@@ -142,6 +143,7 @@ export function updateFeature(
   const sets: string[] = []
   const vals: unknown[] = []
   if ('name' in patch) { sets.push('name = ?'); vals.push(patch.name) }
+  if ('task' in patch) { sets.push('task = ?'); vals.push(patch.task) }
   if ('description' in patch) { sets.push('description = ?'); vals.push(patch.description) }
   if ('chatName' in patch) { sets.push('chat_name = ?'); vals.push(patch.chatName) }
   if ('branch' in patch) { sets.push('branch = ?'); vals.push(patch.branch) }

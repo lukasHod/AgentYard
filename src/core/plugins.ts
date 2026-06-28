@@ -14,7 +14,7 @@ import type { AgentRole, AgentState } from './types.js'
  */
 
 export type AgentKind = 'claude-sdk' | 'claude-code-cli' | 'codex-cli'
-export type RuntimeKind = 'sdk' | 'pty'
+export type RuntimeKind = 'sdk' | 'pty' | 'sdk-bridge'
 
 /**
  * Canonical lifecycle states (mirror AO). The chat-surface AgentState in

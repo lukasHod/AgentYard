@@ -4,6 +4,7 @@ import path from 'node:path'
 import { z } from 'zod/v4'
 import type { AgentKind } from '../core/plugins.js'
 import { getDb } from './db.js'
+import { getPlanetSetting } from './planetSettings.js'
 
 /**
  * Phase 6: which AgentKind should drive a given chat / drone / leader?
@@ -58,11 +59,21 @@ export function refreshGlobalDefaultAgentKind(): void {
   _cachedGlobal = null
 }
 
-function lookupPlanetDefault(planetId: number): AgentKind | null {
+function lookupPlanetDefault(planetId: number, context: 'workflow' | 'terminal'): AgentKind | null {
   const row = getDb()
     .prepare('SELECT default_agent_kind FROM planets WHERE id = ?')
     .get(planetId) as { default_agent_kind?: string | null } | undefined
-  return isAgentKind(row?.default_agent_kind) ? row!.default_agent_kind : null
+  if (isAgentKind(row?.default_agent_kind)) return row!.default_agent_kind
+  // For terminal spawns (planet view, manual sessions), honour the terminal-type
+  // setting so claude-cli planets open Claude Code CLI by default.
+  // For workflow spawns, skip this: the terminal-type preference is about the
+  // interactive planet terminal, NOT which agent SDK runs workflow nodes.
+  // Workflow nodes default to 'claude-sdk' via getGlobalDefaultAgentKind().
+  if (context === 'terminal') {
+    const terminalType = getPlanetSetting(planetId, 'default-terminal-type')
+    if (terminalType === 'claude-cli') return 'claude-code-cli'
+  }
+  return null
 }
 
 function lookupFeatureDefault(featureId: number): AgentKind | null {
@@ -85,16 +96,73 @@ export interface CascadeInput {
  * Resolve an AgentKind for the surface described in `input`. Walks the
  * cascade top-to-bottom and returns the first concrete kind found. Falls
  * back to the global default if nothing along the chain is set.
+ *
+ * `context` controls whether the planet's `default-terminal-type` setting is
+ * consulted: pass `'terminal'` for interactive planet/manual terminal spawns;
+ * pass `'workflow'` for workflow node agent spawns. Workflow nodes should use
+ * `'claude-sdk'` by default regardless of terminal-type, which is a user-
+ * facing preference for the interactive terminal only.
  */
-export function resolveAgentKind(input: CascadeInput): AgentKind {
+export function resolveAgentKind(input: CascadeInput, context: 'workflow' | 'terminal' = 'terminal'): AgentKind {
   if (isAgentKind(input.nodeOverride)) return input.nodeOverride
   if (input.featureId != null) {
     const fk = lookupFeatureDefault(input.featureId)
     if (fk) return fk
   }
   if (input.planetId != null) {
-    const pk = lookupPlanetDefault(input.planetId)
+    const pk = lookupPlanetDefault(input.planetId, context)
     if (pk) return pk
   }
   return getGlobalDefaultAgentKind()
+}
+
+// ── Model cascade ─────────────────────────────────────────────────────────────
+
+const GlobalModelConfigSchema = z.object({
+  defaultModel: z.string().optional(),
+})
+
+let _cachedGlobalModel: string | null | undefined = undefined // undefined = not loaded
+
+function getGlobalDefaultModel(): string | undefined {
+  if (_cachedGlobalModel !== undefined) return _cachedGlobalModel ?? undefined
+  if (existsSync(CONFIG_PATH)) {
+    try {
+      const raw = GlobalModelConfigSchema.parse(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+      _cachedGlobalModel = raw.defaultModel ?? null
+      return _cachedGlobalModel ?? undefined
+    } catch {
+      // Fall through — malformed config is not fatal.
+    }
+  }
+  _cachedGlobalModel = null
+  return undefined
+}
+
+/** Test/CLI hook — invalidate the model cache after writing config. */
+export function refreshGlobalDefaultModel(): void {
+  _cachedGlobalModel = undefined
+}
+
+export interface ModelCascadeInput {
+  /** Highest priority — agent definition's model (drone-level override). */
+  agentModel?: string | null
+  /** Then workflow node model (leader-level override). */
+  nodeModel?: string | null
+  /** Then planet default-model setting. */
+  planetId?: number | null
+}
+
+/**
+ * Resolve a model identifier. Most specific wins; returns undefined when
+ * nothing is configured and the adapter should use its own built-in default.
+ */
+export function resolveModel(input: ModelCascadeInput): string | undefined {
+  if (input.agentModel) return input.agentModel
+  if (input.nodeModel) return input.nodeModel
+  if (input.planetId != null) {
+    const pm = getPlanetSetting(input.planetId, 'default-model')
+    if (pm) return pm
+  }
+  return getGlobalDefaultModel()
 }

@@ -8,6 +8,7 @@ import {
 import { removeFeatureWorktree } from '../runtime/worktrees.js'
 import { getPlanet } from '../planets.js'
 import { getDefaultWorkflowIdForNewFeatures } from '../workflows.js'
+import { executeFeatureWorkflow } from '../runtime/tools/runFeatureWorkflow.js'
 import type { AppContext } from './context.js'
 import { parseRequestPart, parseRouteId } from './validation.js'
 import { z } from 'zod/v4'
@@ -42,10 +43,23 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     if (!planet) return reply.code(404).send({ error: 'planet not found' })
 
     const name = `feature-${Date.now()}`
-    // Phase 8a: new features default to the AO development lifecycle.
-    const workflowId = getDefaultWorkflowIdForNewFeatures()
+    const workflowId = planet.workflowId ?? getDefaultWorkflowIdForNewFeatures()
     const feature = createFeature({ planetId: planet.id, name, task: '', workflowId })
     io.emit('feature:created', feature)
+
+    executeFeatureWorkflow({
+      featureId: feature.id,
+      planetId: planet.id,
+      manager: ctx.manager,
+      terminals: ctx.terminals,
+      io,
+      runState: ctx.runState,
+      log: app.log,
+      scm: ctx.scm,
+    }).catch((err) => {
+      app.log.error({ err }, 'auto-trigger workflow failed on feature creation')
+    })
+
     return feature
   })
 
