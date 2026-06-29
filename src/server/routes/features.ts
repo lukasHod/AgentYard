@@ -116,6 +116,13 @@ export function registerFeatureRoutes(ctx: AppContext): void {
     if (!feature) return reply.code(404).send({ error: 'feature not found' })
 
     try {
+      // Stop all in-flight workflow runs and kill all terminal sessions for
+      // this feature before touching the DB so no orphaned processes remain.
+      await Promise.all([
+        ctx.runState.abortRunsForFeature(featureId),
+        ctx.terminals.deleteForFeature(featureId),
+      ])
+
       if (ctx.featureChats) {
         await ctx.featureChats.deleteForFeature(featureId)
       }

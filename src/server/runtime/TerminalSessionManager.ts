@@ -291,6 +291,14 @@ export class TerminalSessionManager extends EventEmitter {
     return existed
   }
 
+  /** Kill and delete every terminal session scoped to a feature. Called on feature deletion. */
+  async deleteForFeature(featureId: number): Promise<void> {
+    const ids = this.list()
+      .filter((s) => s.featureId === featureId)
+      .map((s) => s.id)
+    await Promise.all(ids.map((id) => this.delete(id)))
+  }
+
   async destroyAll(): Promise<void> {
     await Promise.all(Array.from(this.live.keys()).map((id) => this.kill(id)))
   }

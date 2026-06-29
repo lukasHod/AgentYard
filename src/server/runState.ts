@@ -170,6 +170,14 @@ export class RunRegistry {
     if (this.lastBegunRunId === runId) this.lastBegunRunId = null
   }
 
+  /** Abort and drop every run belonging to a feature. Called on feature deletion. */
+  async abortRunsForFeature(featureId: number): Promise<void> {
+    const ids = Array.from(this.runs.entries())
+      .filter(([, e]) => e.snapshot.featureId === featureId)
+      .map(([id]) => id)
+    await Promise.all(ids.map((id) => this.dropRun(id)))
+  }
+
   // ─── Legacy single-slot compatibility API ─────────────────────────
   //
   // These delegate to the runId-aware methods using the most recently
