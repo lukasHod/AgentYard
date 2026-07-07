@@ -28,7 +28,9 @@
     "test:client": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:uat": "playwright test --config=playwright.uat.config.ts",
+    "test:uat:debug": "playwright test --config=playwright.uat.config.ts --debug"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.144",

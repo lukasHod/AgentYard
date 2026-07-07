@@ -25,3 +25,7 @@ Thumbs.db
 debug/
 tmp-ui-check-*.png
 .worktrees/
+test-results/
+e2e-report/
+e2e-uat-report/
+e2e-uat-results/
