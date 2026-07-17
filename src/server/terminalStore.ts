@@ -72,15 +72,17 @@ export function createTerminalSession(record: {
   argv: string[]
   env?: Record<string, string> | null
   pid?: number | null
+  /** High-entropy secret authenticating this session's bridge HTTP calls. */
+  bridgeToken?: string | null
 }): TerminalSessionDescriptor {
   const now = Date.now()
   getDb()
     .prepare(
       `INSERT INTO terminal_sessions
        (id, profile_id, runtime_kind, planet_id, feature_id, workflow_run_id, node_run_id,
-        agent_session_id, role, cwd, argv_json, env_json, state, pid, created_at, updated_at,
+        agent_session_id, role, cwd, argv_json, env_json, bridge_token, state, pid, created_at, updated_at,
         last_started_at)
-       VALUES (?, ?, 'pty', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
+       VALUES (?, ?, 'pty', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
     )
     .run(
       record.id,
@@ -94,6 +96,7 @@ export function createTerminalSession(record: {
       record.cwd ?? null,
       JSON.stringify(record.argv),
       record.env ? JSON.stringify(record.env) : null,
+      record.bridgeToken ?? null,
       record.pid ?? null,
       now,
       now,
@@ -117,15 +120,16 @@ export function createSdkBridgeTerminalSession(record: {
   featureId?: number | null
   workflowRunId?: string | null
   nodeRunId?: string | null
+  bridgeToken?: string | null
 }): TerminalSessionDescriptor {
   const now = Date.now()
   getDb()
     .prepare(
       `INSERT INTO terminal_sessions
        (id, profile_id, runtime_kind, planet_id, feature_id, workflow_run_id, node_run_id,
-        agent_session_id, role, label, cwd, argv_json, env_json, state, pid, created_at, updated_at,
+        agent_session_id, role, label, cwd, argv_json, env_json, bridge_token, state, pid, created_at, updated_at,
         last_started_at)
-       VALUES (?, 'claude-cli', 'sdk-bridge', ?, ?, ?, ?, ?, ?, ?, ?, '[]', NULL, 'running', NULL, ?, ?, ?)`,
+       VALUES (?, 'claude-cli', 'sdk-bridge', ?, ?, ?, ?, ?, ?, ?, ?, '[]', NULL, ?, 'running', NULL, ?, ?, ?)`,
     )
     .run(
       record.id,
@@ -137,6 +141,7 @@ export function createSdkBridgeTerminalSession(record: {
       record.role ?? null,
       record.label ?? null,
       record.cwd ?? null,
+      record.bridgeToken ?? null,
       now,
       now,
       now,
@@ -158,6 +163,18 @@ export function getTerminalSessionEnv(id: string): Record<string, string> | unde
   return row?.env_json
     ? parseDbJson('terminal_sessions.env_json', row.env_json, EnvSchema)
     : undefined
+}
+
+/**
+ * Fetch a session's bridge auth token. Deliberately NOT part of
+ * TerminalSessionDescriptor so it is never broadcast to sockets/clients —
+ * only the bridge route reads it to authenticate incoming CLI calls.
+ */
+export function getTerminalSessionBridgeToken(id: string): string | undefined {
+  const row = getDb()
+    .prepare('SELECT bridge_token FROM terminal_sessions WHERE id = ?')
+    .get(id) as { bridge_token: string | null } | undefined
+  return row?.bridge_token ?? undefined
 }
 
 export function listTerminalSessions(): TerminalSessionDescriptor[] {
@@ -217,10 +234,42 @@ export function updateTerminalSession(
   return getTerminalSession(id)
 }
 
+/**
+ * Per-session cap on retained transcript chunks. snapshot() only ever reads the
+ * last 500, so keeping a comfortable multiple bounds unbounded disk growth on a
+ * long-lived streaming terminal while preserving plenty of scrollback.
+ */
+const MAX_CHUNKS_PER_SESSION = 5_000
+/** Only run the prune sweep occasionally so we don't DELETE on every insert. */
+const CHUNK_PRUNE_INTERVAL = 500
+const chunkInsertsSincePrune = new Map<string, number>()
+
+function pruneTerminalChunks(sessionId: string): void {
+  getDb()
+    .prepare(
+      `DELETE FROM terminal_transcript_chunks
+       WHERE session_id = ?
+         AND id NOT IN (
+           SELECT id FROM terminal_transcript_chunks
+           WHERE session_id = ?
+           ORDER BY id DESC
+           LIMIT ?
+         )`,
+    )
+    .run(sessionId, sessionId, MAX_CHUNKS_PER_SESSION)
+}
+
 export function appendTerminalChunk(sessionId: string, data: string, ts = Date.now()): number {
   const info = getDb()
     .prepare('INSERT INTO terminal_transcript_chunks (session_id, ts, data) VALUES (?, ?, ?)')
     .run(sessionId, ts, data)
+  const count = (chunkInsertsSincePrune.get(sessionId) ?? 0) + 1
+  if (count >= CHUNK_PRUNE_INTERVAL) {
+    chunkInsertsSincePrune.set(sessionId, 0)
+    pruneTerminalChunks(sessionId)
+  } else {
+    chunkInsertsSincePrune.set(sessionId, count)
+  }
   return Number(info.lastInsertRowid)
 }
 
@@ -253,6 +302,7 @@ export function listTerminalChunks(sessionId: string, opts?: { limit?: number })
  */
 export function deleteTerminalSession(id: string): boolean {
   const info = getDb().prepare('DELETE FROM terminal_sessions WHERE id = ?').run(id)
+  chunkInsertsSincePrune.delete(id)
   return info.changes > 0
 }
 

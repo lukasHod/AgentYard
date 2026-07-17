@@ -85,6 +85,15 @@ function sessionId(): string {
   return id
 }
 
+function bridgeToken(): string {
+  const token = process.env.AGENTYARD_BRIDGE_TOKEN
+  if (!token) {
+    console.error('AGENTYARD_BRIDGE_TOKEN is not set.')
+    process.exit(1)
+  }
+  return token
+}
+
 async function bridgePost(
   path: string,
   body: Record<string, unknown>,
@@ -92,12 +101,14 @@ async function bridgePost(
 ): Promise<unknown> {
   const url = `${bridgeUrl()}${path}`
   const sid = sessionId()
+  const token = bridgeToken()
   const signal = AbortSignal.timeout(timeoutMs)
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-agentyard-session-id': sid,
+      'x-agentyard-bridge-token': token,
     },
     body: JSON.stringify(body),
     signal,

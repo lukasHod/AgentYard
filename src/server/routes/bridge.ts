@@ -1,4 +1,7 @@
-import { getTerminalSession } from '../terminalStore.js'
+import { timingSafeEqual } from 'node:crypto'
+import type { FastifyReply, FastifyRequest } from 'fastify'
+import { getTerminalSession, getTerminalSessionBridgeToken } from '../terminalStore.js'
+import type { TerminalSessionDescriptor } from '../../core/types.js'
 import { bridgeRegistry } from '../bridgeRegistry.js'
 import { submitReview } from '../reviewLoopStore.js'
 import { getFeature, updateFeature } from '../features.js'
@@ -7,6 +10,50 @@ import { parseRequestPart } from './validation.js'
 import { z } from 'zod/v4'
 
 const SESSION_HEADER = 'x-agentyard-session-id'
+const TOKEN_HEADER = 'x-agentyard-bridge-token'
+
+/** Constant-time string compare that tolerates length mismatch without leaking it via early return. */
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8')
+  const bb = Buffer.from(b, 'utf8')
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
+
+/**
+ * Authenticate a bridge request: it must carry a valid session id AND the
+ * matching high-entropy bridge token for that session. Returns the session on
+ * success; otherwise sends the error response and returns null.
+ *
+ * The token — not the (short, possibly client-chosen) session id — is the
+ * secret. Both are injected into the terminal's env by TerminalSessionManager.
+ */
+function authBridge(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  apiError: AppContext['apiError'],
+): TerminalSessionDescriptor | null {
+  const sessionId = req.headers[SESSION_HEADER] as string | undefined
+  if (!sessionId) {
+    apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
+    return null
+  }
+  const token = req.headers[TOKEN_HEADER] as string | undefined
+  if (!token) {
+    apiError(reply, 401, 'missing X-Agentyard-Bridge-Token header')
+    return null
+  }
+  const session = getTerminalSession(sessionId)
+  const expected = getTerminalSessionBridgeToken(sessionId)
+  // Always run the compare (against a dummy when unknown) so a missing session
+  // and a wrong token take the same path — no session-existence oracle.
+  const ok = expected !== undefined && safeEqual(token, expected)
+  if (!session || !ok) {
+    apiError(reply, 401, 'invalid session id or bridge token')
+    return null
+  }
+  return session
+}
 const StringRecordSchema = z.record(z.string(), z.string())
 const AskUserBodySchema = z.object({ question: z.string().trim().min(1) })
 const MarkNodeCompleteBodySchema = z.object({
@@ -32,10 +79,12 @@ const FailNodeBodySchema = z.object({
  * AgentYard bridge — HTTP endpoints called by `agentyard` CLI subcommands
  * running inside PTY terminal sessions.
  *
- * Authentication: every request must carry the terminal's session id in the
- * `X-Agentyard-Session-Id` header. The server validates it against the
- * terminal_sessions table (the id is injected by TerminalSessionManager into
- * AGENTYARD_SESSION_ID, then forwarded by the CLI as a request header).
+ * Authentication: every request must carry both the terminal's session id
+ * (`X-Agentyard-Session-Id`) and its high-entropy bridge token
+ * (`X-Agentyard-Bridge-Token`). Both are injected into the terminal's env by
+ * TerminalSessionManager (AGENTYARD_SESSION_ID / AGENTYARD_BRIDGE_TOKEN) and
+ * forwarded by the CLI. The token — not the short, possibly client-chosen id —
+ * is the secret; see authBridge().
  *
  * All endpoints respond with `{ ok: true, ... }` on success and
  * `{ error: "..." }` (+ HTTP 4xx/5xx) on failure.
@@ -55,17 +104,14 @@ export function registerBridgeRoutes(ctx: AppContext): void {
   app.post<{ Body: { question?: string } }>(
     '/api/bridge/ask-user',
     async (req, reply) => {
-      const sessionId = req.headers[SESSION_HEADER] as string | undefined
-      if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
-
-      const session = getTerminalSession(sessionId)
-      if (!session) return apiError(reply, 404, `terminal session ${sessionId} not found`)
+      const session = authBridge(req, reply, apiError)
+      if (!session) return
 
       const body = parseRequestPart('body', req.body, AskUserBodySchema, reply)
       if (!body) return
 
       const { waitForAnswer } = pendingQuestions.createFromBridge({
-        agentSessionId: sessionId,
+        agentSessionId: session.id,
         question: body.question,
         planetId: session.planetId,
         featureId: session.featureId,
@@ -94,18 +140,14 @@ export function registerBridgeRoutes(ctx: AppContext): void {
   app.post<{ Body: { summary?: string; outputs?: Record<string, string> } }>(
     '/api/bridge/mark-node-complete',
     async (req, reply) => {
-      const sessionId = req.headers[SESSION_HEADER] as string | undefined
-      if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
-
-      if (!getTerminalSession(sessionId)) {
-        return apiError(reply, 404, `terminal session ${sessionId} not found`)
-      }
+      const session = authBridge(req, reply, apiError)
+      if (!session) return
 
       const body = parseRequestPart('body', req.body, MarkNodeCompleteBodySchema, reply)
       if (!body) return
       const summary = body.summary || 'CLI agent marked node complete'
 
-      const resolved = bridgeRegistry.completeNode(sessionId, summary, body.outputs)
+      const resolved = bridgeRegistry.completeNode(session.id, summary, body.outputs)
       if (!resolved) {
         return apiError(
           reply,
@@ -128,8 +170,7 @@ export function registerBridgeRoutes(ctx: AppContext): void {
   app.post<{ Body: { questionId?: string; answer?: string } }>(
     '/api/bridge/answer',
     async (req, reply) => {
-      const sessionId = req.headers[SESSION_HEADER] as string | undefined
-      if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
+      if (!authBridge(req, reply, apiError)) return
 
       const body = parseRequestPart('body', req.body, AnswerBodySchema, reply)
       if (!body) return
@@ -151,11 +192,8 @@ export function registerBridgeRoutes(ctx: AppContext): void {
    * URL format: https://github.com/owner/repo/pull/123
    */
   app.post<{ Body: { prUrl?: string } }>('/api/bridge/set-pr', async (req, reply) => {
-    const sessionId = req.headers[SESSION_HEADER] as string | undefined
-    if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
-
-    const session = getTerminalSession(sessionId)
-    if (!session) return apiError(reply, 404, `terminal session ${sessionId} not found`)
+    const session = authBridge(req, reply, apiError)
+    if (!session) return
     if (!session.featureId) return apiError(reply, 400, 'this terminal session has no associated feature')
 
     const body = parseRequestPart('body', req.body, SetPrBodySchema, reply)
@@ -197,17 +235,13 @@ export function registerBridgeRoutes(ctx: AppContext): void {
   app.post<{
     Body: { decision?: string; findings?: string }
   }>('/api/bridge/submit-review', async (req, reply) => {
-    const sessionId = req.headers[SESSION_HEADER] as string | undefined
-    if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
-
-    if (!getTerminalSession(sessionId)) {
-      return apiError(reply, 404, `terminal session ${sessionId} not found`)
-    }
+    const session = authBridge(req, reply, apiError)
+    if (!session) return
 
     const body = parseRequestPart('body', req.body, SubmitReviewBodySchema, reply)
     if (!body) return
 
-    const result = submitReview(sessionId, body.decision, body.findings)
+    const result = submitReview(session.id, body.decision, body.findings)
     if (!result.ok) {
       return apiError(reply, 409, result.error)
     }
@@ -225,17 +259,13 @@ export function registerBridgeRoutes(ctx: AppContext): void {
   app.post<{ Body: { error?: string } }>(
     '/api/bridge/fail-node',
     async (req, reply) => {
-      const sessionId = req.headers[SESSION_HEADER] as string | undefined
-      if (!sessionId) return apiError(reply, 400, 'missing X-Agentyard-Session-Id header')
-
-      if (!getTerminalSession(sessionId)) {
-        return apiError(reply, 404, `terminal session ${sessionId} not found`)
-      }
+      const session = authBridge(req, reply, apiError)
+      if (!session) return
 
       const body = parseRequestPart('body', req.body, FailNodeBodySchema, reply)
       if (!body) return
       const message = body.error || 'CLI agent reported failure'
-      const failed = bridgeRegistry.failNode(sessionId, message)
+      const failed = bridgeRegistry.failNode(session.id, message)
       if (!failed) {
         return apiError(reply, 409, 'no pending node gate for this session')
       }

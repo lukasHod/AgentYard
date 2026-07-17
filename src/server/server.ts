@@ -48,6 +48,22 @@ import type { AppContext } from './routes/context.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 
+/**
+ * Allowed Socket.IO origin(s) in dev. An explicit AGENTYARD_DEV_ORIGIN (comma
+ * separated for multiple) pins the CORS check to exactly the Vite dev origin;
+ * absent that, we fall back to any localhost origin to keep zero-config dev working.
+ */
+function devSocketOrigin(): string[] | RegExp {
+  const configured = process.env.AGENTYARD_DEV_ORIGIN
+  if (configured) {
+    return configured
+      .split(',')
+      .map((o) => o.trim())
+      .filter((o) => o.length > 0)
+  }
+  return /^http:\/\/localhost:\d+$/
+}
+
 export interface ServerOptions {
   port: number
   dev: boolean
@@ -108,10 +124,14 @@ export async function startServer(opts: ServerOptions) {
   // SDK sessions can't survive restart, so they're force-terminated.
   reconcileStaleSessions(app.log)
   const io: TypedIOServer = new IOServer(app.server, {
-    // In dev the UI is served by Vite on a different origin and needs CORS allow.
     // In prod the UI is served from the same Fastify origin, so refuse cross-origin
     // sockets — closes DNS-rebinding / cross-site Socket.IO connection vectors.
-    cors: opts.dev ? { origin: /^http:\/\/localhost:\d+$/ } : { origin: false },
+    //
+    // In dev the Vite UI is a different origin. Prefer an exact allowed origin
+    // via AGENTYARD_DEV_ORIGIN (e.g. "http://localhost:5174"); only fall back to
+    // the broad localhost regex when it isn't set, so a single configured setup
+    // doesn't leave every localhost origin able to drive terminals.
+    cors: opts.dev ? { origin: devSocketOrigin() } : { origin: false },
   })
   const transcripts = new TranscriptStore(io)
   const runState = new RunRegistry(io)

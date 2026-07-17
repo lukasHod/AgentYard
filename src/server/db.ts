@@ -358,6 +358,15 @@ function runAddTerminalSessionLabelMigration(db: DB) {
   }
 }
 
+function runAddTerminalBridgeTokenMigration(db: DB) {
+  if (tableExists(db, 'terminal_sessions') && !columnExists(db, 'terminal_sessions', 'bridge_token')) {
+    // High-entropy per-session secret used to authenticate bridge HTTP calls.
+    // Distinct from `id` (which is short and may be client-chosen) so the id
+    // can no longer serve as a bearer token.
+    db.exec(`ALTER TABLE terminal_sessions ADD COLUMN bridge_token TEXT`)
+  }
+}
+
 function runAddAuditRunColumnsMigration(db: DB) {
   if (!tableExists(db, 'runs')) return
   const cols: Array<[string, string]> = [
@@ -578,6 +587,7 @@ export function getDb(): DB {
   runAddReviewLoopTables(db)
   runAddFeaturePrStateMigration(db)
   runAddTerminalSessionLabelMigration(db)
+  runAddTerminalBridgeTokenMigration(db)
   runAddAuditRunColumnsMigration(db)
   runAddAuditNodeRunColumnsMigration(db)
   runAddAuditSessionColumnsMigration(db)

@@ -42,9 +42,30 @@ export class PrWatcher {
     await this.poll(feature)
   }
 
+  /** Max features polled concurrently. Each poll spawns 2 `gh` subprocesses, so
+   *  an unbounded fan-out over many watched PRs is a periodic spawn storm and a
+   *  fast route to GitHub rate limits. */
+  private static readonly POLL_CONCURRENCY = 4
+
   private async pollAll(): Promise<void> {
     const features = listWatchedFeatures()
-    await Promise.allSettled(features.map((f) => this.poll(f)))
+    const queue = [...features]
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const feature = queue.shift()
+        if (!feature) return
+        try {
+          await this.poll(feature)
+        } catch {
+          // poll() already swallows expected errors; guard the worker loop too.
+        }
+      }
+    }
+    const workers = Array.from(
+      { length: Math.min(PrWatcher.POLL_CONCURRENCY, queue.length) },
+      () => worker(),
+    )
+    await Promise.all(workers)
   }
 
   private async poll(feature: Feature): Promise<void> {

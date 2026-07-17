@@ -1,6 +1,7 @@
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
+import { listPlanets } from '../planets.js'
 import type { AppContext } from './context.js'
 
 function listDirs(dirPath: string): { name: string; path: string }[] {
@@ -28,6 +29,49 @@ function isDir(p: string): boolean {
   }
 }
 
+/** Resolve a path through symlinks when possible, else normalize it. */
+function canonical(p: string): string {
+  try {
+    return realpathSync(p)
+  } catch {
+    return path.resolve(p)
+  }
+}
+
+/**
+ * Directories the folder picker is allowed to enumerate:
+ *   - the user's home directory
+ *   - every existing planet's project path (so previously-added projects stay browsable)
+ *   - any roots listed in AGENTYARD_BROWSE_ROOTS (path-delimiter separated)
+ *
+ * This bounds an otherwise unauthenticated filesystem-enumeration surface to
+ * paths the user has already opted into, instead of the entire filesystem.
+ */
+function allowedRoots(): string[] {
+  const roots = new Set<string>([canonical(homedir())])
+  for (const planet of listPlanets()) {
+    if (planet.projectPath) roots.add(canonical(planet.projectPath))
+  }
+  const extra = process.env.AGENTYARD_BROWSE_ROOTS
+  if (extra) {
+    for (const r of extra.split(path.delimiter)) {
+      const trimmed = r.trim()
+      if (trimmed) roots.add(canonical(trimmed))
+    }
+  }
+  return [...roots]
+}
+
+/** True if `target` is one of, or nested under, an allowed root. */
+function isAllowed(target: string, roots: string[]): boolean {
+  const t = canonical(target)
+  return roots.some((root) => {
+    if (t === root) return true
+    const rel = path.relative(root, t)
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
+  })
+}
+
 let cachedWindowsRoots: { name: string; path: string }[] | null = null
 
 function windowsRoots(): { name: string; path: string }[] {
@@ -53,13 +97,19 @@ export function rootsFor(current: string): { name: string; path: string }[] {
 export function registerBrowseFolderRoute({ app }: AppContext): void {
   /**
    * List subdirectories at `?path=<dir>` (or home dir if omitted).
-   * Returns: { current, parent, entries: [{name, path}] }
+   * The requested path must be inside an allowed root (see allowedRoots);
+   * anything else falls back to the home directory. Returns:
+   *   { current, parent, entries: [{name, path}], roots }
    */
   app.get<{ Querystring: { path?: string } }>('/api/fs/dirs', async (req) => {
+    const roots = allowedRoots()
     const reqPath = req.query.path?.trim()
-    const current = reqPath && isDir(reqPath) ? reqPath : homedir()
+    const current =
+      reqPath && isDir(reqPath) && isAllowed(reqPath, roots) ? reqPath : homedir()
     const parentPath = path.dirname(current)
-    const parent = parentPath !== current ? parentPath : null
+    // Only offer the parent link when it stays inside an allowed root.
+    const parent =
+      parentPath !== current && isAllowed(parentPath, roots) ? parentPath : null
     return {
       current,
       parent,

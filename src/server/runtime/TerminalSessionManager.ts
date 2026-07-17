@@ -12,6 +12,7 @@ import {
   createTerminalSession,
   deleteTerminalSession,
   getTerminalSession,
+  getTerminalSessionBridgeToken,
   getTerminalSessionEnv,
   listTerminalChunks,
   listTerminalSessions,
@@ -89,8 +90,10 @@ export class TerminalSessionManager extends EventEmitter {
       throw new Error(`terminal session ${sessionId} already exists`)
     }
     const plan = resolveTerminalPlan(req)
+    const bridgeToken = randomUUID()
     const env = injectAgentYardEnv(plan.env, {
       sessionId,
+      bridgeToken,
       planetId: req.planetId,
       featureId: req.featureId,
       workflowRunId: req.workflowRunId,
@@ -115,6 +118,7 @@ export class TerminalSessionManager extends EventEmitter {
       cwd: req.cwd,
       argv: plan.argv,
       env,
+      bridgeToken,
       pid: proc.pid,
     })
     const live: LiveTerminal = { session, process: proc }
@@ -250,6 +254,7 @@ export class TerminalSessionManager extends EventEmitter {
   ): TerminalSessionDescriptor {
     const env = injectAgentYardEnv(getTerminalSessionEnv(id), {
       sessionId: existing.id,
+      bridgeToken: getTerminalSessionBridgeToken(id),
       planetId: existing.planetId ?? undefined,
       featureId: existing.featureId ?? undefined,
       workflowRunId: existing.workflowRunId ?? undefined,
@@ -399,6 +404,7 @@ function injectAgentYardEnv(
   env: Record<string, string> | undefined,
   ctx: {
     sessionId: string
+    bridgeToken?: string
     planetId?: number
     featureId?: number
     workflowRunId?: string
@@ -408,6 +414,7 @@ function injectAgentYardEnv(
   return {
     ...env,
     AGENTYARD_SESSION_ID: ctx.sessionId,
+    ...(ctx.bridgeToken ? { AGENTYARD_BRIDGE_TOKEN: ctx.bridgeToken } : {}),
     ...(ctx.planetId !== undefined ? { AGENTYARD_PLANET_ID: String(ctx.planetId) } : {}),
     ...(ctx.featureId !== undefined ? { AGENTYARD_FEATURE_ID: String(ctx.featureId) } : {}),
     ...(ctx.workflowRunId ? { AGENTYARD_WORKFLOW_RUN_ID: ctx.workflowRunId } : {}),
