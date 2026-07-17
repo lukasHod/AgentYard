@@ -15,6 +15,15 @@ interface PendingClarification {
 }
 
 /**
+ * Cap on retained in-memory transcript entries per session. The store is only
+ * used for socket catch-up (replaying recent history to newly-connected tabs),
+ * so keeping the whole conversation forever is a slow memory leak on a
+ * long-lived server — and makes every reconnect replay grow without bound.
+ * Durable history lives in SQLite; this is just the hot tail.
+ */
+const MAX_TRANSCRIPT_ENTRIES = 500
+
+/**
  * Per-session bookkeeping for socket-side catch-up: transcripts (so newly
  * connecting clients get history), latest state per agent, and outstanding
  * clarification requests. Driven by SessionManager events; consumed when a
@@ -47,7 +56,15 @@ export class TranscriptStore {
           content: ev.message.text,
           timestamp: ev.message.timestamp,
         }
-        this.transcripts.get(id)?.push(entry)
+        const entries = this.transcripts.get(id)
+        if (entries) {
+          entries.push(entry)
+          // Drop oldest entries past the cap so memory (and reconnect replay)
+          // stays bounded on long-running sessions.
+          if (entries.length > MAX_TRANSCRIPT_ENTRIES) {
+            entries.splice(0, entries.length - MAX_TRANSCRIPT_ENTRIES)
+          }
+        }
         this.io.emit('agent:message', { agentRunId: id, ...entry })
         break
       }

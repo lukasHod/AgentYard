@@ -746,7 +746,15 @@ async function spawnAgentDrone(
  * Convert our McpTool config to the SDK's McpServerConfig type. Strings have
  * `${env:VAR}` placeholders resolved against process.env (including any values
  * loaded from ~/.agentyard/.secrets/secrets.env at server start).
+ *
+ * Secret-named vars only resolve where a secret legitimately belongs — the
+ * server's own `env` and request `headers` (that's how an MCP server receives
+ * its credential). They are blocked from `command`/`args`/`url`, which define
+ * what to run or connect to and must not carry credentials into a spawned
+ * process image or a URL. `withSecrets` opts those two fields in.
  */
+const withSecrets = { allowSecrets: true } as const
+
 function mcpToolToServerConfig(mcp: McpTool): McpServerConfig | null {
   if (mcp.transport === 'stdio') {
     if (!mcp.command) return null
@@ -754,7 +762,7 @@ function mcpToolToServerConfig(mcp: McpTool): McpServerConfig | null {
       type: 'stdio',
       command: resolveEnvVarsDeep(mcp.command),
       args: resolveEnvVarsDeep(mcp.args ?? []),
-      env: mcp.env ? resolveEnvVarsDeep(mcp.env) : undefined,
+      env: mcp.env ? resolveEnvVarsDeep(mcp.env, withSecrets) : undefined,
     } as McpServerConfig
   }
   if (mcp.transport === 'http') {
@@ -762,7 +770,7 @@ function mcpToolToServerConfig(mcp: McpTool): McpServerConfig | null {
     return {
       type: 'http',
       url: resolveEnvVarsDeep(mcp.url),
-      headers: mcp.headers ? resolveEnvVarsDeep(mcp.headers) : undefined,
+      headers: mcp.headers ? resolveEnvVarsDeep(mcp.headers, withSecrets) : undefined,
     } as McpServerConfig
   }
   if (mcp.transport === 'sse') {
@@ -770,7 +778,7 @@ function mcpToolToServerConfig(mcp: McpTool): McpServerConfig | null {
     return {
       type: 'sse',
       url: resolveEnvVarsDeep(mcp.url),
-      headers: mcp.headers ? resolveEnvVarsDeep(mcp.headers) : undefined,
+      headers: mcp.headers ? resolveEnvVarsDeep(mcp.headers, withSecrets) : undefined,
     } as McpServerConfig
   }
   return null
